@@ -94,3 +94,33 @@
 .stop-card .links a:hover {
   text-decoration: underline;
 }
+
+/* timeline layout */
+#planning-list.timeline {
+  position: relative;
+  padding-left: 2rem;
+  border-left: 2px solid #ccc;
+}
+#planning-list.timeline .stop-card {
+  border-left: none;
+  margin-bottom: 2rem;
+}
+#planning-list.timeline .stop-card::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 1.2rem;
+  width: 12px;
+  height: 12px;
+  background: #0077cc;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #ccc;
+}
+#planning-list.timeline .stop-card.overnight::before {
+  background: #ff9800;
+}
+.stop-card .stay {
+  margin-bottom: 0.75rem;
+  color: #333;
+}
