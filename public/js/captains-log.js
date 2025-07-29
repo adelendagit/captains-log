@@ -110,6 +110,7 @@ function initMap(stops, places) {
 function renderList(stops, speed) {
   const listEl = document.getElementById('planning-list');
   listEl.innerHTML = '';
+  listEl.classList.add('timeline');
 
   // 1) Render current location (dueComplete === true)
   const current = stops.find(s => s.dueComplete);
@@ -144,8 +145,20 @@ function renderList(stops, speed) {
     listEl.appendChild(li);
   }
 
-  // 2) Group all future stops by calendar day
+  // 2) Group all future stops by calendar day and compute gaps
   const future = stops.filter(s => !s.dueComplete);
+  future.forEach((s, idx) => {
+    const next = future[idx + 1];
+    if (next) {
+      const diff = new Date(next.due) - new Date(s.due);
+      s.hoursToNext = diff / 3600000;
+      s.overnight   = next.due.slice(0,10) !== s.due.slice(0,10);
+    } else {
+      s.hoursToNext = null;
+      s.overnight   = false;
+    }
+  });
+
   const byDay = future.reduce((acc, s) => {
     const day = s.due.slice(0,10); // "YYYY-MM-DD"
     (acc[day] ??= []).push(s);
@@ -153,6 +166,7 @@ function renderList(stops, speed) {
   }, {});
 
   // 3) Iterate each day in order
+  let prevStop = current;
   Object.keys(byDay).sort().forEach(dayKey => {
     // Day header
     const dateHeader = document.createElement('h3');
@@ -160,11 +174,9 @@ function renderList(stops, speed) {
     listEl.appendChild(dateHeader);
 
     // Stops for that day
-    byDay[dayKey].forEach((s, idx, arr) => {
+    byDay[dayKey].forEach((s) => {
       // A) compute distance & ETA from previous point
-      const prev = idx === 0
-        ? current || null
-        : arr[idx - 1];
+      const prev = prevStop;
       let infoHtml = '';
       if (prev) {
         const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
@@ -173,7 +185,15 @@ function renderList(stops, speed) {
         infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
       }
 
-      // B) badges for labels (safe fallback)
+      // B) info about time until next stop
+      let stayHtml = '';
+      if (s.hoursToNext != null) {
+        const hrs = Math.round(s.hoursToNext);
+        const overnightText = s.overnight ? ' (overnight)' : '';
+        stayHtml = `<div class="stay">${hrs}h until next stop${overnightText}</div>`;
+      }
+
+      // C) badges for labels (safe fallback)
       const labels = Array.isArray(s.labels) ? s.labels : [];
       const badges = labels
         .map(l => {
@@ -183,13 +203,13 @@ function renderList(stops, speed) {
         })
         .join('');
 
-      // C) star‑rating
+      // D) star‑rating
       const stars = makeStars(s.rating);
       const ratingHtml = stars ? `<div class="rating">${stars}</div>` : '';
 
-      // D) build the card
+      // E) build the card
       const li = document.createElement('li');
-      li.className = 'stop-card';
+      li.className = 'stop-card' + (s.overnight ? ' overnight' : '');
       li.onclick   = () => window.open(s.trelloUrl, '_blank');
 
       li.innerHTML = `
@@ -198,6 +218,7 @@ function renderList(stops, speed) {
         <div class="subtitle">${s.listName}</div>
         ${ratingHtml}
         <div class="info">${infoHtml}</div>
+        ${stayHtml}
         <div class="links">
           <a href="${s.trelloUrl}"  target="_blank">Trello</a>
           ${s.navilyUrl
@@ -206,6 +227,7 @@ function renderList(stops, speed) {
         </div>
       `;
       listEl.appendChild(li);
+      prevStop = s;
     });
   });
 }
