@@ -1,0 +1,56 @@
+<!–– Leaflet styles ––>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet/dist/leaflet.css"
+/>
+<link rel="stylesheet" href="/css/captains-log.css">
+
+<div class="tab-nav">
+  <button data-tab="planning" class="active">Planning</button>
+  <button data-tab="historical">Historical Trips</button>
+</div>
+
+<section id="planning" class="tab-content">
+  <div class="controls">
+    <label>
+      Speed:
+      <input
+        type="number"
+        id="speed-input"
+        value="6"
+        min="1"
+        step="0.5"
+      >
+      knots
+    </label>
+  </div>
+
+  <div id="map"></div>
+  <ul id="planning-list" class="stop-list"></ul>
+</section>
+
+
+<section id="historical" class="tab-content hidden">
+  <% historical.forEach(group => { %>
+    <h3><%= group.year %></h3>
+    <ul>
+      <% group.trips.forEach(t => { %>
+        <li>
+          <strong><%= t.name %></strong>
+          <% if (t.start || t.due) { %>
+            (
+              <%= t.start ? new Date(t.start).toLocaleDateString() : '?' %>
+              –
+              <%= t.due   ? new Date(t.due).toLocaleDateString()   : '?' %>
+            )
+          <% } %>
+        </li>
+      <% }) %>
+    </ul>
+  <% }) %>
+</section>
+
+<!-– Leaflet core ––>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!–– Your app JS ––>
+<script src="/js/captains-log.js"></script>

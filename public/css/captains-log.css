@@ -1,0 +1,96 @@
+/* Hide any element tagged “hidden” */
+.hidden {
+  display: none !important;
+}
+
+/* Remove default list bullets & spacing */
+#planning-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#planning-list li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#map {
+  width: 100%;
+  height: 400px; /* or any height you prefer */
+  margin-bottom: 1rem;
+}
+
+/* make cards pop off the page */
+.stop-card {
+  background: #ffffff;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border-left: 4px solid #0077cc;  /* accent line */
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+  transition: transform 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+.stop-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+}
+
+/* title and subtitle */
+.stop-card h4 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  color: #333;
+}
+.stop-card .subtitle {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 0.75rem;
+}
+
+/* badge container */
+.stop-card .header {
+  margin-bottom: 0.6rem;
+}
+
+/* Trello label badges */
+.stop-card .label {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  margin-right: 0.4rem;
+  margin-bottom: 0.4rem;
+  border-radius: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+/* star rating */
+.stop-card .rating {
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+  color: gold;
+  line-height: 1;
+}
+
+/* info line (distance & ETA) */
+.stop-card .info {
+  font-style: italic;
+  color: #555;
+  margin-bottom: 0.75rem;
+}
+
+/* Trello & Navily links */
+.stop-card .links {
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+.stop-card .links a {
+  text-decoration: none;
+  color: #0077cc;
+  margin-right: 1rem;
+}
+.stop-card .links a:hover {
+  text-decoration: underline;
+}

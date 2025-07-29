@@ -1,0 +1,32 @@
+{
+  "name": "captains-log",
+  "version": "1.0.0",
+  "description": "Standalone Captain’s Log web app for planning and logging boat trips via Trello",
+  "main": "app.js",
+  "scripts": {
+    "dev": "nodemon app.js",
+    "start": "node app.js",
+    "lint": "eslint . --ext .js",
+    "format": "prettier --write \"**/*.js\" \"**/*.ejs\"",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "compression": "^1.7.4",
+    "dotenv": "^16.0.0",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.50.0",
+    "nodemon": "^3.0.1",
+    "prettier": "^3.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
