@@ -133,17 +133,17 @@ function renderList(stops, speed) {
     listEl.appendChild(li);
   }
 
-  // future stops
-  const future = stops.filter((s) => !s.dueComplete);
+  // 2) Group all future stops by calendar day and compute gaps
+  const future = stops.filter(s => !s.dueComplete);
   future.forEach((s, idx) => {
     const next = future[idx + 1];
     if (next) {
       const diff = new Date(next.due) - new Date(s.due);
       s.hoursToNext = diff / 3600000;
-      s.overnight = next.due.slice(0, 10) !== s.due.slice(0, 10);
+      s.overnight   = next.due.slice(0,10) !== s.due.slice(0,10);
     } else {
       s.hoursToNext = null;
-      s.overnight = false;
+      s.overnight   = false;
     }
   });
 
@@ -153,65 +153,70 @@ function renderList(stops, speed) {
     return acc;
   }, {});
 
+
+  // 3) Iterate each day in order
   let prevStop = current;
-  Object.keys(byDay)
-    .sort()
-    .forEach((dayKey) => {
-      const dateHeader = document.createElement("h3");
-      dateHeader.textContent = new Date(dayKey).toLocaleDateString();
-      listEl.appendChild(dateHeader);
+  Object.keys(byDay).sort().forEach(dayKey => {
+    // Day header
+    const dateHeader = document.createElement('h3');
+    dateHeader.textContent = new Date(dayKey).toLocaleDateString();
+    listEl.appendChild(dateHeader);
 
-      byDay[dayKey].forEach((s) => {
-        let infoHtml = "";
-        if (prevStop) {
-          const meters = haversine(prevStop.lat, prevStop.lng, s.lat, s.lng);
-          const nm = toNM(meters);
-          const eta = formatDuration(nm / speed);
-          infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
-        }
+    // Stops for that day
+    byDay[dayKey].forEach((s) => {
+      // A) compute distance & ETA from previous point
+      const prev = prevStop;
+      let infoHtml = '';
+      if (prev) {
+        const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
+        const nm     = toNM(meters);
+        const eta    = formatDuration(nm / speed);
+        infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
+      }
 
-        let stayHtml = "";
-        if (s.hoursToNext != null) {
-          const hrs = Math.round(s.hoursToNext);
-          const overnightText = s.overnight ? " (overnight)" : "";
-          stayHtml = `<div class="stay">${hrs}h until next stop${overnightText}</div>`;
-        }
+      // B) info about time until next stop
+      let stayHtml = '';
+      if (s.hoursToNext != null) {
+        const hrs = Math.round(s.hoursToNext);
+        const overnightText = s.overnight ? ' (overnight)' : '';
+        stayHtml = `<div class="stay">${hrs}h until next stop${overnightText}</div>`;
+      }
 
-        const labels = Array.isArray(s.labels) ? s.labels : [];
-        const badges = labels
-          .map((l) => {
-            const bg = l.color || "#888";
-            const fg = badgeTextColor(bg);
-            return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-          })
-          .join("");
+      // C) badges for labels (safe fallback)
+      const labels = Array.isArray(s.labels) ? s.labels : [];
+      const badges = labels
+        .map(l => {
+          const bg = l.color || '#888';
+          const fg = badgeTextColor(bg);
+          return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+        })
+        .join('');
 
-        const stars = makeStars(s.rating);
-        const ratingHtml = stars ? `<div class="rating">${stars}</div>` : "";
+      // D) star‑rating
+      const stars = makeStars(s.rating);
+      const ratingHtml = stars ? `<div class="rating">${stars}</div>` : '';
 
-        const li = document.createElement("li");
-        li.className = "stop-card" + (s.overnight ? " overnight" : "");
-        li.onclick = () => window.open(s.trelloUrl, "_blank");
+      // E) build the card
+      const li = document.createElement('li');
+      li.className = 'stop-card' + (s.overnight ? ' overnight' : '');
+      li.onclick   = () => window.open(s.trelloUrl, '_blank');
 
-        li.innerHTML = `
-          <div class="header">${badges}</div>
-          <h4>${s.name}</h4>
-          <div class="subtitle">${s.listName || ""}</div>
-          ${ratingHtml}
-          <div class="info">${infoHtml}</div>
-          ${stayHtml}
-          <div class="links">
-            <a href="${s.trelloUrl}" target="_blank">Trello</a>
-            ${
-              s.navilyUrl
-                ? `<a href="${s.navilyUrl}" target="_blank">Navily</a>`
-                : ""
-            }
-          </div>
-        `;
-        listEl.appendChild(li);
-        prevStop = s;
-      });
+      li.innerHTML = `
+        <div class="header">${badges}</div>
+        <h4>${s.name}</h4>
+        <div class="subtitle">${s.listName}</div>
+        ${ratingHtml}
+        <div class="info">${infoHtml}</div>
+        ${stayHtml}
+        <div class="links">
+          <a href="${s.trelloUrl}"  target="_blank">Trello</a>
+          ${s.navilyUrl
+            ? `<a href="${s.navilyUrl}" target="_blank">Navily</a>`
+            : ''}
+        </div>
+      `;
+      listEl.appendChild(li);
+      prevStop = s;
     });
 }
 
