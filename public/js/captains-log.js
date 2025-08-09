@@ -35,6 +35,24 @@ function getColorForRating(r) {
   return "#1a9850"; // 5
 }
 
+// pick legible text color for a background
+function badgeTextColor(bg) {
+  const hex = bg.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#000" : "#fff";
+}
+
+// build star rating markup
+function makeStars(r) {
+  if (r == null) return "";
+  const full = "★".repeat(Math.round(r));
+  const empty = "☆".repeat(5 - Math.round(r));
+  return `<span class="stars">${full}${empty}</span>`;
+}
+
 function initMap(stops, places) {
   const map = L.map("map").setView([0, 0], 2);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
@@ -92,36 +110,30 @@ function initMap(stops, places) {
 }
 
 function renderList(stops, speed) {
-  const tableEl = document.getElementById("planning-table");
-  tableEl.innerHTML = `
-    <thead>
-      <tr>
-        <th>Stop</th>
-        <th>Distance (NM)</th>
-        <th>ETA</th>
-        <th>Stay</th>
-        <th>Navily</th>
-        <th>Trello</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
+  const listEl = document.getElementById("planning-list");
+  listEl.innerHTML = "";
+  listEl.classList.add("timeline");
 
-  const tbody = tableEl.querySelector("tbody");
-
+  // current location
   const current = stops.find((s) => s.dueComplete);
-  let prevStop = current;
   if (current) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>Current: ${current.name}</td>
-      <td></td><td></td><td></td>
-      <td>${current.navilyUrl ? `<a href="${current.navilyUrl}" target="_blank">Link</a>` : ""}</td>
-      <td><a href="${current.trelloUrl}" target="_blank">Link</a></td>
+    const li = document.createElement("li");
+    li.className = "stop-card current";
+    li.innerHTML = `
+      <h4>Current: ${current.name}</h4>
+      <div class="links">
+        ${
+          current.navilyUrl
+            ? `<a href="${current.navilyUrl}" target="_blank">Navily</a>`
+            : ""
+        }
+        <a href="${current.trelloUrl}" target="_blank">Trello</a>
+      </div>
     `;
-    tbody.appendChild(tr);
+    listEl.appendChild(li);
   }
 
+  // future stops
   const future = stops.filter((s) => !s.dueComplete);
   future.forEach((s, idx) => {
     const next = future[idx + 1];
@@ -141,44 +153,63 @@ function renderList(stops, speed) {
     return acc;
   }, {});
 
+  let prevStop = current;
   Object.keys(byDay)
     .sort()
     .forEach((dayKey) => {
-      const dayRow = document.createElement("tr");
-      dayRow.className = "day-row";
-      const th = document.createElement("th");
-      th.colSpan = 6;
-      th.textContent = new Date(dayKey).toLocaleDateString();
-      dayRow.appendChild(th);
-      tbody.appendChild(dayRow);
+      const dateHeader = document.createElement("h3");
+      dateHeader.textContent = new Date(dayKey).toLocaleDateString();
+      listEl.appendChild(dateHeader);
 
       byDay[dayKey].forEach((s) => {
-        let distance = "";
-        let eta = "";
+        let infoHtml = "";
         if (prevStop) {
           const meters = haversine(prevStop.lat, prevStop.lng, s.lat, s.lng);
           const nm = toNM(meters);
-          distance = nm.toFixed(1);
-          eta = formatDuration(nm / speed);
+          const eta = formatDuration(nm / speed);
+          infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
         }
 
-        let stay = "";
+        let stayHtml = "";
         if (s.hoursToNext != null) {
           const hrs = Math.round(s.hoursToNext);
-          stay = `${hrs}h ${s.overnight ? "Overnight" : "Lunchtime swim"}`;
+          const overnightText = s.overnight ? " (overnight)" : "";
+          stayHtml = `<div class="stay">${hrs}h until next stop${overnightText}</div>`;
         }
 
-        const tr = document.createElement("tr");
-        if (s.overnight) tr.classList.add("overnight");
-        tr.innerHTML = `
-        <td>${s.name}</td>
-        <td>${distance}</td>
-        <td>${eta}</td>
-        <td>${stay}</td>
-        <td>${s.navilyUrl ? `<a href="${s.navilyUrl}" target="_blank">Link</a>` : ""}</td>
-        <td><a href="${s.trelloUrl}" target="_blank">Link</a></td>
-      `;
-        tbody.appendChild(tr);
+        const labels = Array.isArray(s.labels) ? s.labels : [];
+        const badges = labels
+          .map((l) => {
+            const bg = l.color || "#888";
+            const fg = badgeTextColor(bg);
+            return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+          })
+          .join("");
+
+        const stars = makeStars(s.rating);
+        const ratingHtml = stars ? `<div class="rating">${stars}</div>` : "";
+
+        const li = document.createElement("li");
+        li.className = "stop-card" + (s.overnight ? " overnight" : "");
+        li.onclick = () => window.open(s.trelloUrl, "_blank");
+
+        li.innerHTML = `
+          <div class="header">${badges}</div>
+          <h4>${s.name}</h4>
+          <div class="subtitle">${s.listName || ""}</div>
+          ${ratingHtml}
+          <div class="info">${infoHtml}</div>
+          ${stayHtml}
+          <div class="links">
+            <a href="${s.trelloUrl}" target="_blank">Trello</a>
+            ${
+              s.navilyUrl
+                ? `<a href="${s.navilyUrl}" target="_blank">Navily</a>`
+                : ""
+            }
+          </div>
+        `;
+        listEl.appendChild(li);
         prevStop = s;
       });
     });

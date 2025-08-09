@@ -41,43 +41,77 @@ body {
   border-bottom: 3px solid #0077cc;
 }
 
-/* planning table */
-.stop-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
+/* timeline list */
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.timeline h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1rem;
+  color: #555;
+}
+.stop-card {
+  position: relative;
+  margin: 0 0 1rem 1.5rem;
+  padding: 1rem;
+  background: #fff;
+  border-left: 3px solid #0077cc;
   border-radius: 0.5rem;
-  overflow: hidden;
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  margin-bottom: 1rem;
 }
-.stop-table th,
-.stop-table td {
-  padding: 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-  font-size: 0.9rem;
+.stop-card:before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 1rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: #0077cc;
+  border-radius: 50%;
 }
-.stop-table thead {
-  background: #f0f0f0;
+.stop-card.overnight {
+  border-left-color: #f39c12;
 }
-.stop-table tbody tr:nth-child(even) {
-  background: #fafafa;
+.stop-card.overnight:before {
+  background: #f39c12;
 }
-.stop-table tbody tr.overnight {
-  background: #fff8e1;
+.stop-card .header {
+  margin-bottom: 0.25rem;
 }
-.stop-table a {
+.stop-card .subtitle {
+  font-size: 0.85rem;
+  color: #555;
+}
+.stop-card .info {
+  font-size: 0.85rem;
+  color: #555;
+}
+.stop-card .stay {
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 0.25rem;
+}
+.stop-card .links a {
+  margin-right: 0.75rem;
   color: #0077cc;
   text-decoration: none;
+  font-size: 0.85rem;
 }
-.stop-table a:hover {
+.stop-card .links a:hover {
   text-decoration: underline;
 }
-.day-row th {
-  background: #0077cc;
-  color: #fff;
-  font-size: 1rem;
+.label {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  margin-right: 0.25rem;
+}
+.rating {
+  color: #ffb400;
+  margin: 0.25rem 0;
 }
 
 #map {
