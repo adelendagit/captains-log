@@ -3,124 +3,128 @@
   display: none !important;
 }
 
-/* Remove default list bullets & spacing */
-#planning-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-#planning-list li {
-  list-style: none;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f5f7;
   margin: 0;
   padding: 0;
 }
 
-#map {
-  width: 100%;
-  height: 400px; /* or any height you prefer */
-  margin-bottom: 1rem;
+.page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1rem;
 }
 
-/* make cards pop off the page */
-.stop-card {
-  background: #ffffff;
-  border-radius: 0.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  border-left: 4px solid #0077cc;  /* accent line */
-  padding: 1.2rem;
-  margin-bottom: 1rem;
-  transition: transform 0.15s, box-shadow 0.15s;
+.tab-nav {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.tab-nav button {
+  flex: 1;
+  padding: 0.75rem 0;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #555;
   cursor: pointer;
 }
-.stop-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+
+.tab-nav button.active {
+  color: #000;
+  border-bottom: 3px solid #0077cc;
 }
 
-/* title and subtitle */
-.stop-card h4 {
-  margin: 0 0 0.35rem;
-  font-size: 1.25rem;
-  line-height: 1.2;
-  color: #333;
+/* timeline list */
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.timeline h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1rem;
+  color: #555;
+}
+.stop-card {
+  position: relative;
+  margin: 0 0 1rem 1.5rem;
+  padding: 1rem;
+  background: #fff;
+  border-left: 3px solid #0077cc;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.stop-card:before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 1rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: #0077cc;
+  border-radius: 50%;
+}
+.stop-card.overnight {
+  border-left-color: #f39c12;
+}
+.stop-card.overnight:before {
+  background: #f39c12;
+}
+.stop-card .header {
+  margin-bottom: 0.25rem;
 }
 .stop-card .subtitle {
-  font-size: 0.9rem;
-  color: #666;
-  margin-bottom: 0.75rem;
-}
-
-/* badge container */
-.stop-card .header {
-  margin-bottom: 0.6rem;
-}
-
-/* Trello label badges */
-.stop-card .label {
-  display: inline-block;
-  padding: 0.25rem 0.6rem;
-  margin-right: 0.4rem;
-  margin-bottom: 0.4rem;
-  border-radius: 0.3rem;
-  font-size: 0.75rem;
-  font-weight: bold;
-}
-
-/* star rating */
-.stop-card .rating {
-  margin-bottom: 0.75rem;
-  font-size: 1.1rem;
-  color: gold;
-  line-height: 1;
-}
-
-/* info line (distance & ETA) */
-.stop-card .info {
-  font-style: italic;
-  color: #555;
-  margin-bottom: 0.75rem;
-}
-
-/* Trello & Navily links */
-.stop-card .links {
   font-size: 0.85rem;
-  margin-top: 0.5rem;
+  color: #555;
+}
+.stop-card .info {
+  font-size: 0.85rem;
+  color: #555;
+}
+.stop-card .stay {
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 0.25rem;
 }
 .stop-card .links a {
-  text-decoration: none;
+  margin-right: 0.75rem;
   color: #0077cc;
-  margin-right: 1rem;
+  text-decoration: none;
+  font-size: 0.85rem;
 }
 .stop-card .links a:hover {
   text-decoration: underline;
 }
+.label {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  margin-right: 0.25rem;
+}
+.rating {
+  color: #ffb400;
+  margin: 0.25rem 0;
+}
 
-/* timeline layout */
-#planning-list.timeline {
-  position: relative;
-  padding-left: 2rem;
-  border-left: 2px solid #ccc;
+#map {
+  width: 100%;
+  height: 50vh;
+  min-height: 300px;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
 }
-#planning-list.timeline .stop-card {
-  border-left: none;
-  margin-bottom: 2rem;
-}
-#planning-list.timeline .stop-card::before {
-  content: '';
-  position: absolute;
-  left: -9px;
-  top: 1.2rem;
-  width: 12px;
-  height: 12px;
-  background: #0077cc;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px #ccc;
-}
-#planning-list.timeline .stop-card.overnight::before {
-  background: #ff9800;
-}
-.stop-card .stay {
-  margin-bottom: 0.75rem;
-  color: #333;
+
+@media (max-width: 600px) {
+  #map {
+    height: 40vh;
+  }
 }
