@@ -218,6 +218,7 @@ function renderList(stops, speed) {
       listEl.appendChild(li);
       prevStop = s;
     });
+  });
 }
 
 function initTabs() {
