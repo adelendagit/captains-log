@@ -4,6 +4,7 @@
   rel="stylesheet"
   href="https://unpkg.com/leaflet/dist/leaflet.css"
 />
+<link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.4.2/css/all.min.css">
 <link rel="stylesheet" href="/css/captains-log.css">
 
 <main class="page">
@@ -14,22 +15,27 @@
 </div>
 
 <section id="planning" class="tab-content">
-  <div class="controls">
-    <label>
-      Speed:
-      <input
-        type="number"
-        id="speed-input"
-        value="6"
-        min="1"
-        step="0.5"
-      >
-      knots
-    </label>
-  </div>
-
   <div id="map"></div>
-  <ul id="planning-list" class="timeline"></ul>
+  <div class="table-col">
+    <div class="controls">
+      <label for="speed-input">
+        <span class="speed-label">Speed</span>
+        <input
+          type="number"
+          id="speed-input"
+          value="6"
+          min="1"
+          step="0.5"
+        >
+        <span class="speed-units">knots</span>
+      </label>
+      <label class="toggle-label">
+        <input type="checkbox" id="planned-only-toggle" checked>
+        <span>Show only planned stops on map</span>
+      </label>
+    </div>
+    <table id="planning-table" class="planning-table"></table>
+  </div>
 </section>
 
 

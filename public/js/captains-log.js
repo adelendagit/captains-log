@@ -67,8 +67,6 @@ function initMap(stops, places) {
     // choose color: blue for current, else by rating
     const color = s.dueComplete ? "#3182bd" : getColorForRating(s.rating);
 
-    console.log(`Stop "${s.name}" rating=${s.rating} → color=${color}`);
-
     L.circleMarker(ll, {
       radius: 7,
       fillColor: color,
@@ -86,10 +84,13 @@ function initMap(stops, places) {
       );
   });
 
-  // fit to stops only
-  if (stopCoords.length) {
-    map.fitBounds(stopCoords, { padding: [40, 40] });
-  }
+  // Ensure the map knows its size before fitting bounds
+  setTimeout(() => {
+    map.invalidateSize();
+    if (stopCoords.length) {
+      map.fitBounds(stopCoords, { padding: [40, 40] });
+    }
+  }, 0);
 
   // plot other places without changing zoom
   places.forEach((p) => {
@@ -221,6 +222,67 @@ function renderList(stops, speed) {
   });
 }
 
+function renderTable(stops, speed) {
+  const tableEl = document.getElementById("planning-table");
+  tableEl.innerHTML = `
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Name</th>
+        <th>List</th>
+        <th>Rating</th>
+        <th>Distance (NM)</th>
+        <th>ETA</th>
+        <th>Links</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = tableEl.querySelector("tbody");
+  let prevStop = stops.find(s => s.dueComplete);
+
+  stops.forEach((s) => {
+    if (!s.due) return; // skip places without a due date
+
+    // Distance & ETA
+    let nm = "", eta = "";
+    if (prevStop) {
+      const meters = haversine(prevStop.lat, prevStop.lng, s.lat, s.lng);
+      nm = toNM(meters).toFixed(1);
+      eta = formatDuration(nm / speed);
+    }
+
+    // Rating
+    const stars = makeStars(s.rating);
+
+    // Links
+    const links = `
+      <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
+        <i class="fab fa-trello"></i>
+      </a>
+      ${s.navilyUrl ? `
+        <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
+          <i class="fa-solid fa-anchor"></i>
+        </a>
+      ` : ""}
+    `;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${new Date(s.due).toLocaleDateString()}</td>
+      <td>${s.name}</td>
+      <td>${s.listName}</td>
+      <td>${stars}</td>
+      <td>${nm}</td>
+      <td>${eta}</td>
+      <td>${links}</td>
+    `;
+    tbody.appendChild(tr);
+    prevStop = s;
+  });
+}
+
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -237,16 +299,33 @@ function initTabs() {
 }
 
 async function init() {
-  const { stops, places } = await fetchData(); // server has already excluded Trips
+  const { stops, places } = await fetchData();
   console.log("Planned stops:", stops);
 
   const speedInput = document.getElementById("speed-input");
-  initMap(stops, places);
-  renderList(stops, parseFloat(speedInput.value));
+  const plannedOnlyToggle = document.getElementById("planned-only-toggle");
+
+  function renderMapWithToggle() {
+    // Remove any existing map instance
+    if (document.getElementById("map")._leaflet_id) {
+      document.getElementById("map")._leaflet_id = null;
+      document.getElementById("map").innerHTML = "";
+    }
+    if (plannedOnlyToggle.checked) {
+      initMap(stops, []);
+    } else {
+      initMap(stops, places);
+    }
+  }
+
+  renderMapWithToggle();
+  renderTable(stops, parseFloat(speedInput.value));
 
   speedInput.addEventListener("input", () => {
-    renderList(stops, parseFloat(speedInput.value) || 0);
+    renderTable(stops, parseFloat(speedInput.value) || 0);
   });
+
+  plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
 
   initTabs();
 }
