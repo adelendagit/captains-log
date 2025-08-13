@@ -283,6 +283,48 @@ function renderTable(stops, speed) {
   });
 }
 
+function renderCards(stops, speed) {
+  const container = document.getElementById("planning-list");
+  container.innerHTML = "";
+  let prevStop = stops.find(s => s.dueComplete);
+
+  stops.forEach((s) => {
+    if (!s.due) return;
+    let nm = "", eta = "";
+    if (prevStop) {
+      const meters = haversine(prevStop.lat, prevStop.lng, s.lat, s.lng);
+      nm = toNM(meters).toFixed(1);
+      eta = formatDuration(nm / speed);
+    }
+    const stars = makeStars(s.rating);
+    const links = `
+      <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
+        <i class="fab fa-trello"></i>
+      </a>
+      ${s.navilyUrl ? `
+        <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
+          <i class="fa-solid fa-anchor"></i>
+        </a>
+      ` : ""}
+    `;
+    const card = document.createElement("div");
+    card.className = "stop-card";
+    card.innerHTML = `
+      <div class="stop-header">
+        <span class="stop-date">${new Date(s.due).toLocaleDateString()}</span>
+        <span class="stop-list">${s.listName}</span>
+      </div>
+      <div class="stop-name">${s.name}</div>
+      <div class="stop-rating">${stars}</div>
+      <div class="stop-distance"><strong>Distance:</strong> ${nm} NM</div>
+      <div class="stop-eta"><strong>ETA:</strong> ${eta}</div>
+      <div class="stop-links">${links}</div>
+    `;
+    container.appendChild(card);
+    prevStop = s;
+  });
+}
+
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -320,9 +362,13 @@ async function init() {
 
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
+  renderCards(stops, parseFloat(speedInput.value));
 
+  // Update on speed change:
   speedInput.addEventListener("input", () => {
-    renderTable(stops, parseFloat(speedInput.value) || 0);
+    const speed = parseFloat(speedInput.value) || 0;
+    renderTable(stops, speed);
+    renderCards(stops, speed);
   });
 
   plannedOnlyToggle.addEventListener("change", renderMapWithToggle);

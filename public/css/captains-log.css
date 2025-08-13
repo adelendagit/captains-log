@@ -254,6 +254,25 @@ body {
   overflow: hidden;
 }
 
+#planning-list {
+  display: none;
+}
+.planning-table {
+  display: table;
+}
+
+@media (max-width: 899px) {
+  #planning-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    margin-bottom: 2rem;
+  }
+  .planning-table {
+    display: none;
+  }
+}
+
 @media (min-width: 900px) {
   #planning {
     display: flex;
