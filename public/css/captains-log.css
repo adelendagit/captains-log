@@ -299,3 +299,71 @@ body {
     max-width: none;
   }
 }
+
+.area-header {
+  font-size: 1.2em;
+  font-weight: bold;
+  margin-top: 2rem;
+  color: #0077cc;
+  letter-spacing: 0.03em;
+}
+.day-header {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 1.2rem 0 0.5rem 0.5rem;
+  color: #555;
+}
+.stop-card .stop-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  margin-bottom: 0.2em;
+}
+.stop-type {
+  background: #f7fafc;
+  color: #0077cc;
+  border-radius: 1em;
+  padding: 0.1em 0.7em;
+  font-size: 0.85em;
+  margin-left: auto;
+}
+.current-badge {
+  background: #3182bd;
+  color: #fff;
+  border-radius: 1em;
+  padding: 0.1em 0.7em;
+  font-size: 0.85em;
+  margin-left: 0.5em;
+}
+.current-stop {
+  border-left: 3px solid #3182bd !important;
+  box-shadow: 0 0 0 2px #3182bd22;
+}
+.area-header-table {
+  background: #eaf6fb;
+  color: #0077cc;
+  font-weight: bold;
+  font-size: 1.1em;
+  letter-spacing: 0.03em;
+  padding-top: 1.2em;
+  border-top: 2px solid #b3e0fc;
+}
+.day-header-table {
+  background: #f7fafc;
+  color: #555;
+  font-weight: 600;
+  font-size: 1em;
+  padding-left: 1.5em;
+}
+.current-stop-row {
+  border-left: 4px solid #3182bd;
+  background: #eaf6fb;
+}
+.current-badge-table {
+  background: #3182bd;
+  color: #fff;
+  border-radius: 1em;
+  padding: 0.1em 0.7em;
+  font-size: 0.85em;
+  margin-left: 0.5em;
+}
