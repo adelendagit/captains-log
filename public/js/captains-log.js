@@ -91,8 +91,9 @@ function initMap(stops, places) {
           (s.dueComplete
             ? ""
             : `${new Date(s.due).toLocaleDateString()}<br>` +
-              `Rating: ${s.rating ?? "–"}/5`),
-      );
+              `Rating: ${s.rating ?? "–"}/5`)
+      )
+      .bindTooltip(s.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
   });
 
   // Ensure the map knows its size before fitting bounds
