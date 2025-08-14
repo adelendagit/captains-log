@@ -406,7 +406,7 @@ function renderCards(stops, speed) {
     container.appendChild(card);
   }
 
-  // Group all other stops by area and day
+  // Group all other stops by area and day 
   const byArea = {};
   stops.filter(s => !s.dueComplete && s.due).forEach(s => {
     if (!byArea[s.listName]) byArea[s.listName] = [];
