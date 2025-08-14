@@ -20,6 +20,17 @@ function formatDuration(h) {
   return `${hh}h ${mm}m`;
 }
 
+function formatDurationRounded(h) {
+  if (!isFinite(h)) return "";
+  // Round to nearest 15 minutes
+  const totalMinutes = Math.round(h * 60 / 15) * 15;
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  if (hh && mm) return `${hh}h ${mm}m`;
+  if (hh) return `${hh}h`;
+  return `${mm}m`;
+}
+
 async function fetchData() {
   const res = await fetch("/api/data");
   return res.json();
@@ -171,7 +182,7 @@ function renderList(stops, speed) {
       if (prev) {
         const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
         const nm     = toNM(meters);
-        const eta    = formatDuration(nm / speed);
+        const eta    = formatDurationRounded(nm / speed);
         infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
       }
 
@@ -288,6 +299,7 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
   areaRow.className = "area-header-row";
   areaRow.innerHTML = `<td colspan="5" class="area-header-table">${area}</td>`;
   tbody.appendChild(areaRow);
+  
 
   // 2. Group area stops by day
   const byDay = {};
@@ -298,16 +310,68 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
   });
 
   Object.entries(byDay).sort().forEach(([day, dayStops]) => {
-    // Day header row
+    // Day header row (calculate totals)
+    let dayTotalNM = 0, dayTotalH = 0;
+    let dayPrev = prevStop;
+    dayStops.forEach((s) => {
+      if (dayPrev) {
+        const [lat1, lng1] = getLatLng(dayPrev);
+        const [lat2, lng2] = getLatLng(s);
+        if (
+          typeof lat1 === "number" && typeof lng1 === "number" &&
+          typeof lat2 === "number" && typeof lng2 === "number"
+        ) {
+          const meters = haversine(lat1, lng1, lat2, lng2);
+          const nm = toNM(meters);
+          dayTotalNM += nm;
+          dayTotalH += nm / speed;
+        }
+      }
+      dayPrev = s;
+    });
+
     const dayRow = document.createElement("tr");
     dayRow.className = "day-header-row";
-    dayRow.innerHTML = `<td colspan="5" class="day-header-table">${formatDayLabel(day)}</td>`;
+    dayRow.innerHTML = `<td colspan="5" class="day-header-table">
+      ${formatDayLabel(day)}
+      <span class="day-totals">
+        ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
+        ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
+      </span>
+    </td>`;
     tbody.appendChild(dayRow);
 
     // Sort stops by time
     dayStops.sort((a, b) => new Date(a.due) - new Date(b.due));
 
-    // DO NOT reset prevStop here!
+    // Insert current stop first if it belongs to this area/day
+    if (current && current.listName === area && current.due && current.due.slice(0,10) === day) {
+      const stars = makeStars(current.rating);
+      const links = `
+        <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
+          <i class="fab fa-trello"></i>
+        </a>
+        ${current.navilyUrl ? `
+          <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
+            <i class="fa-solid fa-anchor"></i>
+          </a>
+        ` : ""}
+      `;
+      const tr = document.createElement("tr");
+      tr.className = "current-stop-row";
+      tr.innerHTML = `
+        <td>${current.name} <span class="current-badge-table">Current</span></td>
+        <td>${stars}</td>
+        <td></td>
+        <td></td>
+        <td>${links}</td>
+      `;
+      tbody.appendChild(tr);
+      // Set prevStop for next leg
+      prevStop = current;
+    }
+
+    // Now render the rest of the stops for this day
     dayStops.forEach((s, idx) => {
       // Distance & ETA using custom field lat/lng
       let nm = "", eta = "";
@@ -320,14 +384,10 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
         ) {
           const meters = haversine(lat1, lng1, lat2, lng2);
           nm = toNM(meters).toFixed(1);
-          eta = formatDuration(nm / speed);
+          eta = formatDurationRounded(nm / speed);
         }
       }
-
-      // Rating
       const stars = makeStars(s.rating);
-
-      // Links
       const links = `
         <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
           <i class="fab fa-trello"></i>
@@ -338,7 +398,6 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
           </a>
         ` : ""}
       `;
-
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${s.name}</td>
@@ -348,7 +407,7 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
         <td>${links}</td>
       `;
       tbody.appendChild(tr);
-      prevStop = s; // <-- update for next stop in the whole route
+      prevStop = s;
     });
   });
 });
@@ -379,32 +438,7 @@ function renderCards(stops, speed) {
       : [null, null];
   }
 
-  // Show current stop at the top, ungrouped
   const current = stops.find(s => s.dueComplete);
-  if (current) {
-    const stars = makeStars(current.rating);
-    const links = `
-      <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
-        <i class="fab fa-trello"></i>
-      </a>
-      ${current.navilyUrl ? `
-        <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
-          <i class="fa-solid fa-anchor"></i>
-        </a>
-      ` : ""}
-    `;
-    const card = document.createElement("div");
-    card.className = "stop-card current-stop";
-    card.innerHTML = `
-      <div class="stop-header">
-        <span class="current-badge">Current</span>
-      </div>
-      <div class="stop-name">${current.name}</div>
-      <div class="stop-rating">${stars}</div>
-      <div class="stop-links">${links}</div>
-    `;
-    container.appendChild(card);
-  }
 
   // Group all other stops by area and day 
   const byArea = {};
@@ -432,18 +466,60 @@ function renderCards(stops, speed) {
     });
 
     Object.entries(byDay).sort().forEach(([day, dayStops]) => {
-      // Day header
+      // Day totals
+      let dayTotalNM = 0, dayTotalH = 0;
+      let dayPrev = prevStop;
+      dayStops.forEach((s) => {
+        if (dayPrev) {
+          const [lat1, lng1] = getLatLng(dayPrev);
+          const [lat2, lng2] = getLatLng(s);
+          if (
+            typeof lat1 === "number" && typeof lng1 === "number" &&
+            typeof lat2 === "number" && typeof lng2 === "number"
+          ) {
+            const meters = haversine(lat1, lng1, lat2, lng2);
+            const nm = toNM(meters);
+            dayTotalNM += nm;
+            dayTotalH += nm / speed;
+          }
+        }
+        dayPrev = s;
+      });
+
       const dayHeader = document.createElement("h3");
-      dayHeader.textContent = formatDayLabel(day);
+      dayHeader.textContent = `${formatDayLabel(day)}${dayTotalNM ? ` • ${dayTotalNM.toFixed(1)} NM` : ""}${dayTotalH ? ` • ${formatDurationRounded(dayTotalH)}` : ""}`;
       dayHeader.className = "day-header";
       container.appendChild(dayHeader);
 
-      // Sort stops by time
-      dayStops.sort((a, b) => new Date(a.due) - new Date(b.due));
+      // Insert current stop first if it belongs to this area/day
+      if (current && current.listName === area && current.due && current.due.slice(0,10) === day) {
+        const stars = makeStars(current.rating);
+        const links = `
+          <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
+            <i class="fab fa-trello"></i>
+          </a>
+          ${current.navilyUrl ? `
+            <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
+              <i class="fa-solid fa-anchor"></i>
+            </a>
+          ` : ""}
+        `;
+        const card = document.createElement("div");
+        card.className = "stop-card current-stop";
+        card.innerHTML = `
+          <div class="stop-header">
+            <span class="current-badge">Current</span>
+          </div>
+          <div class="stop-name">${current.name}</div>
+          <div class="stop-rating">${stars}</div>
+          <div class="stop-links">${links}</div>
+        `;
+        container.appendChild(card);
+        prevStop = current;
+      }
 
-      let prevStop = null;
+      // Now render the rest of the stops for this day
       dayStops.forEach((s, idx) => {
-        // Distance & ETA using custom field lat/lng
         let nm = "", eta = "";
         if (prevStop) {
           const [lat1, lng1] = getLatLng(prevStop);
@@ -454,10 +530,9 @@ function renderCards(stops, speed) {
           ) {
             const meters = haversine(lat1, lng1, lat2, lng2);
             nm = toNM(meters).toFixed(1);
-            eta = formatDuration(nm / speed);
+            eta = formatDurationRounded(nm / speed);
           }
         }
-
         const stars = makeStars(s.rating);
         const links = `
           <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
@@ -469,7 +544,6 @@ function renderCards(stops, speed) {
             </a>
           ` : ""}
         `;
-
         const card = document.createElement("div");
         card.className = "stop-card";
         card.innerHTML = `
