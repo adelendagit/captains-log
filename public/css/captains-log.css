@@ -406,6 +406,33 @@ body {
 .log-table tr:last-child td {
   border-bottom: none;
 }
+.historical-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  padding: 0.7em 0.5em;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 1em;
+}
+.historical-log-place {
+  font-weight: 600;
+  color: #0077cc;
+  min-width: 120px;
+}
+.historical-log-date {
+  color: #555;
+  font-size: 0.95em;
+  min-width: 110px;
+}
+.historical-log-rating {
+  color: #ffb400;
+  font-size: 1.2em;
+}
+.historical-log-links a {
+  margin-right: 0.5em;
+  color: #0077cc;
+  font-size: 1.2em;
+}
 @media (max-width: 899px) {
   .log-table {
     display: table;
