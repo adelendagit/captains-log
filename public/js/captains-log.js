@@ -1,5 +1,7 @@
 // public/js/captains-log.js
 
+let leafletMap = null;
+
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -64,6 +66,26 @@ function makeStars(r) {
   return `<span class="stars">${full}${empty}</span>`;
 }
 
+function setupLogTab() {
+  const tripSelect = document.getElementById("log-trip-select");
+  if (tripSelect) tripSelect.style.display = "none"; // Hide trip selector for now
+
+  let logsLoaded = false;
+  let logs = [];
+
+  async function loadLogs() {
+    if (logsLoaded) return;
+    const res = await fetch("/api/logs");
+    const data = await res.json();
+    logs = data.logs || [];
+    renderLog(logs);
+    logsLoaded = true;
+  }
+
+  // Listen for tab activation
+  document.querySelector('[data-tab="log"]').addEventListener("click", loadLogs);
+}
+
 function initMap(stops, places) {
   const map = L.map("map").setView([0, 0], 2);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
@@ -79,11 +101,13 @@ function initMap(stops, places) {
     const color = s.dueComplete ? "#3182bd" : getColorForRating(s.rating);
 
     L.circleMarker(ll, {
-      radius: 7,
+      radius: 14, // larger for easier tapping
       fillColor: color,
-      color: "#000",
-      weight: 1,
-      fillOpacity: 0.8,
+      color: "#222", // darker border for contrast
+      weight: 3,     // thicker border
+      fillOpacity: 0.88,
+      opacity: 1,
+      className: "map-stop-marker"
     })
       .addTo(map)
       .bindPopup(
@@ -109,7 +133,7 @@ function initMap(stops, places) {
     const ll = [p.lat, p.lng];
     const color = getColorForRating(p.rating);
     L.circleMarker(ll, {
-      radius: 6,
+      radius: 10,
       fillColor: color,
       color: "#000",
       weight: 1,
@@ -118,8 +142,16 @@ function initMap(stops, places) {
       .addTo(map)
       .bindPopup(
         `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`,
-      );
+      )
+      .bindTooltip(p.name, {
+        permanent: false, // only show on hover/tap
+        direction: "right",
+        offset: [10, 0],
+        className: "map-label"
+      })
   });
+  
+  return map;
 }
 
 function renderList(stops, speed) {
@@ -575,6 +607,36 @@ function renderCards(stops, speed) {
   }
 }
 
+function renderLog(logs) {
+  const table = document.getElementById("log-table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Type</th>
+        <th>Place</th>
+        <th>Comment</th>
+        <th>Link</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${logs
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+        .map(l => `
+          <tr>
+            <td>${new Date(l.timestamp).toLocaleDateString()}</td>
+            <td>${new Date(l.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+            <td>${l.type}</td>
+            <td>${l.cardName}</td>
+            <td>${l.comment.replace(/timestamp:.*/i, "").trim()}</td>
+            <td><a href="${l.trelloUrl}" target="_blank"><i class="fab fa-trello"></i></a></td>
+          </tr>
+        `).join("")}
+    </tbody>
+  `;
+}
+
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -591,28 +653,30 @@ function initTabs() {
 }
 
 async function init() {
-  const { stops, places } = await fetchData();
+  const { stops, places, logs } = await fetchData();
   console.log("Planned stops:", stops);
 
   const speedInput = document.getElementById("speed-input");
   const plannedOnlyToggle = document.getElementById("planned-only-toggle");
 
   function renderMapWithToggle() {
-    // Remove any existing map instance
-    if (document.getElementById("map")._leaflet_id) {
-      document.getElementById("map")._leaflet_id = null;
-      document.getElementById("map").innerHTML = "";
+    // Properly remove any existing map instance
+    if (leafletMap) {
+      leafletMap.remove();
+      leafletMap = null;
     }
     if (plannedOnlyToggle.checked) {
-      initMap(stops, []);
+      leafletMap = initMap(stops, []);
     } else {
-      initMap(stops, places);
+      leafletMap = initMap(stops, places);
     }
   }
 
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
   renderCards(stops, parseFloat(speedInput.value));
+  setupLogTab();
+
 
   // Update on speed change:
   speedInput.addEventListener("input", () => {

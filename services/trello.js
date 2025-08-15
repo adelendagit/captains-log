@@ -13,4 +13,30 @@ async function fetchBoard() {
   return data;
 }
 
-module.exports = { fetchBoard };
+async function fetchAllComments() {
+  let allActions = [];
+  let before = null;
+  let keepGoing = true;
+
+  while (keepGoing) {
+    const url = BASE_URL +
+      `/actions?filter=commentCard&limit=1000${before ? `&before=${before}` : ''}&key=${KEY}&token=${TOKEN}`;
+    const { data } = await axios.get(url);
+    allActions = allActions.concat(data);
+
+    if (data.length < 1000) {
+      keepGoing = false;
+    } else {
+      before = data[data.length - 1].id;
+    }
+  }
+  return allActions;
+}
+
+async function fetchBoardWithAllComments() {
+  const { data: board } = await axios.get(BASE_URL + QUERY);
+  board.allComments = await fetchAllComments();
+  return board;
+}
+
+module.exports = { fetchBoard, fetchAllComments, fetchBoardWithAllComments };

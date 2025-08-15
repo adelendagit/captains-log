@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const { fetchBoard } = require('../services/trello');
+const { fetchBoard, fetchAllComments } = require('../services/trello');
 
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
@@ -82,6 +82,18 @@ router.get('/api/data', async (req, res, next) => {
           trelloUrl: c.shortUrl
         };
       });
+      
+      // Helper to extract timestamp from comment text
+      function extractTimestamp(text, fallback) {
+        const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
+        if (match) {
+          // Try to parse as ISO or "YYYY-mm-dd hh:mm"
+          const ts = match[1].trim().replace(' ', 'T');
+          const d = new Date(ts.length === 16 ? ts + ':00' : ts); // add seconds if missing
+          if (!isNaN(d)) return d.toISOString();
+        }
+        return fallback;
+      }
 
     res.json({ stops, places });
   } catch(err) {
@@ -89,6 +101,49 @@ router.get('/api/data', async (req, res, next) => {
   }
 });
 
+router.get('/api/logs', async (req, res, next) => {
+  try {
+    const { cards, lists } = await fetchBoard();
+    const allComments = await fetchAllComments();
+    const listNames = Object.fromEntries(lists.map(l=>[l.id,l.name]));
+
+    function extractTimestamp(text, fallback) {
+      const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
+      if (match) {
+        const ts = match[1].trim().replace(' ', 'T');
+        const d = new Date(ts.length === 16 ? ts + ':00' : ts);
+        if (!isNaN(d)) return d.toISOString();
+      }
+      return fallback;
+    }
+
+    const logs = allComments
+      .filter(a => a.type === 'commentCard' && a.data && a.data.text)
+      .map(a => {
+        const text = a.data.text;
+        let type = null;
+        if (/^arrived\b/i.test(text)) type = "Arrived";
+        if (/^departed\b/i.test(text)) type = "Departed";
+        if (!type) return null;
+        const card = cards.find(c => c.id === a.data.card.id);
+        const timestamp = extractTimestamp(text, a.date);
+        return {
+          area: card && card.idList ? listNames[card.idList] : "Unknown",
+          cardName: card ? card.name : (a.data.card.name || "Unknown"),
+          type,
+          timestamp,
+          comment: text,
+          cardId: a.data.card.id,
+          trelloUrl: card ? card.shortUrl : undefined
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ logs });
+  } catch(err) {
+    next(err);
+  }
+});
 
 // existing render route
 router.get('/captains-log', async (req, res, next) => {
