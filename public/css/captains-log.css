@@ -381,3 +381,40 @@ body {
   font-size: 0.85em;
   margin-left: 0.5em;
 }
+.log-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #fff;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 4px 24px 0 rgba(0,0,0,0.08);
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+.log-table th, .log-table td {
+  padding: 1rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+.log-table th {
+  background: #f7fafc;
+  color: #222;
+  font-weight: 700;
+  border-bottom: 2px solid #e0e0e0;
+}
+.log-table tr:last-child td {
+  border-bottom: none;
+}
+@media (max-width: 899px) {
+  .log-table {
+    display: table;
+    font-size: 0.95em;
+    overflow-x: auto;
+    width: 100%;
+  }
+  .log-table th, .log-table td {
+    padding: 0.7em 0.5em;
+    font-size: 0.95em;
+  }
+}
