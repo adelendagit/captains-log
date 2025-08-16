@@ -12,7 +12,7 @@
 <div class="tab-nav">
   <button data-tab="planning" class="active">Planning</button>
   <button data-tab="historical">Historical Trips</button>
-  <button data-tab="historical-log">Log</button>
+  <button data-tab="log">Log</button>
 </div>
 
 <section id="planning" class="tab-content">
@@ -40,11 +40,6 @@
   </div>
 </section>
 
-<section id="historical-log" class="tab-content hidden">
-  <div id="historical-log-list"></div>
-  <div id="historical-log-map" style="height: 350px; margin-top: 2rem;"></div>
-</section>
-
 <section id="historical" class="tab-content hidden">
   <% historical.forEach(group => { %>
     <h3><%= group.year %></h3>
@@ -65,6 +60,10 @@
   <% }) %>
 </section>
 
+<section id="log" class="tab-content hidden">
+  <div id="log-map" style="height: 350px; margin-top: 2rem;"></div>
+  <div id="log-list"></div>
+</section>
 </main>
 
 <!-– Leaflet core ––>

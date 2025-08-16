@@ -66,16 +66,6 @@ function makeStars(r) {
   return `<span class="stars">${full}${empty}</span>`;
 }
 
-function setupHistoricalLogTab(stops) {
-  document.querySelector('[data-tab="historical"]').addEventListener("click", async () => {
-    // Fetch logs only when needed
-    const res = await fetch("/api/logs");
-    const { logs } = await res.json();
-    renderHistoricalLog(logs || [], stops);
-    renderHistoricalLogMap(logs || [], stops);
-  });
-}
-
 function initMap(stops, places) {
   const map = L.map("map").setView([0, 0], 2);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
@@ -597,102 +587,132 @@ function renderCards(stops, speed) {
   }
 }
 
-function renderHistoricalLog(logs, stops) {
-  const section = document.getElementById("historical-log-list");
+function renderHistoricalLog(logs = [], stops = []) {
+  const section = document.getElementById("log-list");
+  if (!section) return;
   section.innerHTML = "";
 
-  // Only show Arrived events, sorted by date
   const arrived = logs
     .filter(l => l.type === "Arrived")
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
+  if (!arrived.length) {
+    section.innerHTML = "<p>No visits found.</p>";
+    return;
+  }
+
   arrived.forEach(l => {
-    // Try to find the stop for rating/navily
-    const stop = stops.find(s => s.name === l.cardName);
+    const stop = stops.find(s => s.id === l.cardId) || stops.find(s => s.name === l.cardName);
     const stars = stop ? makeStars(stop.rating) : "";
-    const navily = stop && stop.navilyUrl
-      ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
-      : "";
-    const trello = l.trelloUrl
-      ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>`
-      : "";
+    const navily = stop && stop.navilyUrl ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>` : "";
+    const trello = l.trelloUrl ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>` : "";
 
     const div = document.createElement("div");
     div.className = "historical-log-entry";
     div.innerHTML = `
-      <span class="historical-log-place">${l.cardName}</span>
-      <span class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-      <span class="historical-log-rating">${stars}</span>
-      <span class="historical-log-links">${navily}${trello}</span>
+      <div class="historical-log-place">${l.cardName}</div>
+      <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
+      <div class="historical-log-rating">${stars}</div>
+      <div class="historical-log-links">${navily}${trello}</div>
     `;
     section.appendChild(div);
   });
 }
 
-function renderHistoricalLogMap(logs, stops) {
-  // Only use Arrived events
+// Render historical map (only arrived unique places). Uses window.histMap to cleanup.
+function renderLogMap(logs = [], stops = []) {
+  console.log("Rendering historical map with", logs.length, "logs and", stops.length, "stops");
+  const mapDiv = document.getElementById("log-map");
+  if (!mapDiv) return;
+
+  // cleanup previous map instance for this div
+  if (window.histMap) {
+    try { window.histMap.remove(); } catch(e) { /* ignore */ }
+    window.histMap = null;
+  }
+  mapDiv.innerHTML = "";
+
   const arrived = logs
     .filter(l => l.type === "Arrived")
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  // Get unique places by cardId (in case of multiple arrivals)
+  // unique by cardId
   const unique = [];
   const seen = new Set();
   arrived.forEach(l => {
-    if (!seen.has(l.cardId)) {
-      seen.add(l.cardId);
-      unique.push(l);
-    }
+    if (!seen.has(l.cardId)) { seen.add(l.cardId); unique.push(l); }
   });
 
-  // Build marker data from log, using stops only for lat/lng/rating lookup
-  const markers = unique.map(l => {
-    // Find stop by cardId or name (prefer cardId for accuracy)
-    let stop = stops.find(s => s.id === l.cardId);
-    if (!stop) stop = stops.find(s => s.name === l.cardName);
-    return {
-      lat: stop ? stop.lat : null,
-      lng: stop ? stop.lng : null,
-      name: l.cardName,
-      rating: stop ? stop.rating : null,
-      navilyUrl: stop ? stop.navilyUrl : null,
-      trelloUrl: l.trelloUrl,
-      date: l.timestamp
-    };
-  }).filter(m => typeof m.lat === "number" && typeof m.lng === "number");
+  const markers = unique.map(l => ({
+    lat: typeof l.lat === "number" ? l.lat : null,
+    lng: typeof l.lng === "number" ? l.lng : null,
+    name: l.cardName,
+    rating: l.rating,
+    navilyUrl: l.navilyUrl,
+    trelloUrl: l.trelloUrl,
+    date: l.timestamp
+  })).filter(m => typeof m.lat === "number" && typeof m.lng === "number");
 
-  // Create map
-  const mapDiv = document.getElementById("historical-log-map");
-  mapDiv.innerHTML = ""; // Clear previous
-  const map = L.map(mapDiv).setView([0, 0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+  // create map
+  window.histMap = L.map(mapDiv).setView([0,0], 2);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(window.histMap);
 
   const bounds = [];
   markers.forEach(m => {
     const color = getColorForRating(m.rating);
     L.circleMarker([m.lat, m.lng], {
-      radius: 13,
+      radius: 4,
       fillColor: color,
-      color: "#222",
-      weight: 3,
+      color: "transparent",
+      weight: 0,
       fillOpacity: 0.88,
       opacity: 1,
       className: "map-stop-marker"
     })
-      .addTo(map)
-      .bindPopup(
-        `<strong>${m.name}</strong><br>
-        ${m.rating ? makeStars(m.rating) : ""}
-        <br>${new Date(m.date).toLocaleDateString()}`
-      )
-      .bindTooltip(m.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
+      .addTo(window.histMap)
+      .bindPopup(`<strong>${m.name}</strong><br>${m.rating ? makeStars(m.rating) : ""}<br>${new Date(m.date).toLocaleDateString()}`)
+      .bindTooltip(m.name, { permanent: false, direction: "right", offset: [10,0], className: "map-label" });
     bounds.push([m.lat, m.lng]);
   });
 
   if (bounds.length) {
-    map.fitBounds(bounds, { padding: [40, 40] });
+    window.histMap.fitBounds(bounds, { padding: [40,40] });
   }
 }
+
+// Setup historical tab to fetch logs on demand and render list+map.
+// Accepts stops array so we can lookup lat/lng/rating.
+function setupLogTab(stops = []) {
+  // support multiple possible tab names used in your markup
+  const tabSelector = '[data-tab="log"]';
+  const btn = document.querySelector(tabSelector);
+  if (!btn) return;
+
+  let loaded = false;
+  btn.addEventListener("click", async () => {
+    // ensure UI visible state is already handled by your tab code
+    const listDiv = document.getElementById("log-list");
+    if (listDiv) listDiv.innerHTML = "<p>Loading &hellip;</p>";
+    try {
+      if (!loaded) {
+        const res = await fetch("/api/logs");
+        if (!res.ok) throw new Error("Network response not ok");
+        const json = await res.json();
+        const logs = json.logs || [];
+        renderHistoricalLog(logs, stops);
+        renderLogMap(logs, stops);
+        loaded = true;
+      } else {
+        // if already loaded, re-render using cached data in DOM if needed
+        // (optionally re-fetch if you prefer fresh)
+      }
+    } catch (err) {
+      if (listDiv) listDiv.innerHTML = "<p>Error loading logs.</p>";
+      console.error(err);
+    }
+  });
+}
+
 
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
@@ -705,6 +725,18 @@ function initTabs() {
         .forEach((s) => s.classList.add("hidden"));
       btn.classList.add("active");
       document.getElementById(btn.dataset.tab).classList.remove("hidden");
+
+      // Hide planned map when not on planning tab
+      const mapDiv = document.getElementById("map");
+      if (btn.dataset.tab !== "planning" && mapDiv) {
+        mapDiv.style.display = "none";
+        if (leafletMap) {
+          leafletMap.remove();
+          leafletMap = null;
+        }
+      } else if (btn.dataset.tab === "planning" && mapDiv) {
+        mapDiv.style.display = "";
+      }
     });
   });
 }
@@ -732,7 +764,7 @@ async function init() {
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
   renderCards(stops, parseFloat(speedInput.value));
-  setupHistoricalLogTab(stops);
+  setupLogTab(stops);
 
 
   // Update on speed change:

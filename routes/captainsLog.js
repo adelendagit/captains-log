@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const { fetchBoard, fetchAllComments } = require('../services/trello');
+const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
 
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
@@ -103,10 +103,28 @@ router.get('/api/data', async (req, res, next) => {
 
 router.get('/api/logs', async (req, res, next) => {
   try {
-    const { cards, lists } = await fetchBoard();
-    const allComments = await fetchAllComments();
+    const board = await fetchBoardWithAllComments();
+    const { cards, lists, customFields, allComments } = board;
     const listNames = Object.fromEntries(lists.map(l=>[l.id,l.name]));
 
+    function getCFNumber(card, boardCFs, name) {
+      const def  = boardCFs.find(f => f.name === name);
+      if (!def) return null;
+      const item = card.customFieldItems.find(i => i.idCustomField === def.id);
+      return item?.value?.number ? Number(item.value.number) : null;
+    }
+    function getCFTextOrDropdown(card, boardCFs, name) {
+      const def  = boardCFs.find(f => f.name === name);
+      if (!def) return null;
+      const item = card.customFieldItems.find(i => i.idCustomField === def.id);
+      if (!item) return null;
+      if (item.value?.text != null) return item.value.text;
+      if (item.idValue && Array.isArray(def.options)) {
+        const opt = def.options.find(o => o.id === item.idValue);
+        return opt?.value?.text ?? null;
+      }
+      return null;
+    }
     function extractTimestamp(text, fallback) {
       const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
       if (match) {
@@ -134,7 +152,14 @@ router.get('/api/logs', async (req, res, next) => {
           timestamp,
           comment: text,
           cardId: a.data.card.id,
-          trelloUrl: card ? card.shortUrl : undefined
+          trelloUrl: card ? card.shortUrl : undefined,
+          lat: card ? getCFNumber(card, customFields, 'Latitude') : null,
+          lng: card ? getCFNumber(card, customFields, 'Longitude') : null,
+          rating: card ? (() => {
+            const ratingText = getCFTextOrDropdown(card, customFields, '⭐️');
+            return ratingText != null ? parseInt(ratingText, 10) : null;
+          })() : null,
+          navilyUrl: card ? getCFTextOrDropdown(card, customFields, 'Navily') : null
         };
       })
       .filter(Boolean);
