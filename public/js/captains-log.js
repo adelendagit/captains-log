@@ -2,6 +2,19 @@
 
 let leafletMap = null;
 
+// Store the last loaded logs for filtering
+let lastLoadedLogs = null;
+
+let currentLogFilter = null; // {start, end} or null for most recent trip
+
+let allLogsCache = null; // Store all logs here
+
+let stops = [];
+let places = [];
+let plannedOnlyToggle = null;
+
+let mostRecentTripRange = null;
+
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -64,6 +77,35 @@ function makeStars(r) {
   const full = "★".repeat(Math.round(r));
   const empty = "☆".repeat(5 - Math.round(r));
   return `<span class="stars">${full}${empty}</span>`;
+}
+
+async function preloadAllLogs() {
+  try {
+    const res = await fetch("/api/logs?trip=all");
+    if (!res.ok) throw new Error("Network response not ok");
+    const json = await res.json();
+    allLogsCache = json.logs || [];
+    mostRecentTripRange = json.mostRecentTripRange || null;
+    // If log tab is visible, render now
+    if (isLogTabActive()) {
+      // Use your default filter (most recent trip)
+      currentLogFilter = null;
+      // You need to pass stops to renderFilteredLogs; if not in scope, make sure it is
+      if (typeof stops !== "undefined") {
+        // Call the same render function as in setupLogTab
+        const logBtn = document.querySelector('[data-tab="log"]');
+        if (logBtn) logBtn.click();
+      }
+    }
+  } catch (err) {
+    console.error("Failed to preload logs:", err);
+    allLogsCache = [];
+  }
+}
+
+function isLogTabActive() {
+  const logSection = document.getElementById('log');
+  return logSection && !logSection.classList.contains('hidden');
 }
 
 function initMap(stops, places) {
@@ -594,8 +636,7 @@ function renderHistoricalLog(logs = [], stops = []) {
 
   const arrived = logs
     .filter(l => l.type === "Arrived")
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // DESCENDING
   if (!arrived.length) {
     section.innerHTML = "<p>No visits found.</p>";
     return;
@@ -678,41 +719,105 @@ function renderLogMap(logs = [], stops = []) {
   if (bounds.length) {
     window.histMap.fitBounds(bounds, { padding: [40,40] });
   }
+
+  // --- Always invalidate size after rendering ---
+  setTimeout(() => {
+    window.histMap.invalidateSize();
+  }, 0);
 }
 
-// Setup historical tab to fetch logs on demand and render list+map.
-// Accepts stops array so we can lookup lat/lng/rating.
+function renderMapWithToggle() {
+    // Properly remove any existing map instance
+    if (leafletMap) {
+      leafletMap.remove();
+      leafletMap = null;
+    }
+    if (plannedOnlyToggle.checked) {
+      leafletMap = initMap(stops, []);
+    } else {
+      leafletMap = initMap(stops, places);
+    }
+  }
+
+function getMostRecentTripRangeFromTrips(trips) {
+  // Flatten all trips into one array if grouped by year
+  let allTrips = [];
+  if (Array.isArray(trips)) {
+    if (trips.length && Array.isArray(trips[0].trips)) {
+      trips.forEach(group => allTrips.push(...group.trips));
+    } else {
+      allTrips = trips;
+    }
+  }
+  // Sort by start date descending
+  allTrips = allTrips
+    .filter(t => t.start)
+    .sort((a, b) => new Date(b.start) - new Date(a.start));
+  if (!allTrips.length) return null;
+  const mostRecent = allTrips[0];
+  return { start: mostRecent.start, end: mostRecent.due || null };
+}
+
 function setupLogTab(stops = []) {
-  // support multiple possible tab names used in your markup
   const tabSelector = '[data-tab="log"]';
   const btn = document.querySelector(tabSelector);
   if (!btn) return;
 
-  let loaded = false;
-  btn.addEventListener("click", async () => {
-    // ensure UI visible state is already handled by your tab code
-    const listDiv = document.getElementById("log-list");
-    if (listDiv) listDiv.innerHTML = "<p>Loading &hellip;</p>";
-    try {
-      if (!loaded) {
-        const res = await fetch("/api/logs");
-        if (!res.ok) throw new Error("Network response not ok");
-        const json = await res.json();
-        const logs = json.logs || [];
-        renderHistoricalLog(logs, stops);
-        renderLogMap(logs, stops);
-        loaded = true;
-      } else {
-        // if already loaded, re-render using cached data in DOM if needed
-        // (optionally re-fetch if you prefer fresh)
-      }
-    } catch (err) {
-      if (listDiv) listDiv.innerHTML = "<p>Error loading logs.</p>";
-      console.error(err);
+  const showAllBtn = document.getElementById("show-all-logs-btn");
+  const showLastTripBtn = document.getElementById("show-last-trip-btn");
+
+  function renderFilteredLogs() {
+    if (!allLogsCache) {
+      const listDiv = document.getElementById("log-list");
+      if (listDiv) listDiv.innerHTML = "<p>Loading logs…</p>";
+      return;
     }
+    let logsToShow = allLogsCache;
+    if (currentLogFilter === 'all') {
+      logsToShow = allLogsCache;
+    } else if (currentLogFilter && currentLogFilter.start) {
+      logsToShow = filterLogsByDate(allLogsCache, currentLogFilter.start, currentLogFilter.end);
+    } else if (mostRecentTripRange && mostRecentTripRange.start) {
+      logsToShow = filterLogsByDate(allLogsCache, mostRecentTripRange.start, mostRecentTripRange.end);
+    }
+    renderHistoricalLog(logsToShow, stops);
+    window._lastLogMapData = logsToShow;
+
+    // --- ADD THIS: update the map if the log tab is visible ---
+    if (isLogTabActive()) {
+      renderLogMap(logsToShow, stops);
+    }
+  }
+
+  btn.addEventListener("click", () => {
+    currentLogFilter = null; // reset to most recent trip
+    renderFilteredLogs();
   });
+
+  if (showAllBtn) {
+    showAllBtn.addEventListener("click", () => {
+      currentLogFilter = 'all';
+      renderFilteredLogs();
+    });
+  }
+
+  if (showLastTripBtn) {
+    showLastTripBtn.addEventListener("click", () => {
+      currentLogFilter = null; // null means "most recent trip"
+      renderFilteredLogs();
+    });
+  }
 }
 
+// Utility to filter logs by date range
+function filterLogsByDate(logs, start, end) {
+  const startDate = start ? new Date(start) : null;
+  const endDate = end ? new Date(end) : null;
+  return logs.filter(l => {
+    const d = new Date(l.timestamp);
+    return (!startDate || d >= startDate) && (!endDate || d <= endDate);
+  });
+}
 
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
@@ -736,36 +841,67 @@ function initTabs() {
         }
       } else if (btn.dataset.tab === "planning" && mapDiv) {
         mapDiv.style.display = "";
+        // Re-initialize the map if needed
+        if (!leafletMap) {
+          // You must call the same function you use in init() to render the map
+          // For example:
+          const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+          const plannedOnlyToggle = document.getElementById("planned-only-toggle");
+          // You need to have stops and places in scope; if not, store them globally in init()
+          renderMapWithToggle();
+        }
+      }
+
+      if (btn.dataset.tab === "log") {
+        // Render the map now that the container is visible
+        setTimeout(() => {
+          // Use the logs that were last filtered
+          if (window._lastLogMapData) {
+            renderLogMap(window._lastLogMapData, stops);
+          }
+        }, 0);
       }
     });
   });
 }
 
+// Listen for clicks on historical trips
+function setupHistoricalTripLinks(stops = []) {
+  document.querySelectorAll('.historical-trip-link').forEach(li => {
+    li.addEventListener('click', () => {
+      // Switch to log tab
+      document.querySelectorAll('.tab-nav button').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.tab === 'log') btn.classList.add('active');
+      });
+      document.querySelectorAll('.tab-content').forEach(sec => sec.classList.add('hidden'));
+      document.getElementById('log').classList.remove('hidden');
+
+      // Filter logs for this trip
+      const start = li.getAttribute('data-trip-start');
+      const end = li.getAttribute('data-trip-end');
+      currentLogFilter = { start, end };
+      renderHistoricalLog(filterLogsByDate(allLogsCache, start, end), stops);
+      renderLogMap(filterLogsByDate(allLogsCache, start, end), stops);
+    });
+  });
+}
+
 async function init() {
-  const { stops, places, logs } = await fetchData();
-  console.log("Planned stops:", stops);
+  preloadAllLogs(); // Start loading logs in the background
+
+  const data = await fetchData();
+  stops = data.stops;
+  places = data.places;
 
   const speedInput = document.getElementById("speed-input");
-  const plannedOnlyToggle = document.getElementById("planned-only-toggle");
-
-  function renderMapWithToggle() {
-    // Properly remove any existing map instance
-    if (leafletMap) {
-      leafletMap.remove();
-      leafletMap = null;
-    }
-    if (plannedOnlyToggle.checked) {
-      leafletMap = initMap(stops, []);
-    } else {
-      leafletMap = initMap(stops, places);
-    }
-  }
+  plannedOnlyToggle = document.getElementById("planned-only-toggle");
 
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
   renderCards(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
-
+  setupHistoricalTripLinks(stops);
 
   // Update on speed change:
   speedInput.addEventListener("input", () => {

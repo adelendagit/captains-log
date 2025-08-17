@@ -135,6 +135,21 @@ router.get('/api/logs', async (req, res, next) => {
       return fallback;
     }
 
+    // Get trips from cards in the Trips list
+    const tripsList = lists.find(l => l.name === 'Trips');
+    const trips = cards
+      .filter(c => c.idList === tripsList.id)
+      .map(c => ({
+        name:  c.name,
+        start: c.start,
+        due:   c.due
+      }))
+      .filter(t => t.start)
+      .sort((a, b) => new Date(b.start) - new Date(a.start));
+
+    // Find most recent trip
+    const mostRecentTrip = trips[0];
+
     const logs = allComments
       .filter(a => a.type === 'commentCard' && a.data && a.data.text)
       .map(a => {
@@ -164,7 +179,37 @@ router.get('/api/logs', async (req, res, next) => {
       })
       .filter(Boolean);
 
-    res.json({ logs });
+      let filteredLogs = logs; // <--- ADD THIS LINE
+
+      // If trip=all, return all logs
+      if (req.query.trip === 'all') {
+        // no filter
+      }
+      // If start/end are provided, filter by those
+      else if (req.query.start) {
+        const start = new Date(req.query.start);
+        const end = req.query.end ? new Date(req.query.end) : null;
+        filteredLogs = logs.filter(l => {
+          const d = new Date(l.timestamp);
+          return d >= start && (!end || d <= end);
+        });
+      }
+      // Otherwise, default to most recent trip
+      else if (mostRecentTrip) {
+        const start = new Date(mostRecentTrip.start);
+        const end = mostRecentTrip.due ? new Date(mostRecentTrip.due) : null;
+        filteredLogs = logs.filter(l => {
+          const d = new Date(l.timestamp);
+          return d >= start && (!end || d <= end);
+        });
+      }
+
+    // In routes/captainsLog.js, inside router.get('/api/logs', ...)
+    const mostRecentTripRange = mostRecentTrip
+      ? { start: mostRecentTrip.start, end: mostRecentTrip.due }
+      : null;
+
+    res.json({ logs: filteredLogs, mostRecentTripRange });
   } catch(err) {
     next(err);
   }

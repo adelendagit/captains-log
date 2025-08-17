@@ -41,27 +41,40 @@
 </section>
 
 <section id="historical" class="tab-content hidden">
-  <% historical.forEach(group => { %>
-    <h3><%= group.year %></h3>
-    <ul>
-      <% group.trips.forEach(t => { %>
-        <li>
-          <strong><%= t.name %></strong>
-          <% if (t.start || t.due) { %>
-            (
-              <%= t.start ? new Date(t.start).toLocaleDateString() : '?' %>
-              –
-              <%= t.due   ? new Date(t.due).toLocaleDateString()   : '?' %>
-            )
-          <% } %>
-        </li>
-      <% }) %>
-    </ul>
-  <% }) %>
+  <% historical
+  .sort((a, b) => b.year - a.year)
+  .forEach(group => { %>
+  <h3><%= group.year %></h3>
+  <ul class="historical-trip-list">
+    <% group.trips
+      .sort((a, b) => new Date(b.start) - new Date(a.start))
+      .forEach(t => { %>
+      <li
+        class="historical-trip-link"
+        data-trip-name="<%= t.name %>"
+        data-trip-start="<%= t.start ? new Date(t.start).toISOString() : '' %>"
+        data-trip-end="<%= t.due ? new Date(t.due).toISOString() : '' %>"
+      >
+        <strong><%= t.name %></strong>
+        <% if (t.start || t.due) { %>
+          (
+            <%= t.start ? new Date(t.start).toLocaleDateString() : '?' %>
+            –
+            <%= t.due   ? new Date(t.due).toLocaleDateString()   : '?' %>
+          )
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+<% }) %>
 </section>
 
 <section id="log" class="tab-content hidden">
   <div id="log-map" style="height: 350px; margin-top: 2rem;"></div>
+  <div id="log-controls" style="margin-bottom:1em;">
+    <button id="show-last-trip-btn">Show Current/Last Trip</button>
+    <button id="show-all-logs-btn">Show All Logs</button>
+  </div>
   <div id="log-list"></div>
 </section>
 </main>

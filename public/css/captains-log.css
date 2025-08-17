@@ -406,6 +406,58 @@ body {
 .log-table tr:last-child td {
   border-bottom: none;
 }
+#log-controls {
+  display: flex;
+  gap: 1em;
+  margin-bottom: 1em;
+}
+
+#log-controls button {
+  background: #0077cc;
+  color: #fff;
+  border: none;
+  border-radius: 2em;
+  padding: 0.6em 1.6em;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+#log-controls button:hover,
+#log-controls button.active {
+  background: #005fa3;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.historical-trip-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2em 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.historical-trip-link {
+  background: #f7fafc;
+  border-radius: 1.5em;
+  padding: 0.7em 1.4em;
+  font-size: 1.05em;
+  color: #0077cc;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #e0e0e0;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  margin-bottom: 0.2em;
+  display: inline-block;
+}
+
+.historical-trip-link:hover {
+  background: #eaf6fb;
+  color: #005fa3;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
 .historical-log-entry {
   display: flex;
   align-items: center;
