@@ -4,7 +4,11 @@ const helmet    = require('helmet');
 const morgan    = require('morgan');
 const compression = require('compression');
 const path      = require('path');
+const session   = require('express-session');
+const passport  = require('passport');
+const TrelloStrategy = require('passport-trello').Strategy;
 const captainsLog = require('./routes/captainsLog');
+const auth      = require('./routes/auth');
 
 const app = express();
 //app.use(helmet());
@@ -54,7 +58,40 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'trellosession',
+    resave: false,
+    saveUninitialized: false
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
 
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
+  passport.use(
+    new TrelloStrategy(
+      {
+        consumerKey: process.env.TRELLO_OAUTH_KEY,
+        consumerSecret: process.env.TRELLO_OAUTH_SECRET,
+        callbackURL: `${process.env.BASE_URL || 'http://localhost:3000'}/auth/trello/callback`,
+        trelloParams: { scope: 'read,write', expiration: '1day' }
+      },
+      (token, tokenSecret, profile, done) => {
+        profile.token = token;
+        profile.tokenSecret = tokenSecret;
+        return done(null, profile);
+      }
+    )
+  );
+} else {
+  console.warn('Trello OAuth environment variables not set; login will be disabled');
+}
+
+app.use('/auth', auth);
 app.use('/', captainsLog);
 
 // **AFTER** the static middleware, **before** your 404 handler
