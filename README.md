@@ -18,8 +18,12 @@ TRELLO_OAUTH_SECRET=<your trello OAuth secret>
 
 # Session/host configuration
 SESSION_SECRET=<session secret>
-BASE_URL=http://localhost:3000
 ```
+
+The application derives its base URL from incoming requests, so no `BASE_URL`
+environment variable is required. The Trello login route builds the callback
+URL from `req.protocol` and `req.get('host')`, ensuring Trello receives the
+correct absolute URL for each request.
 
 ## Authentication
 
