@@ -37,7 +37,8 @@ app.use(
         "'self'",
         "data:",                      // marker icons
         "https://*.tile.openstreetmap.org", // map tiles
-        "https://unpkg.com"               // ← add this line
+        "https://unpkg.com",
+        "https://trello-members.s3.amazonaws.com"
       ],
       connectSrc: [
         "'self'",

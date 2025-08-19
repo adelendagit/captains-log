@@ -18,6 +18,72 @@ body {
   box-sizing: border-box;
 }
 
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2em 1em 1.2em 1em;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 1.5em;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
+.site-title {
+  font-size: 1.6em;
+  font-weight: 700;
+  color: #0077cc;
+  letter-spacing: 0.03em;
+}
+
+.site-user {
+  display: flex;
+  align-items: center;
+}
+
+.user-btn,
+.user-btn:link,
+.user-btn:visited {
+  background: #f7fafc;
+  color: #0077cc;
+  border: none;
+  border-radius: 2em;
+  padding: 0.5em 1.3em;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  text-decoration: none; /* Remove underline for links */
+  outline: none;
+}
+
+.user-btn:hover:not(:disabled) {
+  background: #eaf6fb;
+  color: #005fa3;
+}
+
+.user-btn.logged-in {
+  background: #eaf6fb;
+  color: #555;
+  cursor: default;
+  pointer-events: none;
+}
+
+.user-avatar {
+  width: 2em;
+  height: 2em;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #0077cc;
+  margin-right: 0.5em;
+}
+
 .tab-nav {
   display: flex;
   position: sticky;
@@ -252,6 +318,16 @@ body {
   margin-bottom: 2rem;
   border-radius: 0.5rem;
   overflow: hidden;
+}
+
+#map,
+#log-map,
+.leaflet-container {
+  z-index: 10 !important;
+}
+
+.leaflet-control {
+  z-index: 20 !important;
 }
 
 .map-label {

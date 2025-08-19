@@ -250,7 +250,7 @@ router.get('/captains-log', async (req, res, next) => {
       .map(([year, arr]) => ({ year, trips: arr }))
       .sort((a,b) => b.year.localeCompare(a.year));
 
-    res.render('captains-log', { planningStops, historical });
+    res.render('captains-log', { planningStops, historical, user: req.user });
   } catch(err) {
     next(err);
   }

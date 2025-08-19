@@ -9,6 +9,20 @@
 
 <main class="page">
 
+<header class="site-header">
+  <div class="site-title">Where is ...</div>
+  <div class="site-user">
+    <% if (user) { %>
+      <button class="user-btn logged-in" disabled>
+        <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
+        
+      </button>
+    <% } else { %>
+      <a href="/auth/trello" class="user-btn">viewing</a>
+    <% } %>
+  </div>
+</header>
+
 <div class="tab-nav">
   <button data-tab="planning" class="active">Planning</button>
   <button data-tab="historical">Historical Trips</button>
