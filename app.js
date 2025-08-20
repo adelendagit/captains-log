@@ -78,7 +78,6 @@ if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
       {
         consumerKey: process.env.TRELLO_OAUTH_KEY,
         consumerSecret: process.env.TRELLO_OAUTH_SECRET,
-        callbackURL: `${process.env.BASE_URL || 'http://localhost:3000'}/auth/trello/callback`,
         trelloParams: { scope: 'read,write', expiration: '1day' }
       },
       (token, tokenSecret, profile, done) => {

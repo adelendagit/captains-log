@@ -18,7 +18,6 @@ TRELLO_OAUTH_SECRET=<your trello OAuth secret>
 
 # Session/host configuration
 SESSION_SECRET=<session secret>
-BASE_URL=http://localhost:3000
 ```
 
 ## Authentication
