@@ -7,7 +7,9 @@ const router = express.Router();
 router.get('/trello', (req, res, next) => {
   const strat = passport._strategy('trello');
   if (!strat) return res.status(503).send('Trello login not configured');
-  passport.authenticate('trello')(req, res, next);
+  const basePath = req.baseUrl || '/captains-log';
+  const callbackURL = `${req.protocol}://${req.get('host')}${basePath}/auth/trello/callback`;
+  passport.authenticate('trello', { callbackURL })(req, res, next);
 });
 
 // Callback URL Trello will redirect to after authorization
