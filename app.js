@@ -92,6 +92,7 @@ if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
   console.warn('Trello OAuth environment variables not set; login will be disabled');
 }
 
+app.set('trust proxy', true);
 app.use('/auth', auth);
 app.use('/', captainsLog);
 
