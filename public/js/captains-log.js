@@ -67,6 +67,9 @@ async function refreshPlanningUI() {
 async function planStop(cardId) {
   try {
     const res = await fetch(`/api/plan/${cardId}`, { method: "POST" });
+    if (res.status === 403) {
+      throw new Error("Unauthorized");
+    }
     if (!res.ok) throw new Error("Request failed");
     await refreshPlanningUI();
   } catch (err) {

@@ -4,7 +4,8 @@ const {
   fetchBoard,
   fetchAllComments,
   fetchBoardWithAllComments,
-  setCardDueDate
+  setCardDueDate,
+  isBoardMember
 } = require('../services/trello');
 
 // existing number helper
@@ -34,13 +35,16 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   return null;
 }
 
-function ensureBoardMember(req, res, next) {
-  const boardId = process.env.TRELLO_BOARD_ID;
-  const boards = req.user && req.user._json && req.user._json.idBoards;
-  if (req.user && Array.isArray(boards) && boards.includes(boardId)) {
-    return next();
+async function ensureBoardMember(req, res, next) {
+  try {
+    const userId = req.user && req.user.id;
+    if (userId && await isBoardMember(userId)) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Unauthorized' });
+  } catch (err) {
+    next(err);
   }
-  return res.status(403).json({ error: 'Unauthorized' });
 }
 
 router.get('/api/data', async (req, res, next) => {
