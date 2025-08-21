@@ -1,5 +1,7 @@
 // public/js/captains-log.js
 
+const LOGGED_IN = document.querySelector('main.page')?.dataset.loggedIn === 'true';
+
 let leafletMap = null;
 
 // Store the last loaded logs for filtering
@@ -184,7 +186,7 @@ function initMap(stops, places) {
     }).addTo(map);
 
     let popupHtml = `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`;
-    if (window.LOGGED_IN) {
+    if (LOGGED_IN) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
     }
     marker.bindPopup(popupHtml).bindTooltip(p.name, {
@@ -194,7 +196,7 @@ function initMap(stops, places) {
       className: "map-label"
     });
 
-    if (window.LOGGED_IN) {
+    if (LOGGED_IN) {
       marker.on('popupopen', () => {
         const btn = document.querySelector('.plan-btn');
         if (btn) {
