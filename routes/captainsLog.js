@@ -1,6 +1,11 @@
 const express = require('express');
 const router  = express.Router();
-const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
+const {
+  fetchBoard,
+  fetchAllComments,
+  fetchBoardWithAllComments,
+  setCardDueDate
+} = require('../services/trello');
 
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
@@ -27,6 +32,15 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   }
 
   return null;
+}
+
+function ensureBoardMember(req, res, next) {
+  const boardId = process.env.TRELLO_BOARD_ID;
+  const boards = req.user && req.user._json && req.user._json.idBoards;
+  if (req.user && Array.isArray(boards) && boards.includes(boardId)) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Unauthorized' });
 }
 
 router.get('/api/data', async (req, res, next) => {
@@ -97,6 +111,24 @@ router.get('/api/data', async (req, res, next) => {
 
     res.json({ stops, places });
   } catch(err) {
+    next(err);
+  }
+});
+
+router.post('/api/plan/:cardId', ensureBoardMember, async (req, res, next) => {
+  try {
+    const { cardId } = req.params;
+    const { cards } = await fetchBoard();
+    const lastDueCard = cards
+      .filter(c => c.due)
+      .sort((a, b) => new Date(a.due) - new Date(b.due))
+      .pop();
+    const nextDate = lastDueCard ? new Date(lastDueCard.due) : new Date();
+    nextDate.setDate(nextDate.getDate() + 1);
+    const due = nextDate.toISOString();
+    await setCardDueDate(cardId, due);
+    res.json({ success: true, due });
+  } catch (err) {
     next(err);
   }
 });

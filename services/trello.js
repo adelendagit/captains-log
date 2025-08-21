@@ -39,4 +39,14 @@ async function fetchBoardWithAllComments() {
   return board;
 }
 
-module.exports = { fetchBoard, fetchAllComments, fetchBoardWithAllComments };
+async function setCardDueDate(cardId, due) {
+  const url = `https://api.trello.com/1/cards/${cardId}`;
+  await axios.put(url, null, { params: { key: KEY, token: TOKEN, due } });
+}
+
+module.exports = {
+  fetchBoard,
+  fetchAllComments,
+  fetchBoardWithAllComments,
+  setCardDueDate
+};

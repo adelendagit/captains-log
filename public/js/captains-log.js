@@ -51,6 +51,27 @@ async function fetchData() {
   return res.json();
 }
 
+async function refreshPlanningUI() {
+  const data = await fetchData();
+  stops = data.stops;
+  places = data.places;
+  const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+  renderMapWithToggle();
+  renderTable(stops, speed);
+  renderCards(stops, speed);
+  setupHistoricalTripLinks(stops);
+}
+
+async function planStop(cardId) {
+  try {
+    const res = await fetch(`/api/plan/${cardId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Request failed");
+    await refreshPlanningUI();
+  } catch (err) {
+    console.error("Failed to plan stop", err);
+  }
+}
+
 // map rating 1–5 → color
 function getColorForRating(r) {
   if (r == null) return "#888888"; // gray
@@ -154,23 +175,33 @@ function initMap(stops, places) {
   places.forEach((p) => {
     const ll = [p.lat, p.lng];
     const color = getColorForRating(p.rating);
-    L.circleMarker(ll, {
+    const marker = L.circleMarker(ll, {
       radius: 10,
       fillColor: color,
       color: "#000",
       weight: 1,
       fillOpacity: 0.5,
-    })
-      .addTo(map)
-      .bindPopup(
-        `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`,
-      )
-      .bindTooltip(p.name, {
-        permanent: false, // only show on hover/tap
-        direction: "right",
-        offset: [10, 0],
-        className: "map-label"
-      })
+    }).addTo(map);
+
+    let popupHtml = `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`;
+    if (window.LOGGED_IN) {
+      popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
+    }
+    marker.bindPopup(popupHtml).bindTooltip(p.name, {
+      permanent: false, // only show on hover/tap
+      direction: "right",
+      offset: [10, 0],
+      className: "map-label"
+    });
+
+    if (window.LOGGED_IN) {
+      marker.on('popupopen', () => {
+        const btn = document.querySelector('.plan-btn');
+        if (btn) {
+          btn.addEventListener('click', () => planStop(p.id), { once: true });
+        }
+      });
+    }
   });
   
   return map;

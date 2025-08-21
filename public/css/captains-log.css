@@ -561,6 +561,12 @@ body {
   color: #0077cc;
   font-size: 1.2em;
 }
+
+.plan-btn {
+  margin-top: 0.5em;
+  padding: 0.3em 0.6em;
+  cursor: pointer;
+}
 @media (max-width: 899px) {
   .log-table {
     display: table;
