@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.4.2/css/all.min.css">
 <link rel="stylesheet" href="/css/captains-log.css">
 
-<main class="page">
+<main class="page" data-logged-in="<%= user ? 'true' : 'false' %>">
 
 <header class="site-header">
   <div class="site-title">Where is ...</div>
@@ -44,11 +44,11 @@
         >
         <span class="speed-units">knots</span>
       </label>
-      <label class="toggle-label">
-        <input type="checkbox" id="planned-only-toggle" checked>
-        <span>Show only planned stops on map</span>
-      </label>
-    </div>
+        <label class="toggle-label">
+          <input type="checkbox" id="planned-only-toggle" <%= boardMember ? '' : 'checked' %>>
+          <span>Show only planned stops on map</span>
+        </label>
+      </div>
     <div id="planning-list" class="mobile-cards"></div>
     <table id="planning-table" class="planning-table"></table>
   </div>
