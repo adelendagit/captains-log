@@ -1,5 +1,8 @@
 // public/js/captains-log.js
 
+const LOGGED_IN = document.querySelector('main.page')?.dataset.loggedIn === 'true';
+const BOARD_MEMBER = document.querySelector('main.page')?.dataset.boardMember === 'true';
+
 let leafletMap = null;
 
 // Store the last loaded logs for filtering
@@ -49,6 +52,30 @@ function formatDurationRounded(h) {
 async function fetchData() {
   const res = await fetch("/api/data");
   return res.json();
+}
+
+async function refreshPlanningUI() {
+  const data = await fetchData();
+  stops = data.stops;
+  places = data.places;
+  const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+  renderMapWithToggle();
+  renderTable(stops, speed);
+  renderCards(stops, speed);
+  setupHistoricalTripLinks(stops);
+}
+
+async function planStop(cardId) {
+  try {
+    const res = await fetch(`/api/plan/${cardId}`, { method: "POST", credentials: 'same-origin' });
+    if (res.status === 403) {
+      throw new Error("Unauthorized");
+    }
+    if (!res.ok) throw new Error("Request failed");
+    await refreshPlanningUI();
+  } catch (err) {
+    console.error("Failed to plan stop", err);
+  }
 }
 
 // map rating 1–5 → color
@@ -154,23 +181,33 @@ function initMap(stops, places) {
   places.forEach((p) => {
     const ll = [p.lat, p.lng];
     const color = getColorForRating(p.rating);
-    L.circleMarker(ll, {
+    const marker = L.circleMarker(ll, {
       radius: 10,
       fillColor: color,
       color: "#000",
       weight: 1,
       fillOpacity: 0.5,
-    })
-      .addTo(map)
-      .bindPopup(
-        `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`,
-      )
-      .bindTooltip(p.name, {
-        permanent: false, // only show on hover/tap
-        direction: "right",
-        offset: [10, 0],
-        className: "map-label"
-      })
+    }).addTo(map);
+
+    let popupHtml = `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`;
+    if (LOGGED_IN && BOARD_MEMBER) {
+      popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
+    }
+    marker.bindPopup(popupHtml).bindTooltip(p.name, {
+      permanent: false, // only show on hover/tap
+      direction: "right",
+      offset: [10, 0],
+      className: "map-label"
+    });
+
+    if (LOGGED_IN && BOARD_MEMBER) {
+      marker.on('popupopen', () => {
+        const btn = document.querySelector('.plan-btn');
+        if (btn) {
+          btn.addEventListener('click', () => planStop(p.id), { once: true });
+        }
+      });
+    }
   });
   
   return map;

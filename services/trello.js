@@ -39,4 +39,28 @@ async function fetchBoardWithAllComments() {
   return board;
 }
 
-module.exports = { fetchBoard, fetchAllComments, fetchBoardWithAllComments };
+async function setCardDueDate(cardId, due) {
+  const url = `https://api.trello.com/1/cards/${cardId}`;
+  await axios.put(url, null, { params: { key: KEY, token: TOKEN, due } });
+}
+
+async function isBoardMember(memberId) {
+  const url = `https://api.trello.com/1/boards/${BOARD_ID}/members/${memberId}`;
+  try {
+    await axios.get(url, { params: { key: KEY, token: TOKEN } });
+    return true;
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+module.exports = {
+  fetchBoard,
+  fetchAllComments,
+  fetchBoardWithAllComments,
+  setCardDueDate,
+  isBoardMember
+};

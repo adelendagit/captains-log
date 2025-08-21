@@ -1,6 +1,12 @@
 const express = require('express');
 const router  = express.Router();
-const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
+const {
+  fetchBoard,
+  fetchAllComments,
+  fetchBoardWithAllComments,
+  setCardDueDate,
+  isBoardMember
+} = require('../services/trello');
 
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
@@ -27,6 +33,18 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   }
 
   return null;
+}
+
+async function ensureBoardMember(req, res, next) {
+  try {
+    const userId = req.user && req.user.id;
+    if (userId && await isBoardMember(userId)) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Unauthorized' });
+  } catch (err) {
+    next(err);
+  }
 }
 
 router.get('/api/data', async (req, res, next) => {
@@ -97,6 +115,24 @@ router.get('/api/data', async (req, res, next) => {
 
     res.json({ stops, places });
   } catch(err) {
+    next(err);
+  }
+});
+
+router.post('/api/plan/:cardId', ensureBoardMember, async (req, res, next) => {
+  try {
+    const { cardId } = req.params;
+    const { cards } = await fetchBoard();
+    const lastDueCard = cards
+      .filter(c => c.due)
+      .sort((a, b) => new Date(a.due) - new Date(b.due))
+      .pop();
+    const nextDate = lastDueCard ? new Date(lastDueCard.due) : new Date();
+    nextDate.setDate(nextDate.getDate() + 1);
+    const due = nextDate.toISOString();
+    await setCardDueDate(cardId, due);
+    res.json({ success: true, due });
+  } catch (err) {
     next(err);
   }
 });
@@ -220,6 +256,14 @@ router.get('/captains-log', async (req, res, next) => {
   try {
     const board = await fetchBoard();
     const { cards, lists, customFields } = board;
+    let boardMember = false;
+    if (req.user && req.user.id) {
+      try {
+        boardMember = await isBoardMember(req.user.id);
+      } catch (err) {
+        console.error('Failed to verify board membership', err);
+      }
+    }
 
     // compute planningStops & historical exactly as before
     const planningStops = cards
@@ -250,7 +294,7 @@ router.get('/captains-log', async (req, res, next) => {
       .map(([year, arr]) => ({ year, trips: arr }))
       .sort((a,b) => b.year.localeCompare(a.year));
 
-    res.render('captains-log', { planningStops, historical, user: req.user });
+    res.render('captains-log', { planningStops, historical, user: req.user, boardMember });
   } catch(err) {
     next(err);
   }
