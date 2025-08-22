@@ -133,8 +133,9 @@ function initMap(stops, places) {
       popupHtml += `Rating: ${s.rating ?? "–"}/5<br>`;
     }
     popupHtml += `<a href="${s.trelloUrl}" target="_blank">Trello</a>`;
-    if (canPlan) {
+    if (canPlan && s.due) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${s.id}">Plan</button>`;
+      popupHtml += `<button class="remove-btn" data-card-id="${s.id}">Remove</button>`;
     }
 
     L.circleMarker(ll, {
@@ -220,6 +221,31 @@ function initMap(stops, places) {
       } else {
         alert('Failed to plan stop.');
       }
+      });
+    }
+    const removeBtn = e.popup._contentNode.querySelector('.remove-btn');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async (ev) => {
+        console.log('Remove button clicked for card ID:', removeBtn.getAttribute('data-card-id'));
+        ev.preventDefault();
+        ev.stopPropagation();
+        const cardId = removeBtn.getAttribute('data-card-id');
+        if (!confirm('Remove this planned stop?')) return;
+        const res = await fetch(`/api/remove-stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId })
+        });
+        if (res.ok) {
+          const data = await fetchData();
+          stops = data.stops;
+          places = data.places;
+          renderMapWithToggle();
+          renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+        } else {
+          alert('Failed to remove stop.');
+        }
       });
     }
   });
@@ -373,6 +399,32 @@ function handlePlanButtonClicks() {
   });
 }
 
+function handleRemoveButtonClicks() {
+  document.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const cardId = btn.getAttribute('data-card-id');
+      const res = await fetch(`/api/remove-stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId })
+      });
+      if (res.ok) {
+        // Refresh planning data, table, and map
+        const data = await fetchData();
+        stops = data.stops;
+        places = data.places;
+        renderMapWithToggle();
+        renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+      } else {
+        alert('Failed to remove stop.');
+      }
+    });
+  });
+}
+
 function renderTable(stops, speed) {
   const tableEl = document.getElementById("planning-table");
   tableEl.innerHTML = `
@@ -506,6 +558,9 @@ function renderTable(stops, speed) {
         }
       }
       const stars = makeStars(s.rating);
+      const removeBtn = canPlan && s.due
+        ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
+        : "";
       const links = `
         <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
           <i class="fab fa-trello"></i>
@@ -515,6 +570,7 @@ function renderTable(stops, speed) {
             <i class="fa-solid fa-anchor"></i>
           </a>
         ` : ""}
+        ${removeBtn}
       `;
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -541,6 +597,7 @@ function renderTable(stops, speed) {
     if (ymd(date) === ymd(tomorrow)) return "Tomorrow";
     return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
   }
+  handleRemoveButtonClicks();
 }
 
 function renderCards(stops, speed) {
@@ -636,6 +693,9 @@ function renderCards(stops, speed) {
         }
       }
       const stars = makeStars(s.rating);
+      const removeBtn = canPlan && s.due
+        ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
+        : "";
       const links = `
         <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
           <i class="fab fa-trello"></i>
@@ -645,6 +705,7 @@ function renderCards(stops, speed) {
             <i class="fa-solid fa-anchor"></i>
           </a>
         ` : ""}
+        ${removeBtn}
       `;
       const card = document.createElement("div");
       card.className = "stop-card";
@@ -672,6 +733,7 @@ function renderCards(stops, speed) {
     if (ymd(date) === ymd(tomorrow)) return "Tomorrow";
     return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
   }
+  handleRemoveButtonClicks();
 }
 
 function renderHistoricalLog(logs = [], stops = []) {

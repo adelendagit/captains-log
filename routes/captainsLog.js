@@ -321,4 +321,61 @@ router.post('/api/plan-stop', async (req, res, next) => {
   }
 });
 
+router.post('/api/remove-stop', async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: 'Not authenticated' });
+
+    const { cardId } = req.body;
+    if (!cardId) return res.status(400).json({ error: 'Missing cardId' });
+
+    // Use user's Trello OAuth credentials as in /api/plan-stop
+    const oauth = {
+      consumer_key: process.env.TRELLO_OAUTH_KEY,
+      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+      token: req.user.token,
+      token_secret: req.user.tokenSecret,
+    };
+
+    const url = `https://api.trello.com/1/cards/${cardId}/due`;
+
+    const oauth1a = require('oauth-1.0a');
+    const crypto = require('crypto');
+
+    const oauthClient = oauth1a({
+      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
+      signature_method: 'HMAC-SHA1',
+      hash_function(base_string, key) {
+        return crypto.createHmac('sha1', key).update(base_string).digest('base64');
+      },
+    });
+
+    const request_data = {
+      url,
+      method: 'PUT',
+      data: { value: null },
+    };
+
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(request_data, {
+        key: oauth.token,
+        secret: oauth.token_secret,
+      })
+    );
+
+    // Set due to null to "unplan" the stop
+    await axios.put(
+      url,
+      null,
+      {
+        params: { value: null },
+        headers,
+      }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.log('Error in /api/remove-stop:', err);
+    next(err);
+  }
+});
+
 module.exports = router;

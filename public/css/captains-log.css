@@ -75,6 +75,24 @@ body {
   pointer-events: none;
 }
 
+.remove-btn {
+  background: #fff0f0;
+  color: #d73027;
+  border: 1px solid #f5c2c7;
+  border-radius: 2em;
+  padding: 0.3em 1em;
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 0.5em;
+  transition: background 0.15s, color 0.15s, border 0.15s;
+}
+.remove-btn:hover {
+  background: #ffd6d6;
+  color: #a71d2a;
+  border: 1px solid #d73027;
+}
+
 .user-avatar {
   width: 2em;
   height: 2em;
