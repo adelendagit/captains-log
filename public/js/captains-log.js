@@ -104,6 +104,34 @@ function makeStars(r) {
   return `<span class="stars">${full}${empty}</span>`;
 }
 
+// Fetch a water-only route between two [lat, lng] points.
+// Falls back to the straight line if the routing service fails.
+async function fetchSeaRoute(start, end) {
+  const url =
+    `https://routing.openstreetmap.de/routed-sea/route/v1/driving/` +
+    `${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("routing error");
+  const json = await res.json();
+  const coords = json.routes?.[0]?.geometry?.coordinates || [];
+  if (!coords.length) throw new Error("no route");
+  return coords.map(([lng, lat]) => [lat, lng]);
+}
+
+// Draw a series of water-only legs on the given map.
+async function drawSeaRoutes(map, coords, style = { color: "#555", weight: 2 }) {
+  for (let i = 0; i < coords.length - 1; i++) {
+    let segment;
+    try {
+      segment = await fetchSeaRoute(coords[i], coords[i + 1]);
+    } catch (err) {
+      console.warn("Sea routing failed, falling back to straight line", err);
+      segment = [coords[i], coords[i + 1]];
+    }
+    L.polyline(segment, style).addTo(map);
+  }
+}
+
 async function preloadAllLogs() {
   try {
     const res = await fetch("/api/logs?trip=all");
@@ -174,7 +202,7 @@ function initMap(stops, places) {
   });
 
   if (stopCoords.length > 1) {
-    L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(map);
+    drawSeaRoutes(map, stopCoords);
   }
 
   // Ensure the map knows its size before fitting bounds
@@ -1012,11 +1040,11 @@ function renderLogMap(logs = [], stops = []) {
 
   const logCoords = markers.map(m => [m.lat, m.lng]);
   if (logCoords.length > 1) {
-    L.polyline(logCoords, { color: "#555", weight: 2 }).addTo(window.histMap);
+    drawSeaRoutes(window.histMap, logCoords);
   }
 
   if (plannedCoords.length > 1) {
-    L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);
+    drawSeaRoutes(window.histMap, plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" });
     plannedCoords.forEach(ll => bounds.push(ll));
   }
 
