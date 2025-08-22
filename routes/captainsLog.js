@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const axios = require('axios');
 const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
 
 // existing number helper
@@ -31,7 +32,7 @@ function getCFTextOrDropdown(card, boardCFs, name) {
 
 router.get('/api/data', async (req, res, next) => {
   try {
-    const { cards, lists, customFields } = await fetchBoard();
+    const { cards, lists, customFields, members } = await fetchBoard();
 
     console.log('Custom field definitions:', customFields.map(f => f.name));
 
@@ -82,6 +83,13 @@ router.get('/api/data', async (req, res, next) => {
           trelloUrl: c.shortUrl
         };
       });
+
+      // Determine if user can plan
+      let canPlan = false;
+      if (req.user && members) {
+        const userId = req.user.id || req.user.idMember || (req.user.profile && req.user.profile.id);
+        canPlan = members.some(m => m.id === userId && (m.memberType === 'admin' || m.memberType === 'normal'));
+      }
       
       // Helper to extract timestamp from comment text
       function extractTimestamp(text, fallback) {
@@ -95,7 +103,7 @@ router.get('/api/data', async (req, res, next) => {
         return fallback;
       }
 
-    res.json({ stops, places });
+    res.json({ stops, places, canPlan });
   } catch(err) {
     next(err);
   }
@@ -252,6 +260,63 @@ router.get('/captains-log', async (req, res, next) => {
 
     res.render('captains-log', { planningStops, historical, user: req.user });
   } catch(err) {
+    next(err);
+  }
+});
+
+router.post('/api/plan-stop', async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: 'Not authenticated' });
+    // Optionally, check if user is a board member/admin here
+
+    const { cardId, due } = req.body;
+    console.log('Planning stop:', cardId, due);
+    // Update the card's due date via Trello API
+    const oauth = {
+      consumer_key: process.env.TRELLO_OAUTH_KEY,
+      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+      token: req.user.token,
+      token_secret: req.user.tokenSecret,
+    };
+
+    const url = `https://api.trello.com/1/cards/${cardId}/due`;
+
+    const oauth1a = require('oauth-1.0a');
+    const crypto = require('crypto');
+
+    // Create OAuth1.0a signature
+    const oauthClient = oauth1a({
+      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
+      signature_method: 'HMAC-SHA1',
+      hash_function(base_string, key) {
+        return crypto.createHmac('sha1', key).update(base_string).digest('base64');
+      },
+    });
+
+    const request_data = {
+      url,
+      method: 'PUT',
+      data: { value: due },
+    };
+
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(request_data, {
+        key: oauth.token,
+        secret: oauth.token_secret,
+      })
+    );
+
+    await axios.put(
+      url,
+      null,
+      {
+        params: { value: due },
+        headers,
+      }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.log('Error in /api/plan-stop:', err);
     next(err);
   }
 });

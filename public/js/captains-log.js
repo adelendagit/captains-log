@@ -15,6 +15,8 @@ let plannedOnlyToggle = null;
 
 let mostRecentTripRange = null;
 
+let canPlan = false;
+
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -48,7 +50,9 @@ function formatDurationRounded(h) {
 
 async function fetchData() {
   const res = await fetch("/api/data");
-  return res.json();
+  const data = await res.json();
+  canPlan = data.canPlan;
+  return data;
 }
 
 // map rating 1–5 → color
@@ -122,6 +126,17 @@ function initMap(stops, places) {
     // choose color: blue for current, else by rating
     const color = s.dueComplete ? "#3182bd" : getColorForRating(s.rating);
 
+    // ...inside stops.forEach in initMap...
+    let popupHtml = `<strong>${s.dueComplete ? "Current:" : ""} ${s.name}</strong><br>`;
+    if (!s.dueComplete) {
+      popupHtml += `${new Date(s.due).toLocaleDateString()}<br>`;
+      popupHtml += `Rating: ${s.rating ?? "–"}/5<br>`;
+    }
+    popupHtml += `<a href="${s.trelloUrl}" target="_blank">Trello</a>`;
+    if (canPlan) {
+      popupHtml += `<br><button class="plan-btn" data-card-id="${s.id}">Plan</button>`;
+    }
+
     L.circleMarker(ll, {
       radius: 14, // larger for easier tapping
       fillColor: color,
@@ -132,13 +147,7 @@ function initMap(stops, places) {
       className: "map-stop-marker"
     })
       .addTo(map)
-      .bindPopup(
-        `<strong>${s.dueComplete ? "Current:" : ""} ${s.name}</strong><br>` +
-          (s.dueComplete
-            ? ""
-            : `${new Date(s.due).toLocaleDateString()}<br>` +
-              `Rating: ${s.rating ?? "–"}/5`)
-      )
+      .bindPopup(popupHtml)
       .bindTooltip(s.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
   });
 
@@ -154,6 +163,14 @@ function initMap(stops, places) {
   places.forEach((p) => {
     const ll = [p.lat, p.lng];
     const color = getColorForRating(p.rating);
+
+    let popupHtml = `<strong>${p.name}</strong><br>`;
+    popupHtml += `Rating: ${p.rating ?? "–"}/5<br>`;
+    popupHtml += `<a href="${p.trelloUrl}" target="_blank">Trello</a>`;
+    if (canPlan) {
+      popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
+    }
+
     L.circleMarker(ll, {
       radius: 10,
       fillColor: color,
@@ -162,15 +179,49 @@ function initMap(stops, places) {
       fillOpacity: 0.5,
     })
       .addTo(map)
-      .bindPopup(
-        `<strong>${p.name}</strong><br>` + `Rating: ${p.rating ?? "–"}/5`,
-      )
+      .bindPopup(popupHtml)
       .bindTooltip(p.name, {
         permanent: false, // only show on hover/tap
         direction: "right",
         offset: [10, 0],
         className: "map-label"
       })
+  });
+
+  // Attach event listener for plan button when popup opens
+  map.on('popupopen', function(e) {
+    const btn = e.popup._contentNode.querySelector('.plan-btn');
+    if (btn) {
+      btn.addEventListener('click', async (ev) => {
+        console.log('Plan button clicked for card ID:', btn.getAttribute('data-card-id'));
+        ev.preventDefault();
+        const cardId = btn.getAttribute('data-card-id');
+        // Find the latest due date
+      const lastDue = stops
+        .filter(s => s.due)
+        .map(s => new Date(s.due))
+        .sort((a, b) => b - a)[0];
+      const nextDue = new Date(lastDue);
+      nextDue.setDate(nextDue.getDate() + 1);
+      // Call backend to update the card's due date
+      const res = await fetch(`/api/plan-stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, due: nextDue.toISOString() })
+      });
+      if (res.ok) {
+        // Refresh planning data, table, and map
+        const data = await fetchData();
+        stops = data.stops;
+        places = data.places;
+        renderMapWithToggle();
+        renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+      } else {
+        alert('Failed to plan stop.');
+      }
+      });
+    }
   });
   
   return map;
@@ -288,6 +339,40 @@ function renderList(stops, speed) {
   });
 }
 
+function handlePlanButtonClicks() {
+  document.querySelectorAll('.plan-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      console.log('Plan button clicked for card ID:', btn.getAttribute('data-card-id'));
+      e.preventDefault();
+      const cardId = btn.getAttribute('data-card-id');
+      // Find the latest due date
+      const lastDue = stops
+        .filter(s => s.due)
+        .map(s => new Date(s.due))
+        .sort((a, b) => b - a)[0];
+      const nextDue = new Date(lastDue);
+      nextDue.setDate(nextDue.getDate() + 1);
+      // Call backend to update the card's due date
+      const res = await fetch(`/api/plan-stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, due: nextDue.toISOString() })
+      });
+      if (res.ok) {
+        // Refresh planning data, table, and map
+        const data = await fetchData();
+        stops = data.stops;
+        places = data.places;
+        renderMapWithToggle();
+        renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+      } else {
+        alert('Failed to plan stop.');
+      }
+    });
+  });
+}
+
 function renderTable(stops, speed) {
   const tableEl = document.getElementById("planning-table");
   tableEl.innerHTML = `
@@ -304,15 +389,12 @@ function renderTable(stops, speed) {
   `;
   const tbody = tableEl.querySelector("tbody");
 
-  // Helper to get decimal lat/lng from custom fields
   function getLatLng(stop) {
-    // Use custom fields, fallback to stop.lat/lng if needed
     return (typeof stop.lat === "number" && typeof stop.lng === "number")
       ? [stop.lat, stop.lng]
       : [null, null];
   }
 
-  // Find and render the current stop (dueComplete)
   const current = stops.find(s => s.dueComplete);
   if (current) {
     const stars = makeStars(current.rating);
@@ -338,37 +420,20 @@ function renderTable(stops, speed) {
     tbody.appendChild(tr);
   }
 
-  // 1. Group by area (listName)
-const byArea = {};
-stops.filter(s => !s.dueComplete && s.due).forEach(s => {
-  if (!byArea[s.listName]) byArea[s.listName] = [];
-  byArea[s.listName].push(s);
-});
+  // Group all future stops by date only
+  const future = stops.filter(s => !s.dueComplete && s.due);
+  const byDay = future.reduce((acc, s) => {
+    const day = s.due.slice(0, 10);
+    (acc[day] ??= []).push(s);
+    return acc;
+  }, {});
 
-// Use a single prevStop for the whole route, starting from current
-let prevStop = current;
-
-Object.entries(byArea).forEach(([area, areaStops]) => {
-  // Area header row
-  const areaRow = document.createElement("tr");
-  areaRow.className = "area-header-row";
-  areaRow.innerHTML = `<td colspan="5" class="area-header-table">${area}</td>`;
-  tbody.appendChild(areaRow);
-  
-
-  // 2. Group area stops by day
-  const byDay = {};
-  areaStops.forEach(s => {
-    const day = s.due ? s.due.slice(0, 10) : "No Date";
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push(s);
-  });
-
-  Object.entries(byDay).sort().forEach(([day, dayStops]) => {
+  let prevStop = current;
+  Object.keys(byDay).sort().forEach(dayKey => {
     // Day header row (calculate totals)
     let dayTotalNM = 0, dayTotalH = 0;
     let dayPrev = prevStop;
-    dayStops.forEach((s) => {
+    byDay[dayKey].forEach((s) => {
       if (dayPrev) {
         const [lat1, lng1] = getLatLng(dayPrev);
         const [lat2, lng2] = getLatLng(s);
@@ -388,7 +453,7 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
     const dayRow = document.createElement("tr");
     dayRow.className = "day-header-row";
     dayRow.innerHTML = `<td colspan="5" class="day-header-table">
-      ${formatDayLabel(day)}
+      ${formatDayLabel(dayKey)}
       <span class="day-totals">
         ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
         ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
@@ -397,10 +462,10 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
     tbody.appendChild(dayRow);
 
     // Sort stops by time
-    dayStops.sort((a, b) => new Date(a.due) - new Date(b.due));
+    byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
 
-    // Insert current stop first if it belongs to this area/day
-    if (current && current.listName === area && current.due && current.due.slice(0,10) === day) {
+    // Insert current stop first if it belongs to this day
+    if (current && current.due && current.due.slice(0,10) === dayKey) {
       const stars = makeStars(current.rating);
       const links = `
         <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
@@ -422,13 +487,11 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
         <td>${links}</td>
       `;
       tbody.appendChild(tr);
-      // Set prevStop for next leg
       prevStop = current;
     }
 
     // Now render the rest of the stops for this day
-    dayStops.forEach((s, idx) => {
-      // Distance & ETA using custom field lat/lng
+    byDay[dayKey].forEach((s, idx) => {
       let nm = "", eta = "";
       if (prevStop) {
         const [lat1, lng1] = getLatLng(prevStop);
@@ -465,9 +528,7 @@ Object.entries(byArea).forEach(([area, areaStops]) => {
       prevStop = s;
     });
   });
-});
 
-  // Helper for day label
   function formatDayLabel(dateStr) {
     if (!dateStr || dateStr === "No Date") return "No Date";
     const date = new Date(dateStr);
@@ -486,7 +547,6 @@ function renderCards(stops, speed) {
   const container = document.getElementById("planning-list");
   container.innerHTML = "";
 
-  // Helper to get decimal lat/lng from custom fields
   function getLatLng(stop) {
     return (typeof stop.lat === "number" && typeof stop.lng === "number")
       ? [stop.lat, stop.lng]
@@ -495,126 +555,111 @@ function renderCards(stops, speed) {
 
   const current = stops.find(s => s.dueComplete);
 
-  // Group all other stops by area and day 
-  const byArea = {};
-  stops.filter(s => !s.dueComplete && s.due).forEach(s => {
-    if (!byArea[s.listName]) byArea[s.listName] = [];
-    byArea[s.listName].push(s);
-  });
+  // Group all future stops by date only
+  const future = stops.filter(s => !s.dueComplete && s.due);
+  const byDay = future.reduce((acc, s) => {
+    const day = s.due.slice(0, 10);
+    (acc[day] ??= []).push(s);
+    return acc;
+  }, {});
 
-  // Use a single prevStop for the whole route, starting from current
   let prevStop = current;
-
-  Object.entries(byArea).forEach(([area, areaStops]) => {
-    // Area header
-    const areaHeader = document.createElement("h2");
-    areaHeader.textContent = area;
-    areaHeader.className = "area-header";
-    container.appendChild(areaHeader);
-
-    // Group area stops by day
-    const byDay = {};
-    areaStops.forEach(s => {
-      const day = s.due ? s.due.slice(0, 10) : "No Date";
-      if (!byDay[day]) byDay[day] = [];
-      byDay[day].push(s);
+  Object.keys(byDay).sort().forEach(dayKey => {
+    // Day totals
+    let dayTotalNM = 0, dayTotalH = 0;
+    let dayPrev = prevStop;
+    byDay[dayKey].forEach((s) => {
+      if (dayPrev) {
+        const [lat1, lng1] = getLatLng(dayPrev);
+        const [lat2, lng2] = getLatLng(s);
+        if (
+          typeof lat1 === "number" && typeof lng1 === "number" &&
+          typeof lat2 === "number" && typeof lng2 === "number"
+        ) {
+          const meters = haversine(lat1, lng1, lat2, lng2);
+          const nm = toNM(meters);
+          dayTotalNM += nm;
+          dayTotalH += nm / speed;
+        }
+      }
+      dayPrev = s;
     });
 
-    Object.entries(byDay).sort().forEach(([day, dayStops]) => {
-      // Day totals
-      let dayTotalNM = 0, dayTotalH = 0;
-      let dayPrev = prevStop;
-      dayStops.forEach((s) => {
-        if (dayPrev) {
-          const [lat1, lng1] = getLatLng(dayPrev);
-          const [lat2, lng2] = getLatLng(s);
-          if (
-            typeof lat1 === "number" && typeof lng1 === "number" &&
-            typeof lat2 === "number" && typeof lng2 === "number"
-          ) {
-            const meters = haversine(lat1, lng1, lat2, lng2);
-            const nm = toNM(meters);
-            dayTotalNM += nm;
-            dayTotalH += nm / speed;
-          }
-        }
-        dayPrev = s;
-      });
+    const dayHeader = document.createElement("h3");
+    dayHeader.textContent = `${formatDayLabel(dayKey)}${dayTotalNM ? ` • ${dayTotalNM.toFixed(1)} NM` : ""}${dayTotalH ? ` • ${formatDurationRounded(dayTotalH)}` : ""}`;
+    dayHeader.className = "day-header";
+    container.appendChild(dayHeader);
 
-      const dayHeader = document.createElement("h3");
-      dayHeader.textContent = `${formatDayLabel(day)}${dayTotalNM ? ` • ${dayTotalNM.toFixed(1)} NM` : ""}${dayTotalH ? ` • ${formatDurationRounded(dayTotalH)}` : ""}`;
-      dayHeader.className = "day-header";
-      container.appendChild(dayHeader);
+    // Sort stops by time
+    byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
 
-      // Insert current stop first if it belongs to this area/day
-      if (current && current.listName === area && current.due && current.due.slice(0,10) === day) {
-        const stars = makeStars(current.rating);
-        const links = `
-          <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
-            <i class="fab fa-trello"></i>
+    // Insert current stop first if it belongs to this day
+    if (current && current.due && current.due.slice(0,10) === dayKey) {
+      const stars = makeStars(current.rating);
+      const links = `
+        <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
+          <i class="fab fa-trello"></i>
+        </a>
+        ${current.navilyUrl ? `
+          <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
+            <i class="fa-solid fa-anchor"></i>
           </a>
-          ${current.navilyUrl ? `
-            <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
-              <i class="fa-solid fa-anchor"></i>
-            </a>
-          ` : ""}
-        `;
-        const card = document.createElement("div");
-        card.className = "stop-card current-stop";
-        card.innerHTML = `
-          <div class="stop-header">
-            <span class="current-badge">Current</span>
-          </div>
-          <div class="stop-name">${current.name}</div>
-          <div class="stop-rating">${stars}</div>
-          <div class="stop-links">${links}</div>
-        `;
-        container.appendChild(card);
-        prevStop = current;
+        ` : ""}
+      `;
+      const card = document.createElement("div");
+      card.className = "stop-card current-stop";
+      card.innerHTML = `
+        <div class="stop-header">
+          <span class="current-badge">Current</span>
+        </div>
+        <div class="stop-name">${current.name}</div>
+        <div class="stop-rating">${stars}</div>
+        <div class="stop-links">${links}</div>
+      `;
+      container.appendChild(card);
+      prevStop = current;
+    }
+
+    // Now render the rest of the stops for this day
+    byDay[dayKey].forEach((s, idx) => {
+      let nm = "", eta = "";
+      if (prevStop) {
+        const [lat1, lng1] = getLatLng(prevStop);
+        const [lat2, lng2] = getLatLng(s);
+        if (
+          typeof lat1 === "number" && typeof lng1 === "number" &&
+          typeof lat2 === "number" && typeof lng2 === "number"
+        ) {
+          const meters = haversine(lat1, lng1, lat2, lng2);
+          nm = toNM(meters).toFixed(1);
+          eta = formatDurationRounded(nm / speed);
+        }
       }
-
-      // Now render the rest of the stops for this day
-      dayStops.forEach((s, idx) => {
-        let nm = "", eta = "";
-        if (prevStop) {
-          const [lat1, lng1] = getLatLng(prevStop);
-          const [lat2, lng2] = getLatLng(s);
-          if (
-            typeof lat1 === "number" && typeof lng1 === "number" &&
-            typeof lat2 === "number" && typeof lng2 === "number"
-          ) {
-            const meters = haversine(lat1, lng1, lat2, lng2);
-            nm = toNM(meters).toFixed(1);
-            eta = formatDurationRounded(nm / speed);
-          }
-        }
-        const stars = makeStars(s.rating);
-        const links = `
-          <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
-            <i class="fab fa-trello"></i>
+      const stars = makeStars(s.rating);
+      const links = `
+        <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
+          <i class="fab fa-trello"></i>
+        </a>
+        ${s.navilyUrl ? `
+          <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
+            <i class="fa-solid fa-anchor"></i>
           </a>
-          ${s.navilyUrl ? `
-            <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
-              <i class="fa-solid fa-anchor"></i>
-            </a>
-          ` : ""}
-        `;
-        const card = document.createElement("div");
-        card.className = "stop-card";
-        card.innerHTML = `
-          <div class="stop-name">${s.name}</div>
-          <div class="stop-rating">${stars}</div>
-          <div class="stop-distance"><strong>Distance:</strong> ${nm} NM</div>
-          <div class="stop-eta"><strong>ETA:</strong> ${eta}</div>
-          <div class="stop-links">${links}</div>
-        `;
-        container.appendChild(card);
-        prevStop = s;
-      });
+        ` : ""}
+      `;
+      const card = document.createElement("div");
+      card.className = "stop-card";
+      card.innerHTML = `
+        <div class="stop-name">${s.name}</div>
+        <div class="stop-rating">${stars}</div>
+        <div class="stop-distance"><strong>Distance:</strong> ${nm} NM</div>
+        <div class="stop-eta"><strong>ETA:</strong> ${eta}</div>
+        <div class="stop-links">${links}</div>
+      `;
+      container.appendChild(card);
+      prevStop = s;
     });
   });
 
-  // Helper for day label
   function formatDayLabel(dateStr) {
     if (!dateStr || dateStr === "No Date") return "No Date";
     const date = new Date(dateStr);
