@@ -440,6 +440,7 @@ function renderTable(stops, speed) {
     <tbody></tbody>
   `;
   const tbody = tableEl.querySelector("tbody");
+  tbody.classList.add("sortable-table-body");
 
   function getLatLng(stop) {
     return (typeof stop.lat === "number" && typeof stop.lng === "number")
@@ -504,6 +505,7 @@ function renderTable(stops, speed) {
 
     const dayRow = document.createElement("tr");
     dayRow.className = "day-header-row";
+    dayRow.setAttribute('data-day', dayKey);
     dayRow.innerHTML = `<td colspan="5" class="day-header-table">
       ${formatDayLabel(dayKey)}
       <span class="day-totals">
@@ -512,7 +514,6 @@ function renderTable(stops, speed) {
       </span>
     </td>`;
     tbody.appendChild(dayRow);
-
     // Sort stops by time
     byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
 
@@ -573,6 +574,9 @@ function renderTable(stops, speed) {
         ${removeBtn}
       `;
       const tr = document.createElement("tr");
+      tr.setAttribute("data-card-id", s.id); // <-- add this
+      tr.className = "sortable-stop-row";
+      tr.setAttribute("data-day", dayKey); // for drag-and-drop grouping
       tr.innerHTML = `
         <td>${s.name}</td>
         <td>${stars}</td>
@@ -598,6 +602,72 @@ function renderTable(stops, speed) {
     return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
   }
   handleRemoveButtonClicks();
+  initTableDragAndDrop();
+}
+
+function initTableDragAndDrop() {
+  const tbody = document.querySelector('.sortable-table-body');
+  if (!tbody) return;
+
+  // Destroy previous Sortable if any
+  if (tbody._sortable) {
+    tbody._sortable.destroy();
+    tbody._sortable = null;
+  }
+
+  tbody._sortable = Sortable.create(tbody, {
+    handle: 'td',
+    animation: 150,
+    filter: '.day-header-row,.current-stop-row',
+    draggable: '.sortable-stop-row',
+    onEnd: async function (evt) {
+      // Walk through all rows, updating data-day for each stop row to match the most recent day header above it
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      let currentDay = null;
+      const updatesByDay = {};
+
+      rows.forEach(row => {
+        if (row.classList.contains('day-header-row')) {
+          currentDay = row.getAttribute('data-day');
+        } else if (row.classList.contains('sortable-stop-row')) {
+          if (currentDay) {
+            row.setAttribute('data-day', currentDay);
+            if (!updatesByDay[currentDay]) updatesByDay[currentDay] = [];
+            updatesByDay[currentDay].push(row);
+          }
+        }
+      });
+
+      // For each day, assign new due dates in order (e.g., 08:00, 09:00, ...)
+      const updates = [];
+      Object.entries(updatesByDay).forEach(([day, rows]) => {
+        const baseDate = new Date(day + 'T08:00:00');
+        rows.forEach((row, i) => {
+          const cardId = row.getAttribute('data-card-id');
+          const due = new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString();
+          updates.push({ cardId, due });
+        });
+      });
+
+      // Send to backend
+      if (updates.length) {
+        await fetch('/api/reorder-stops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates })
+        });
+        // Add a short delay to allow Trello to update
+        setTimeout(async () => {
+          const data = await fetchData();
+          stops = data.stops;
+          places = data.places;
+          renderMapWithToggle();
+          renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+        }, 1000);
+      }
+    }
+  });
 }
 
 function renderCards(stops, speed) {
@@ -646,6 +716,11 @@ function renderCards(stops, speed) {
     dayHeader.textContent = `${formatDayLabel(dayKey)}${dayTotalNM ? ` • ${dayTotalNM.toFixed(1)} NM` : ""}${dayTotalH ? ` • ${formatDurationRounded(dayTotalH)}` : ""}`;
     dayHeader.className = "day-header";
     container.appendChild(dayHeader);
+
+    // Create a div for this day’s stops
+    const dayDiv = document.createElement("div");
+    dayDiv.className = "sortable-day";
+    dayDiv.setAttribute("data-day", dayKey);
 
     // Sort stops by time
     byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
@@ -709,6 +784,7 @@ function renderCards(stops, speed) {
       `;
       const card = document.createElement("div");
       card.className = "stop-card";
+      card.setAttribute("data-card-id", s.id); // <-- add this
       card.innerHTML = `
         <div class="stop-name">${s.name}</div>
         <div class="stop-rating">${stars}</div>
@@ -716,9 +792,11 @@ function renderCards(stops, speed) {
         <div class="stop-eta"><strong>ETA:</strong> ${eta}</div>
         <div class="stop-links">${links}</div>
       `;
-      container.appendChild(card);
+      dayDiv.appendChild(card);
       prevStop = s;
     });
+
+    container.appendChild(dayDiv); // <-- append the day's div
   });
 
   function formatDayLabel(dateStr) {

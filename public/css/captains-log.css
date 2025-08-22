@@ -43,6 +43,10 @@ body {
   align-items: center;
 }
 
+.sortable-stop-row {
+  cursor: move;
+}
+
 .user-btn,
 .user-btn:link,
 .user-btn:visited {
