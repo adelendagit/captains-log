@@ -670,6 +670,51 @@ function initTableDragAndDrop() {
   });
 }
 
+function initCardsDragAndDrop() {
+  document.querySelectorAll('.sortable-day').forEach(dayDiv => {
+    // Destroy previous Sortable if any
+    if (dayDiv._sortable) {
+      dayDiv._sortable.destroy();
+      dayDiv._sortable = null;
+    }
+
+    dayDiv._sortable = Sortable.create(dayDiv, {
+      group: 'stops', // allow cross-day dragging
+      animation: 150,
+      draggable: '.stop-card',
+      onEnd: async function (evt) {
+        // After drag, for all days, update due dates
+        document.querySelectorAll('.sortable-day').forEach(dayDiv2 => {
+          const day = dayDiv2.getAttribute('data-day');
+          const cards = Array.from(dayDiv2.querySelectorAll('.stop-card'));
+          const baseDate = new Date(day + 'T08:00:00');
+          const updates = cards.map((card, i) => ({
+            cardId: card.getAttribute('data-card-id'),
+            due: new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString()
+          }));
+          // ...collect all updates and send to backend as before...
+        });
+
+        if (updates.length) {
+          await fetch('/api/reorder-stops', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates })
+          });
+          setTimeout(async () => {
+            const data = await fetchData();
+            stops = data.stops;
+            places = data.places;
+            renderMapWithToggle();
+            renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+            renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+          }, 1000);
+        }
+      }
+    });
+  });
+}
+
 function renderCards(stops, speed) {
   const container = document.getElementById("planning-list");
   container.innerHTML = "";
@@ -812,6 +857,7 @@ function renderCards(stops, speed) {
     return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
   }
   handleRemoveButtonClicks();
+  initCardsDragAndDrop();
 }
 
 function renderHistoricalLog(logs = [], stops = []) {
