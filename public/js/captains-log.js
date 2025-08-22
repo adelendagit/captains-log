@@ -48,6 +48,27 @@ function formatDurationRounded(h) {
   return `${mm}m`;
 }
 
+function updateSummary(stops, speed) {
+  const summaryEl = document.getElementById('planning-summary');
+  if (!summaryEl) return;
+
+  const future = stops.filter(s => !s.dueComplete && s.due);
+  const current = stops.find(s => s.dueComplete) || null;
+  let prev = current;
+  let totalNM = 0;
+
+  future.forEach(s => {
+    if (prev) {
+      const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
+      totalNM += toNM(meters);
+    }
+    prev = s;
+  });
+
+  const totalH = totalNM / speed;
+  summaryEl.textContent = `Total: ${totalNM.toFixed(1)} NM • ${formatDurationRounded(totalH)}`;
+}
+
 async function fetchData() {
   const res = await fetch("/api/data");
   const data = await res.json();
@@ -426,11 +447,13 @@ function handleRemoveButtonClicks() {
 }
 
 function renderTable(stops, speed) {
+  updateSummary(stops, speed);
   const tableEl = document.getElementById("planning-table");
   tableEl.innerHTML = `
     <thead>
       <tr>
         <th>Name</th>
+        <th>Labels</th>
         <th>Rating</th>
         <th>Distance (NM)</th>
         <th>ETA</th>
@@ -461,10 +484,16 @@ function renderTable(stops, speed) {
         </a>
       ` : ""}
     `;
+    const labels = Array.isArray(current.labels) ? current.labels.map(l => {
+      const bg = l.color || '#888';
+      const fg = badgeTextColor(bg);
+      return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+    }).join('') : '';
     const tr = document.createElement("tr");
     tr.className = "current-stop-row";
     tr.innerHTML = `
       <td>${current.name} <span class="current-badge-table">Current</span></td>
+      <td>${labels}</td>
       <td>${stars}</td>
       <td></td>
       <td></td>
@@ -506,7 +535,7 @@ function renderTable(stops, speed) {
     const dayRow = document.createElement("tr");
     dayRow.className = "day-header-row";
     dayRow.setAttribute('data-day', dayKey);
-    dayRow.innerHTML = `<td colspan="5" class="day-header-table">
+    dayRow.innerHTML = `<td colspan="6" class="day-header-table">
       ${formatDayLabel(dayKey)}
       <span class="day-totals">
         ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
@@ -530,10 +559,16 @@ function renderTable(stops, speed) {
           </a>
         ` : ""}
       `;
+      const labels = Array.isArray(current.labels) ? current.labels.map(l => {
+        const bg = l.color || '#888';
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+      }).join('') : '';
       const tr = document.createElement("tr");
       tr.className = "current-stop-row";
       tr.innerHTML = `
         <td>${current.name} <span class="current-badge-table">Current</span></td>
+        <td>${labels}</td>
         <td>${stars}</td>
         <td></td>
         <td></td>
@@ -573,12 +608,18 @@ function renderTable(stops, speed) {
         ` : ""}
         ${removeBtn}
       `;
+      const labels = Array.isArray(s.labels) ? s.labels.map(l => {
+        const bg = l.color || '#888';
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+      }).join('') : '';
       const tr = document.createElement("tr");
       tr.setAttribute("data-card-id", s.id); // <-- add this
       tr.className = "sortable-stop-row";
       tr.setAttribute("data-day", dayKey); // for drag-and-drop grouping
       tr.innerHTML = `
         <td>${s.name}</td>
+        <td>${labels}</td>
         <td>${stars}</td>
         <td>${nm}</td>
         <td>${eta}</td>
@@ -718,6 +759,7 @@ function initCardsDragAndDrop() {
 }
 
 function renderCards(stops, speed) {
+  updateSummary(stops, speed);
   const container = document.getElementById("planning-list");
   container.innerHTML = "";
 
@@ -785,11 +827,16 @@ function renderCards(stops, speed) {
           </a>
         ` : ""}
       `;
+      const labels = Array.isArray(current.labels) ? current.labels.map(l => {
+        const bg = l.color || '#888';
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+      }).join('') : '';
       const card = document.createElement("div");
       card.className = "stop-card current-stop";
       card.innerHTML = `
         <div class="stop-header">
-          <span class="current-badge">Current</span>
+          ${labels}<span class="current-badge">Current</span>
         </div>
         <div class="stop-name">${current.name}</div>
         <div class="stop-rating">${stars}</div>
@@ -829,10 +876,16 @@ function renderCards(stops, speed) {
         ` : ""}
         ${removeBtn}
       `;
+      const labels = Array.isArray(s.labels) ? s.labels.map(l => {
+        const bg = l.color || '#888';
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+      }).join('') : '';
       const card = document.createElement("div");
       card.className = "stop-card";
       card.setAttribute("data-card-id", s.id); // <-- add this
       card.innerHTML = `
+        <div class="stop-header">${labels}</div>
         <div class="stop-name">${s.name}</div>
         <div class="stop-rating">${stars}</div>
         <div class="stop-distance"><strong>Distance:</strong> ${nm} NM</div>
