@@ -173,6 +173,10 @@ function initMap(stops, places) {
       .bindTooltip(s.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
   });
 
+  if (stopCoords.length > 1) {
+    L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(map);
+  }
+
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
     map.invalidateSize();
@@ -980,6 +984,10 @@ function renderLogMap(logs = [], stops = []) {
     date: l.timestamp
   })).filter(m => typeof m.lat === "number" && typeof m.lng === "number");
 
+  const plannedCoords = stops
+    .filter(s => typeof s.lat === "number" && typeof s.lng === "number")
+    .map(s => [s.lat, s.lng]);
+
   // create map
   window.histMap = L.map(mapDiv).setView([0,0], 2);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(window.histMap);
@@ -1001,6 +1009,16 @@ function renderLogMap(logs = [], stops = []) {
       .bindTooltip(m.name, { permanent: false, direction: "right", offset: [10,0], className: "map-label" });
     bounds.push([m.lat, m.lng]);
   });
+
+  const logCoords = markers.map(m => [m.lat, m.lng]);
+  if (logCoords.length > 1) {
+    L.polyline(logCoords, { color: "#555", weight: 2 }).addTo(window.histMap);
+  }
+
+  if (plannedCoords.length > 1) {
+    L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);
+    plannedCoords.forEach(ll => bounds.push(ll));
+  }
 
   if (bounds.length) {
     window.histMap.fitBounds(bounds, { padding: [40,40] });
