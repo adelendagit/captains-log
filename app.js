@@ -42,7 +42,8 @@ app.use(
       ],
       connectSrc: [
         "'self'",
-        "https://api.trello.com"
+        "https://api.trello.com",
+        "https://routing.openstreetmap.de"
       ],
       fontSrc: [
         "'self'",
