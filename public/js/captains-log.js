@@ -683,23 +683,25 @@ function initCardsDragAndDrop() {
       animation: 150,
       draggable: '.stop-card',
       onEnd: async function (evt) {
-        // After drag, for all days, update due dates
+        // Collect updates for ALL days after any drag
+        const allUpdates = [];
         document.querySelectorAll('.sortable-day').forEach(dayDiv2 => {
           const day = dayDiv2.getAttribute('data-day');
           const cards = Array.from(dayDiv2.querySelectorAll('.stop-card'));
           const baseDate = new Date(day + 'T08:00:00');
-          const updates = cards.map((card, i) => ({
-            cardId: card.getAttribute('data-card-id'),
-            due: new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString()
-          }));
-          // ...collect all updates and send to backend as before...
+          cards.forEach((card, i) => {
+            allUpdates.push({
+              cardId: card.getAttribute('data-card-id'),
+              due: new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString()
+            });
+          });
         });
 
-        if (updates.length) {
+        if (allUpdates.length) {
           await fetch('/api/reorder-stops', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates })
+            body: JSON.stringify({ updates: allUpdates })
           });
           setTimeout(async () => {
             const data = await fetchData();
