@@ -296,6 +296,13 @@ body {
   cursor: pointer;
 }
 
+.planning-summary {
+  text-align: right;
+  font-weight: 600;
+  margin: 0.5rem 0 1rem;
+  color: #0077cc;
+}
+
 .toggle-label input[type="checkbox"] {
   accent-color: #0077cc;
   width: 1.1em;

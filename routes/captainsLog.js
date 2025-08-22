@@ -42,12 +42,30 @@ router.get('/api/data', async (req, res, next) => {
     // map of list IDs → names
     const listNames = Object.fromEntries(lists.map(l=>[l.id,l.name]));
 
+    const colorMap = {
+      green:  '#61bd4f',
+      yellow: '#f2d600',
+      orange: '#ff9f1a',
+      red:    '#eb5a46',
+      purple: '#c377e0',
+      blue:   '#0079bf',
+      sky:    '#00c2e0',
+      lime:   '#51e898',
+      pink:   '#ff78cb',
+      black:  '#344563'
+    };
+
     const stops = cards
       .filter(c => c.due && c.idList !== tripsListId)
       .map(c => {
         const ratingText = getCFTextOrDropdown(c, customFields, '⭐️');
         const ratingNum  = ratingText != null ? parseInt(ratingText, 10) : null;
         console.log(`Card "${c.name}" → dropdown text:`, ratingText);
+
+        const labels = (c.labels || []).map(l => ({
+          name: l.name,
+          color: colorMap[l.color] || '#888'
+        }));
 
         return {
           id:          c.id,
@@ -59,7 +77,8 @@ router.get('/api/data', async (req, res, next) => {
           lng:         getCFNumber(c, customFields, 'Longitude'),
           rating:      ratingNum,
           trelloUrl:   c.shortUrl,
-          navilyUrl:   getCFTextOrDropdown(c, customFields, 'Navily')
+          navilyUrl:   getCFTextOrDropdown(c, customFields, 'Navily'),
+          labels
         };
       })
       .sort((a,b) => new Date(a.due) - new Date(b.due));
@@ -73,6 +92,10 @@ router.get('/api/data', async (req, res, next) => {
       )
       .map(c => {
         const ratingText = getCFTextOrDropdown(c, customFields, '⭐️');
+        const labels = (c.labels || []).map(l => ({
+          name: l.name,
+          color: colorMap[l.color] || '#888'
+        }));
         return {
           id:        c.id,
           name:      c.name,
@@ -80,7 +103,8 @@ router.get('/api/data', async (req, res, next) => {
           lat:       getCFNumber(c, customFields, 'Latitude'),
           lng:       getCFNumber(c, customFields, 'Longitude'),
           rating:    ratingText !== null ? parseInt(ratingText,10) : null,
-          trelloUrl: c.shortUrl
+          trelloUrl: c.shortUrl,
+          labels
         };
       });
 
