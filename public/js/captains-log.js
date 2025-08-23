@@ -173,8 +173,31 @@ function initMap(stops, places) {
       .bindTooltip(s.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
   });
 
-  if (stopCoords.length > 1) {
-    L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(map);
+    if (stopCoords.length > 1) {
+    const polyline = L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(map);
+  
+    // Add direction arrows
+    const arrowHeadFn =
+      (L.Symbol && L.Symbol.arrowHead) ||
+      (L.Symbols && L.Symbols.arrowHead);
+
+    if (arrowHeadFn) {
+      L.polylineDecorator(polyline, {
+        patterns: [
+          {
+            offset: '5%',
+            repeat: '20%',
+            symbol: arrowHeadFn({
+              pixelSize: 12,
+              polygon: false,
+              pathOptions: { stroke: true, color: '#0077cc', weight: 2 }
+            })
+          }
+        ]
+      }).addTo(map);
+    } else {
+      console.warn('Leaflet PolylineDecorator arrowHead not found.');
+    }
   }
 
   // Ensure the map knows its size before fitting bounds

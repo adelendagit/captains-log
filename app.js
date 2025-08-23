@@ -26,7 +26,8 @@ app.use(
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "https://unpkg.com"           // Leaflet JS
+        "https://unpkg.com",
+        "https://cdn.jsdelivr.net"           
       ],
       styleSrc: [
         "'self'",
