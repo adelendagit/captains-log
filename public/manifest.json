@@ -1,0 +1,20 @@
+{
+  "name": "Where is...",
+  "short_name": "Where is",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffa500",
+  "icons": [
+    {
+      "src": "https://api.iconify.design/mdi:map-marker.png?color=%23ffa500&width=192&height=192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://api.iconify.design/mdi:map-marker.png?color=%23ffa500&width=512&height=512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

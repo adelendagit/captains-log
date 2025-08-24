@@ -39,7 +39,8 @@ app.use(
         "data:",                      // marker icons
         "https://*.tile.openstreetmap.org", // map tiles
         "https://unpkg.com",
-        "https://trello-members.s3.amazonaws.com"
+        "https://trello-members.s3.amazonaws.com",
+        "https://api.iconify.design"
       ],
       connectSrc: [
         "'self'",
@@ -48,7 +49,9 @@ app.use(
       fontSrc: [
         "'self'",
         "https://unpkg.com"
-      ]
+      ],
+      workerSrc: ["'self'"],
+      manifestSrc: ["'self'"],
     }
   })
 );
