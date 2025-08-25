@@ -8,7 +8,7 @@
     "start": "node app.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write \"**/*.js\" \"**/*.ejs\"",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "node --test tests/extractTimestamp.test.js"
   },
   "engines": {
     "node": ">=18"
