@@ -186,18 +186,23 @@ router.get('/api/logs', async (req, res, next) => {
       .filter(a => a.type === 'commentCard' && a.data && a.data.text)
       .map(a => {
         const text = a.data.text;
+        // Allow an optional leading "timestamp:" line before the entry type
+        const cleaned = text.replace(/^timestamp:\s*[0-9T:\- ]+\s*/i, '').trim();
+
         let type = null;
-        if (/^arrived\b/i.test(text)) type = "Arrived";
-        if (/^departed\b/i.test(text)) type = "Departed";
+        if (/^arrived\b/i.test(cleaned)) type = 'Arrived';
+        if (/^departed\b/i.test(cleaned)) type = 'Departed';
         if (!type) return null;
+
         const card = cards.find(c => c.id === a.data.card.id);
         const timestamp = extractTimestamp(text, a.date);
+
         return {
-          area: card && card.idList ? listNames[card.idList] : "Unknown",
-          cardName: card ? card.name : (a.data.card.name || "Unknown"),
+          area: card && card.idList ? listNames[card.idList] : 'Unknown',
+          cardName: card ? card.name : (a.data.card.name || 'Unknown'),
           type,
           timestamp,
-          comment: text,
+          comment: cleaned,
           cardId: a.data.card.id,
           trelloUrl: card ? card.shortUrl : undefined,
           lat: card ? getCFNumber(card, customFields, 'Latitude') : null,
