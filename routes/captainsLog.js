@@ -117,9 +117,9 @@ router.get('/api/data', async (req, res, next) => {
       
       // Helper to extract timestamp from comment text
       function extractTimestamp(text, fallback) {
-        const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
+        // Only honor timestamps with a "timestamp:" prefix
+        const match = text.match(/timestamp:\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)/i);
         if (match) {
-          // Try to parse as ISO or "YYYY-mm-dd hh:mm"
           const ts = match[1].trim().replace(' ', 'T');
           const d = new Date(ts.length === 16 ? ts + ':00' : ts); // add seconds if missing
           if (!isNaN(d)) return d.toISOString();
@@ -158,7 +158,8 @@ router.get('/api/logs', async (req, res, next) => {
       return null;
     }
     function extractTimestamp(text, fallback) {
-      const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
+      // Only honor timestamps with a "timestamp:" prefix
+      const match = text.match(/timestamp:\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)/i);
       if (match) {
         const ts = match[1].trim().replace(' ', 'T');
         const d = new Date(ts.length === 16 ? ts + ':00' : ts);
