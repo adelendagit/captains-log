@@ -2,6 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const axios = require('axios');
 const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
+const extractTimestamp = require('../src/utils/extractTimestamp');
 
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
@@ -115,18 +116,6 @@ router.get('/api/data', async (req, res, next) => {
         canPlan = members.some(m => m.id === userId && (m.memberType === 'admin' || m.memberType === 'normal'));
       }
       
-      // Helper to extract timestamp from comment text
-      function extractTimestamp(text, fallback) {
-        const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
-        if (match) {
-          // Try to parse as ISO or "YYYY-mm-dd hh:mm"
-          const ts = match[1].trim().replace(' ', 'T');
-          const d = new Date(ts.length === 16 ? ts + ':00' : ts); // add seconds if missing
-          if (!isNaN(d)) return d.toISOString();
-        }
-        return fallback;
-      }
-
     res.json({ stops, places, canPlan });
   } catch(err) {
     next(err);
@@ -157,16 +146,6 @@ router.get('/api/logs', async (req, res, next) => {
       }
       return null;
     }
-    function extractTimestamp(text, fallback) {
-      const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
-      if (match) {
-        const ts = match[1].trim().replace(' ', 'T');
-        const d = new Date(ts.length === 16 ? ts + ':00' : ts);
-        if (!isNaN(d)) return d.toISOString();
-      }
-      return fallback;
-    }
-
     // Get trips from cards in the Trips list
     const tripsList = lists.find(l => l.name === 'Trips');
     const trips = cards
