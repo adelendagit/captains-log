@@ -1157,6 +1157,37 @@ function renderLogSummary(logs = []) {
   const div = document.getElementById("log-summary");
   if (!div) return;
 
+  // --- Totals across the selected logs ---
+  let totalNM = 0;
+  let totalHrs = 0;
+  let totalDiesel = 0;
+  let lastDepart = null;
+
+  const chron = [...logs].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+  chron.forEach(l => {
+    if (l.type === "Departed" && l.lat != null && l.lng != null) {
+      lastDepart = l;
+    } else if (l.type === "Arrived" && lastDepart && l.lat != null && l.lng != null) {
+      const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
+      totalNM += toNM(meters);
+      const hrs = (new Date(l.timestamp) - new Date(lastDepart.timestamp)) / 3600000;
+      if (isFinite(hrs)) totalHrs += hrs;
+      lastDepart = null;
+    }
+
+    if (l.type === "Diesel" && typeof l.dieselLitres === "number") {
+      totalDiesel += l.dieselLitres;
+    }
+  });
+
+  const efficiency = totalDiesel > 0 ? totalNM / totalDiesel : null;
+  const latestDiesel = chron
+    .filter(l => l.type === "Diesel" && typeof l.dieselLitres === "number")
+    .slice(-1)[0];
+  const remainingRange = efficiency && latestDiesel
+    ? latestDiesel.dieselLitres * efficiency
+    : null;
+
   const latest = (type) => logs
     .filter(l => l.type === type)
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -1172,7 +1203,13 @@ function renderLogSummary(logs = []) {
 
   const items = [];
   if (water) items.push(`<li>Water: ${new Date(water.timestamp).toLocaleDateString()}</li>`);
-  if (diesel) items.push(`<li>Diesel: ${new Date(diesel.timestamp).toLocaleDateString()}${diesel.dieselLitres != null ? ` (${diesel.dieselLitres} litres)` : ""}</li>`);
+  if (diesel) {
+    items.push(
+      `<li>Diesel: ${new Date(diesel.timestamp).toLocaleDateString()}${
+        diesel.dieselLitres != null ? ` (${diesel.dieselLitres} litres)` : ""
+      }</li>`
+    );
+  }
   if (seaTemp) items.push(`<li>Sea Temperature: ${seaTemp.seaTemp}&deg; on ${new Date(seaTemp.timestamp).toLocaleDateString()}</li>`);
   if (gasChange) items.push(`<li>Gas tank change: ${new Date(gasChange.timestamp).toLocaleDateString()}</li>`);
   if (gasRefill) items.push(`<li>Gas tank refill: ${new Date(gasRefill.timestamp).toLocaleDateString()}</li>`);
@@ -1180,7 +1217,20 @@ function renderLogSummary(logs = []) {
   if (broken) items.push(`<li>Broken: ${broken.item || ""} on ${new Date(broken.timestamp).toLocaleDateString()}</li>`);
   if (fixed) items.push(`<li>Fixed: ${fixed.item || ""} on ${new Date(fixed.timestamp).toLocaleDateString()}</li>`);
 
-  div.innerHTML = items.length ? `<ul>${items.join("")}</ul>` : "";
+  const totalsHtml = `
+    <h4>Totals</h4>
+    <ul>
+      <li>Total miles travelled: ${totalNM.toFixed(1)} NM</li>
+      <li>Total hours travelled: ${formatDurationRounded(totalHrs)}</li>
+      <li>Total diesel used: ${totalDiesel.toFixed(1)} litres</li>
+      <li>Estimated diesel fuel efficiency: ${efficiency ? efficiency.toFixed(2) + ' NM/litre' : 'N/A'}</li>
+      <li>Estimated remaining diesel range: ${remainingRange ? remainingRange.toFixed(1) + ' NM' : 'N/A'}</li>
+    </ul>
+  `;
+
+  const latestHtml = items.length ? `<h4>Latest</h4><ul>${items.join("")}</ul>` : "";
+
+  div.innerHTML = totalsHtml + latestHtml;
 }
 
 // Render historical map (only arrived unique places). Uses window.histMap to cleanup.
