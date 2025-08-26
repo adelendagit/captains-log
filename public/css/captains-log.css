@@ -38,6 +38,11 @@ body {
   letter-spacing: 0.03em;
 }
 
+.site-title-link {
+  text-decoration: none;
+  color: inherit;
+}
+
 .site-user {
   display: flex;
   align-items: center;
