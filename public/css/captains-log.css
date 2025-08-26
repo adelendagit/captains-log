@@ -75,8 +75,40 @@ body {
 .user-btn.logged-in {
   background: #eaf6fb;
   color: #555;
-  cursor: default;
-  pointer-events: none;
+  /* cursor: default; */
+  /* pointer-events: none; */
+}
+
+.user-menu {
+  position: relative;
+  display: inline-block;
+}
+.user-dropdown {
+  position: absolute;
+  right: 0;
+  top: 110%;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 0.5em;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  z-index: 1000;
+  min-width: 120px;
+  padding: 0.5em 0;
+}
+.logout-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #d73027;
+  font-weight: 600;
+  padding: 0.7em 1em;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0.5em;
+  transition: background 0.15s;
+}
+.logout-btn:hover {
+  background: #ffeaea;
 }
 
 .remove-btn {

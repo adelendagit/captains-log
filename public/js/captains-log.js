@@ -50,6 +50,17 @@ function formatDurationRounded(h) {
   return `${mm}m`;
 }
 
+function getDateRange(startDate, endDate) {
+  const dates = [];
+  let current = new Date(startDate);
+  const end = new Date(endDate);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
 function updateSummary(stops, speed) {
   const summaryEl = document.getElementById('planning-summary');
   if (!summaryEl) return;
@@ -611,124 +622,148 @@ function renderTable(stops, speed) {
     return acc;
   }, {});
 
+  // --- Compute full date range ---
+  const todayStr = (new Date()).toISOString().slice(0, 10);
+  const allDueDates = future.map(s => s.due.slice(0, 10)).sort();
+  const firstDate = allDueDates.length ? (todayStr < allDueDates[0] ? todayStr : allDueDates[0]) : todayStr;
+  const lastDate = allDueDates.length ? allDueDates[allDueDates.length - 1] : todayStr;
+  const dateRange = getDateRange(firstDate, lastDate);
+
   let prevStop = current;
-  Object.keys(byDay).sort().forEach(dayKey => {
-    // Day header row (calculate totals)
-    let dayTotalNM = 0, dayTotalH = 0;
-    let dayPrev = prevStop;
-    byDay[dayKey].forEach((s) => {
-      if (dayPrev) {
-        const [lat1, lng1] = getLatLng(dayPrev);
-        const [lat2, lng2] = getLatLng(s);
-        if (
-          typeof lat1 === "number" && typeof lng1 === "number" &&
-          typeof lat2 === "number" && typeof lng2 === "number"
-        ) {
-          const meters = haversine(lat1, lng1, lat2, lng2);
-          const nm = toNM(meters);
-          dayTotalNM += nm;
-          dayTotalH += nm / speed;
+  dateRange.forEach(dayKey => {
+    const stopsForDay = byDay[dayKey] || [];
+
+    // Only render the day if:
+    // - there are stops for this day, or
+    // - the user can plan (logged in)
+    if (stopsForDay.length > 0 || canPlan) {
+      // Day header row (calculate totals)
+      let dayTotalNM = 0, dayTotalH = 0;
+      let dayPrev = prevStop;
+      stopsForDay.forEach((s) => {
+        if (dayPrev) {
+          const [lat1, lng1] = getLatLng(dayPrev);
+          const [lat2, lng2] = getLatLng(s);
+          if (
+            typeof lat1 === "number" && typeof lng1 === "number" &&
+            typeof lat2 === "number" && typeof lng2 === "number"
+          ) {
+            const meters = haversine(lat1, lng1, lat2, lng2);
+            const nm = toNM(meters);
+            dayTotalNM += nm;
+            dayTotalH += nm / speed;
+          }
         }
-      }
-      dayPrev = s;
-    });
+        dayPrev = s;
+      });
 
-    const dayRow = document.createElement("tr");
-    dayRow.className = "day-header-row";
-    dayRow.setAttribute('data-day', dayKey);
-    dayRow.innerHTML = `<td colspan="6" class="day-header-table">
-      ${formatDayLabel(dayKey)}
-      <span class="day-totals">
-        ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
-        ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
-      </span>
-    </td>`;
-    tbody.appendChild(dayRow);
-    // Sort stops by time
-    byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
+      const dayRow = document.createElement("tr");
+      dayRow.className = "day-header-row";
+      dayRow.setAttribute('data-day', dayKey);
+      dayRow.innerHTML = `<td colspan="6" class="day-header-table">
+        ${formatDayLabel(dayKey)}
+        <span class="day-totals">
+          ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
+          ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
+        </span>
+      </td>`;
+      tbody.appendChild(dayRow);
 
-    // Insert current stop first if it belongs to this day
-    if (current && current.due && current.due.slice(0,10) === dayKey) {
-      const stars = makeStars(current.rating);
-      const links = `
-        <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
-          <i class="fab fa-trello"></i>
-        </a>
-        ${current.navilyUrl ? `
-          <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
-            <i class="fa-solid fa-anchor"></i>
+      // Sort stops by time
+      stopsForDay.sort((a, b) => new Date(a.due) - new Date(b.due));
+
+      // Insert current stop first if it belongs to this day
+      if (current && current.due && current.due.slice(0,10) === dayKey) {
+        const stars = makeStars(current.rating);
+        const links = `
+          <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
+            <i class="fab fa-trello"></i>
           </a>
-        ` : ""}
-      `;
-      const labels = Array.isArray(current.labels) ? current.labels.map(l => {
-        const bg = l.color || '#888';
-        const fg = badgeTextColor(bg);
-        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-      }).join('') : '';
-      const tr = document.createElement("tr");
-      tr.className = "current-stop-row";
-      tr.innerHTML = `
-        <td>${current.name} <span class="current-badge-table">Current</span></td>
-        <td>${labels}</td>
-        <td>${stars}</td>
-        <td></td>
-        <td></td>
-        <td>${links}</td>
-      `;
-      tbody.appendChild(tr);
-      prevStop = current;
+          ${current.navilyUrl ? `
+            <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
+              <i class="fa-solid fa-anchor"></i>
+            </a>
+          ` : ""}
+        `;
+        const labels = Array.isArray(current.labels) ? current.labels.map(l => {
+          const bg = l.color || '#888';
+          const fg = badgeTextColor(bg);
+          return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+        }).join('') : '';
+        const tr = document.createElement("tr");
+        tr.className = "current-stop-row";
+        tr.innerHTML = `
+          <td>${current.name} <span class="current-badge-table">Current</span></td>
+          <td>${labels}</td>
+          <td>${stars}</td>
+          <td></td>
+          <td></td>
+          <td>${links}</td>
+        `;
+        tbody.appendChild(tr);
+        prevStop = current;
+      }
+
+      // Now render the rest of the stops for this day
+      stopsForDay.forEach((s, idx) => {
+        let nm = "", eta = "";
+        if (prevStop) {
+          const [lat1, lng1] = getLatLng(prevStop);
+          const [lat2, lng2] = getLatLng(s);
+          if (
+            typeof lat1 === "number" && typeof lng1 === "number" &&
+            typeof lat2 === "number" && typeof lng2 === "number"
+          ) {
+            const meters = haversine(lat1, lng1, lat2, lng2);
+            nm = toNM(meters).toFixed(1);
+            eta = formatDurationRounded(nm / speed);
+          }
+        }
+        const stars = makeStars(s.rating);
+        const removeBtn = canPlan && s.due
+          ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
+          : "";
+        const links = `
+          <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
+            <i class="fab fa-trello"></i>
+          </a>
+          ${s.navilyUrl ? `
+            <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
+              <i class="fa-solid fa-anchor"></i>
+            </a>
+          ` : ""}
+          ${removeBtn}
+        `;
+        const labels = Array.isArray(s.labels) ? s.labels.map(l => {
+          const bg = l.color || '#888';
+          const fg = badgeTextColor(bg);
+          return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+        }).join('') : '';
+        const tr = document.createElement("tr");
+        tr.setAttribute("data-card-id", s.id);
+        tr.className = "sortable-stop-row";
+        tr.setAttribute("data-day", dayKey);
+        tr.innerHTML = `
+          <td>${s.name}</td>
+          <td>${labels}</td>
+          <td>${stars}</td>
+          <td>${nm}</td>
+          <td>${eta}</td>
+          <td>${links}</td>
+        `;
+        tbody.appendChild(tr);
+        prevStop = s;
+      });
+
+      // If no stops for this day, add an empty row for drag-and-drop (only for logged-in users)
+      if (stopsForDay.length === 0 && canPlan) {
+        const tr = document.createElement("tr");
+        tr.className = "sortable-stop-row empty-drop-row";
+        tr.setAttribute("data-day", dayKey);
+        tr.innerHTML = `<td colspan="6" style="text-align:center; color:#bbb; font-style:italic;">No plans...</td>`;
+        tbody.appendChild(tr);
+      }
     }
-
-    // Now render the rest of the stops for this day
-    byDay[dayKey].forEach((s, idx) => {
-      let nm = "", eta = "";
-      if (prevStop) {
-        const [lat1, lng1] = getLatLng(prevStop);
-        const [lat2, lng2] = getLatLng(s);
-        if (
-          typeof lat1 === "number" && typeof lng1 === "number" &&
-          typeof lat2 === "number" && typeof lng2 === "number"
-        ) {
-          const meters = haversine(lat1, lng1, lat2, lng2);
-          nm = toNM(meters).toFixed(1);
-          eta = formatDurationRounded(nm / speed);
-        }
-      }
-      const stars = makeStars(s.rating);
-      const removeBtn = canPlan && s.due
-        ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
-        : "";
-      const links = `
-        <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
-          <i class="fab fa-trello"></i>
-        </a>
-        ${s.navilyUrl ? `
-          <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
-            <i class="fa-solid fa-anchor"></i>
-          </a>
-        ` : ""}
-        ${removeBtn}
-      `;
-      const labels = Array.isArray(s.labels) ? s.labels.map(l => {
-        const bg = l.color || '#888';
-        const fg = badgeTextColor(bg);
-        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-      }).join('') : '';
-      const tr = document.createElement("tr");
-      tr.setAttribute("data-card-id", s.id); // <-- add this
-      tr.className = "sortable-stop-row";
-      tr.setAttribute("data-day", dayKey); // for drag-and-drop grouping
-      tr.innerHTML = `
-        <td>${s.name}</td>
-        <td>${labels}</td>
-        <td>${stars}</td>
-        <td>${nm}</td>
-        <td>${eta}</td>
-        <td>${links}</td>
-      `;
-      tbody.appendChild(tr);
-      prevStop = s;
-    });
   });
 
   function formatDayLabel(dateStr) {
@@ -741,7 +776,7 @@ function renderTable(stops, speed) {
     function ymd(d) { return d.toISOString().slice(0,10); }
     if (ymd(date) === ymd(today)) return "Today";
     if (ymd(date) === ymd(tomorrow)) return "Tomorrow";
-    return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
+    return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
   handleRemoveButtonClicks();
   initTableDragAndDrop();
@@ -788,6 +823,7 @@ function initTableDragAndDrop() {
         const baseDate = new Date(day + 'T08:00:00');
         rows.forEach((row, i) => {
           const cardId = row.getAttribute('data-card-id');
+          if (!cardId) return; // <-- skip empty placeholder rows
           const due = new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString();
           updates.push({ cardId, due });
         });
@@ -1378,3 +1414,19 @@ async function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+document.addEventListener("DOMContentLoaded", function() {
+  const userBtn = document.getElementById("user-menu-btn");
+  const dropdown = document.getElementById("user-dropdown");
+  if (userBtn && dropdown) {
+    userBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+    });
+    // Hide dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!userBtn.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = "none";
+      }
+    });
+  }
+});

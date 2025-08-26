@@ -12,14 +12,20 @@
 <header class="site-header">
   <div class="site-title">Where is ...</div>
   <div class="site-user">
-    <% if (user) { %>
-      <button class="user-btn logged-in" disabled>
+   <% if (user) { %>
+    <div class="user-menu">
+      <button class="user-btn logged-in" id="user-menu-btn" type="button">
         <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
-        
       </button>
-    <% } else { %>
-      <a href="/auth/trello" class="user-btn">viewing</a>
-    <% } %>
+      <div class="user-dropdown" id="user-dropdown" style="display:none;">
+        <form action="/auth/logout" method="get">
+          <button type="submit" class="logout-btn">Log out</button>
+        </form>
+      </div>
+    </div>
+  <% } else { %>
+    <a href="/auth/trello" class="user-btn">viewing</a>
+  <% } %>
   </div>
 </header>
 
