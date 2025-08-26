@@ -178,8 +178,46 @@ router.get('/api/logs', async (req, res, next) => {
       .map(a => {
         const text = a.data.text;
         let type = null;
-        if (/^arrived\b/i.test(text)) type = "Arrived";
-        if (/^departed\b/i.test(text)) type = "Departed";
+        let dieselLitres = null;
+        let seaTemp = null;
+        let item = null;
+
+        if (/^arrived\b/i.test(text)) {
+          type = "Arrived";
+        } else if (/^departed\b/i.test(text)) {
+          type = "Departed";
+        } else if (/^water\b/i.test(text)) {
+          type = "Water";
+        } else {
+          const dieselMatch = text.match(/^diesel\s*([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?/i);
+          const tempMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\u00B0/);
+          const gasChangeMatch = /^gas tank change\b/i.test(text);
+          const gasRefillMatch = /^gas tank refill\b/i.test(text);
+          const bbqGasMatch = /^bbq gas change\b/i.test(text);
+          const brokenMatch = text.match(/^broken\s+(.+)/i);
+          const fixedMatch = text.match(/^fixed\s+(.+)/i);
+
+          if (dieselMatch) {
+            type = "Diesel";
+            dieselLitres = parseFloat(dieselMatch[1]);
+          } else if (tempMatch) {
+            type = "Sea Temperature";
+            seaTemp = parseFloat(tempMatch[1]);
+          } else if (gasChangeMatch) {
+            type = "Gas tank change";
+          } else if (gasRefillMatch) {
+            type = "Gas tank refill";
+          } else if (bbqGasMatch) {
+            type = "BBQ gas change";
+          } else if (brokenMatch) {
+            type = "Broken";
+            item = brokenMatch[1].trim();
+          } else if (fixedMatch) {
+            type = "Fixed";
+            item = fixedMatch[1].trim();
+          }
+        }
+
         if (!type) return null;
         const card = cards.find(c => c.id === a.data.card.id);
         const timestamp = extractTimestamp(text, a.date, a.data.card.id);
@@ -197,7 +235,10 @@ router.get('/api/logs', async (req, res, next) => {
             const ratingText = getCFTextOrDropdown(card, customFields, '⭐️');
             return ratingText != null ? parseInt(ratingText, 10) : null;
           })() : null,
-          navilyUrl: card ? getCFTextOrDropdown(card, customFields, 'Navily') : null
+          navilyUrl: card ? getCFTextOrDropdown(card, customFields, 'Navily') : null,
+          dieselLitres,
+          seaTemp,
+          item
         };
       })
       .filter(Boolean);

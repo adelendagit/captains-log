@@ -1152,6 +1152,37 @@ function renderHistoricalLog(logs = [], stops = []) {
   });
 }
 
+// Render a summary of key log events
+function renderLogSummary(logs = []) {
+  const div = document.getElementById("log-summary");
+  if (!div) return;
+
+  const latest = (type) => logs
+    .filter(l => l.type === type)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+
+  const water = latest("Water");
+  const diesel = latest("Diesel");
+  const seaTemp = latest("Sea Temperature");
+  const gasChange = latest("Gas tank change");
+  const gasRefill = latest("Gas tank refill");
+  const bbqGas = latest("BBQ gas change");
+  const broken = latest("Broken");
+  const fixed = latest("Fixed");
+
+  const items = [];
+  if (water) items.push(`<li>Water: ${new Date(water.timestamp).toLocaleDateString()}</li>`);
+  if (diesel) items.push(`<li>Diesel: ${new Date(diesel.timestamp).toLocaleDateString()}${diesel.dieselLitres != null ? ` (${diesel.dieselLitres} litres)` : ""}</li>`);
+  if (seaTemp) items.push(`<li>Sea Temperature: ${seaTemp.seaTemp}&deg; on ${new Date(seaTemp.timestamp).toLocaleDateString()}</li>`);
+  if (gasChange) items.push(`<li>Gas tank change: ${new Date(gasChange.timestamp).toLocaleDateString()}</li>`);
+  if (gasRefill) items.push(`<li>Gas tank refill: ${new Date(gasRefill.timestamp).toLocaleDateString()}</li>`);
+  if (bbqGas) items.push(`<li>BBQ gas change: ${new Date(bbqGas.timestamp).toLocaleDateString()}</li>`);
+  if (broken) items.push(`<li>Broken: ${broken.item || ""} on ${new Date(broken.timestamp).toLocaleDateString()}</li>`);
+  if (fixed) items.push(`<li>Fixed: ${fixed.item || ""} on ${new Date(fixed.timestamp).toLocaleDateString()}</li>`);
+
+  div.innerHTML = items.length ? `<ul>${items.join("")}</ul>` : "";
+}
+
 // Render historical map (only arrived unique places). Uses window.histMap to cleanup.
 function renderLogMap(logs = [], stops = []) {
   console.log("Rendering historical map with", logs.length, "logs and", stops.length, "stops");
@@ -1327,6 +1358,7 @@ function setupLogTab(stops = []) {
       logsToShow = filterLogsByDate(allLogsCache, mostRecentTripRange.start, mostRecentTripRange.end);
     }
     renderHistoricalLog(logsToShow, stops);
+    renderLogSummary(logsToShow);
     window._lastLogMapData = logsToShow;
 
     // --- ADD THIS: update the map if the log tab is visible ---
@@ -1427,8 +1459,10 @@ function setupHistoricalTripLinks(stops = []) {
       const start = li.getAttribute('data-trip-start');
       const end = li.getAttribute('data-trip-end');
       currentLogFilter = { start, end };
-      renderHistoricalLog(filterLogsByDate(allLogsCache, start, end), stops);
-      renderLogMap(filterLogsByDate(allLogsCache, start, end), stops);
+      const filtered = filterLogsByDate(allLogsCache, start, end);
+      renderHistoricalLog(filtered, stops);
+      renderLogSummary(filtered);
+      renderLogMap(filtered, stops);
     });
   });
 }
