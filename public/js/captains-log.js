@@ -947,9 +947,22 @@ function renderHistoricalLog(logs = [], stops = []) {
   if (!section) return;
   section.innerHTML = "";
 
+  // Find all arrived logs
   const arrived = logs
     .filter(l => l.type === "Arrived")
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // DESCENDING
+
+  // Find the first departed log (earliest by timestamp)
+  const firstDeparted = logs
+    .filter(l => l.type === "Departed")
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+
+  // Insert the first departed at the start, if it exists
+  if (firstDeparted) {
+    arrived.push(firstDeparted);
+    console.log("Added first departed log:", firstDeparted);
+  }
+
   if (!arrived.length) {
     section.innerHTML = "<p>No visits found.</p>";
     return;
@@ -957,8 +970,10 @@ function renderHistoricalLog(logs = [], stops = []) {
 
   arrived.forEach(l => {
     const stop = stops.find(s => s.id === l.cardId) || stops.find(s => s.name === l.cardName);
-    const stars = stop ? makeStars(stop.rating) : "";
-    const navily = stop && stop.navilyUrl ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>` : "";
+    const stars = stop ? makeStars(stop.rating) : (l.rating ? makeStars(l.rating) : "");
+    const navily = (stop && stop.navilyUrl)
+      ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
+      : (l.navilyUrl ? `<a href="${l.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>` : "");
     const trello = l.trelloUrl ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>` : "";
 
     const div = document.createElement("div");
@@ -968,8 +983,10 @@ function renderHistoricalLog(logs = [], stops = []) {
       <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
       <div class="historical-log-rating">${stars}</div>
       <div class="historical-log-links">${navily}${trello}</div>
+      <div class="historical-log-type">${l.type}</div>
     `;
     section.appendChild(div);
+    console.log("Rendered log entry:", l);
   });
 }
 
@@ -996,6 +1013,20 @@ function renderLogMap(logs = [], stops = []) {
   arrived.forEach(l => {
     if (!seen.has(l.cardId)) { seen.add(l.cardId); unique.push(l); }
   });
+
+  // Add the first departed log if it exists and has coordinates
+  const firstDeparted = logs
+    .filter(l => l.type === "Departed")
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+
+  if (
+    firstDeparted &&
+    typeof firstDeparted.lat === "number" &&
+    typeof firstDeparted.lng === "number" &&
+    !seen.has(firstDeparted.cardId)
+  ) {
+    unique.unshift(firstDeparted); // Add at the start
+  }
 
   const markers = unique.map(l => ({
     lat: typeof l.lat === "number" ? l.lat : null,
@@ -1038,10 +1069,30 @@ function renderLogMap(logs = [], stops = []) {
     L.polyline(logCoords, { color: "#555", weight: 2 }).addTo(window.histMap);
   }
 
+  // if (plannedCoords.length > 1) {
+  //   L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);
+  //   plannedCoords.forEach(ll => bounds.push(ll));
+  // }
   if (plannedCoords.length > 1) {
-    L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);
+    L.polyline(plannedCoords, {
+      color: "#0077cc",      // Brighter blue
+      weight: 4,             // Thicker line
+      dashArray: "6 6",      // More visible dashes
+      opacity: 0.85
+    }).addTo(window.histMap);
     plannedCoords.forEach(ll => bounds.push(ll));
   }
+  plannedCoords.forEach(ll => {
+    L.circleMarker(ll, {
+      radius: 8,
+      fillColor: "#0077cc",
+      color: "#fff",
+      weight: 2,
+      fillOpacity: 1,
+      opacity: 1,
+      className: "map-planned-marker"
+    }).addTo(window.histMap);
+  });
 
   if (bounds.length) {
     window.histMap.fitBounds(bounds, { padding: [40,40] });

@@ -3,6 +3,17 @@ const router  = express.Router();
 const axios = require('axios');
 const { fetchBoard, fetchAllComments, fetchBoardWithAllComments } = require('../services/trello');
 
+function extractTimestamp(text, fallback, cardId) {
+  const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
+  if (match) {
+    const ts = match[1].trim().replace(' ', 'T');
+    const d = new Date(ts.length === 16 ? ts + ':00' : ts);
+    //console.log(`cardId: ${cardId} timestamp found old: ${ts}, new: ${d}, fallback: ${fallback}`);
+    if (!isNaN(d)) return d.toISOString();
+  }
+  return fallback;
+}
+
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
   const def  = boardCFs.find(f => f.name === name);
@@ -114,18 +125,6 @@ router.get('/api/data', async (req, res, next) => {
         const userId = req.user.id || req.user.idMember || (req.user.profile && req.user.profile.id);
         canPlan = members.some(m => m.id === userId && (m.memberType === 'admin' || m.memberType === 'normal'));
       }
-      
-      // Helper to extract timestamp from comment text
-      function extractTimestamp(text, fallback) {
-        const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
-        if (match) {
-          // Try to parse as ISO or "YYYY-mm-dd hh:mm"
-          const ts = match[1].trim().replace(' ', 'T');
-          const d = new Date(ts.length === 16 ? ts + ':00' : ts); // add seconds if missing
-          if (!isNaN(d)) return d.toISOString();
-        }
-        return fallback;
-      }
 
     res.json({ stops, places, canPlan });
   } catch(err) {
@@ -157,15 +156,7 @@ router.get('/api/logs', async (req, res, next) => {
       }
       return null;
     }
-    function extractTimestamp(text, fallback) {
-      const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
-      if (match) {
-        const ts = match[1].trim().replace(' ', 'T');
-        const d = new Date(ts.length === 16 ? ts + ':00' : ts);
-        if (!isNaN(d)) return d.toISOString();
-      }
-      return fallback;
-    }
+    
 
     // Get trips from cards in the Trips list
     const tripsList = lists.find(l => l.name === 'Trips');
@@ -191,7 +182,7 @@ router.get('/api/logs', async (req, res, next) => {
         if (/^departed\b/i.test(text)) type = "Departed";
         if (!type) return null;
         const card = cards.find(c => c.id === a.data.card.id);
-        const timestamp = extractTimestamp(text, a.date);
+        const timestamp = extractTimestamp(text, a.date, a.data.card.id);
         return {
           area: card && card.idList ? listNames[card.idList] : "Unknown",
           cardName: card ? card.name : (a.data.card.name || "Unknown"),
