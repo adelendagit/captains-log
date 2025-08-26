@@ -163,7 +163,12 @@ function initMap(stops, places, logs = null) {
     map = leafletMap;
   } else {
     map = L.map("map").setView([0, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    // Use OpenSeaMap as the sole base layer (includes OpenStreetMap data)
+    L.tileLayer("https://tiles.openseamap.org/map/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors, &copy; OpenSeaMap contributors"
+    }).addTo(map);
+
     leafletMap = map;
   }
 
@@ -1314,7 +1319,11 @@ function renderLogMap(logs = [], stops = []) {
 
   // create map
   window.histMap = L.map(mapDiv).setView([0,0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(window.histMap);
+
+  // Use OpenSeaMap tiles (includes OpenStreetMap data)
+  L.tileLayer("https://tiles.openseamap.org/map/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors, &copy; OpenSeaMap contributors"
+  }).addTo(window.histMap);
 
   const bounds = [];
   markers.forEach(m => {
