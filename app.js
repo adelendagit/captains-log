@@ -5,6 +5,7 @@ const morgan    = require('morgan');
 const compression = require('compression');
 const path      = require('path');
 const session   = require('express-session');
+const FileStore = require('session-file-store')(session);
 const passport  = require('passport');
 const TrelloStrategy = require('passport-trello').Strategy;
 const captainsLog = require('./routes/captainsLog');
@@ -62,11 +63,15 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 
+const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
 app.use(
   session({
+    store: new FileStore({}),
     secret: process.env.SESSION_SECRET || 'trellosession',
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
+    cookie: { maxAge: thirtyDays }
   })
 );
 app.use(passport.initialize());
@@ -81,7 +86,7 @@ if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
       {
         consumerKey: process.env.TRELLO_OAUTH_KEY,
         consumerSecret: process.env.TRELLO_OAUTH_SECRET,
-        trelloParams: { scope: 'read,write', expiration: '1day' }
+        trelloParams: { scope: 'read,write', expiration: '30days' }
       },
       (token, tokenSecret, profile, done) => {
         profile.token = token;

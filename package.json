@@ -24,7 +24,8 @@
     "morgan": "^1.10.0",
     "oauth-1.0a": "^2.2.6",
     "passport": "^0.7.0",
-    "passport-trello": "^1.1.0"
+    "passport-trello": "^1.1.0",
+    "session-file-store": "^1.5.0"
   },
   "devDependencies": {
     "eslint": "^8.50.0",
