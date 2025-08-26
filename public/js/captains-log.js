@@ -117,6 +117,17 @@ function makeStars(r) {
   return `<span class="stars">${full}${empty}</span>`;
 }
 
+function makeEditableStars(r, cardId) {
+  const current = r || 0;
+  let html = `<span class="stars editable" data-card-id="${cardId}">`;
+  for (let i = 1; i <= 5; i++) {
+    const star = i <= current ? '★' : '☆';
+    html += `<span class="star" data-value="${i}">${star}</span>`;
+  }
+  html += '</span>';
+  return html;
+}
+
 async function preloadAllLogs() {
   try {
     const res = await fetch("/api/logs?trip=all");
@@ -1084,7 +1095,10 @@ function renderHistoricalLog(logs = [], stops = []) {
 
   arrived.forEach(l => {
     const stop = stops.find(s => s.id === l.cardId) || stops.find(s => s.name === l.cardName);
-    const stars = stop ? makeStars(stop.rating) : (l.rating ? makeStars(l.rating) : "");
+    const currentRating = stop ? stop.rating : l.rating;
+    const ratingHtml = canPlan
+      ? makeEditableStars(currentRating, l.cardId)
+      : (currentRating != null ? makeStars(currentRating) : "");
     const navily = (stop && stop.navilyUrl)
       ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
       : (l.navilyUrl ? `<a href="${l.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>` : "");
@@ -1095,11 +1109,45 @@ function renderHistoricalLog(logs = [], stops = []) {
     div.innerHTML = `
       <div class="historical-log-place">${l.cardName}</div>
       <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
-      <div class="historical-log-rating">${stars}</div>
+      <div class="historical-log-rating">${ratingHtml}</div>
       <div class="historical-log-links">${navily}${trello}</div>
       <div class="historical-log-type">${l.type}</div>
     `;
     section.appendChild(div);
+
+    if (canPlan) {
+      const container = div.querySelector('.stars.editable');
+      if (container) {
+        container.querySelectorAll('.star').forEach(star => {
+          star.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const rating = parseInt(star.getAttribute('data-value'), 10);
+            const cardId = container.getAttribute('data-card-id');
+            const res = await fetch('/api/rate-place', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cardId, rating })
+            });
+            if (res.ok) {
+              container.querySelectorAll('.star').forEach(s => {
+                const val = parseInt(s.getAttribute('data-value'), 10);
+                s.textContent = val <= rating ? '★' : '☆';
+              });
+              const stop = stops.find(s => s.id === cardId);
+              if (stop) stop.rating = rating;
+              if (lastLoadedLogs) {
+                lastLoadedLogs.forEach(log => {
+                  if (log.cardId === cardId) log.rating = rating;
+                });
+              }
+            } else {
+              alert('Failed to save rating');
+            }
+          });
+        });
+      }
+    }
+
     console.log("Rendered log entry:", l);
   });
 }

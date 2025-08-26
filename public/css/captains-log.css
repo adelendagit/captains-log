@@ -430,6 +430,10 @@ body {
   }
 }
 
+.stars.editable .star {
+  cursor: pointer;
+}
+
 @media (min-width: 900px) {
   #planning {
     display: flex;
