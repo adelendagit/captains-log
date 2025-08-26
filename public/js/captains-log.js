@@ -89,6 +89,30 @@ async function fetchData() {
   return data;
 }
 
+async function fetchBreakList() {
+  const res = await fetch('/api/break-list');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.breaks || [];
+}
+
+function renderBreakList(items) {
+  const container = document.getElementById('break-list');
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = '<p>No breaks logged.</p>';
+    return;
+  }
+  const ul = document.createElement('ul');
+  items.forEach(b => {
+    const li = document.createElement('li');
+    li.textContent = `${b.item} - ${b.fixed ? 'fixed' : 'broken'}`;
+    ul.appendChild(li);
+  });
+  container.innerHTML = '';
+  container.appendChild(ul);
+}
+
 // map rating 1–5 → color
 function getColorForRating(r) {
   if (r == null) return "#888888"; // gray
@@ -1523,6 +1547,9 @@ async function init() {
   const data = await fetchData();
   stops = data.stops;
   places = data.places;
+
+  const breakItems = await fetchBreakList();
+  renderBreakList(breakItems);
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");

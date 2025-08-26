@@ -279,6 +279,41 @@ router.get('/api/logs', async (req, res, next) => {
   }
 });
 
+router.get('/api/break-list', async (req, res, next) => {
+  try {
+    const board = await fetchBoardWithAllComments();
+    const { allComments } = board;
+
+    const entries = allComments
+      .filter(a => a.type === 'commentCard' && a.data && a.data.text)
+      .map(a => {
+        const text = a.data.text;
+        const brokenMatch = text.match(/^broken\s+(.+)/i);
+        const fixedMatch = text.match(/^fixed\s+(.+)/i);
+        if (brokenMatch || fixedMatch) {
+          return {
+            item: (brokenMatch ? brokenMatch[1] : fixedMatch[1]).trim(),
+            fixed: !!fixedMatch,
+            timestamp: a.date,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const status = {};
+    entries.forEach(e => {
+      const key = e.item.toLowerCase();
+      status[key] = { item: e.item, fixed: e.fixed };
+    });
+
+    res.json({ breaks: Object.values(status) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // existing render route
 router.get('/captains-log', async (req, res, next) => {
   try {

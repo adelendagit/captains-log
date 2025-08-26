@@ -29,11 +29,12 @@
   </div>
 </header>
 
-<div class="tab-nav">
-  <button data-tab="planning" class="active">Planning</button>
-  <button data-tab="historical">Historical Trips</button>
-  <button data-tab="log">Log</button>
-</div>
+  <div class="tab-nav">
+    <button data-tab="planning" class="active">Planning</button>
+    <button data-tab="historical">Historical Trips</button>
+    <button data-tab="log">Log</button>
+    <button data-tab="breaks">Break List</button>
+  </div>
 
 <section id="planning" class="tab-content">
   <div id="map"></div>
@@ -98,6 +99,10 @@
   </div>
   <div id="log-summary" style="margin-bottom:1em;"></div>
   <div id="log-list"></div>
+</section>
+
+<section id="breaks" class="tab-content hidden">
+  <div id="break-list"></div>
 </section>
 </main>
 
