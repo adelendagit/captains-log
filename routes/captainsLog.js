@@ -436,4 +436,79 @@ router.post('/api/reorder-stops', async (req, res, next) => {
   }
 });
 
+router.post('/api/rate-place', async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: 'Not authenticated' });
+
+    const { cardId, rating } = req.body;
+    if (!cardId || rating == null)
+      return res.status(400).json({ error: 'Missing cardId or rating' });
+
+    const board = await fetchBoard();
+    const { customFields, members } = board;
+
+    const userId =
+      req.user.id ||
+      req.user.idMember ||
+      (req.user.profile && req.user.profile.id);
+    const isMember = members.some(
+      (m) =>
+        m.id === userId &&
+        (m.memberType === 'admin' || m.memberType === 'normal')
+    );
+    if (!isMember) return res.status(403).json({ error: 'Not a board member' });
+
+    const ratingField = customFields.find((f) => f.name === '⭐️');
+    if (!ratingField)
+      return res.status(500).json({ error: 'Rating field not found' });
+
+    const parsed = parseInt(rating, 10);
+    if (!parsed || parsed < 1 || parsed > 5)
+      return res.status(400).json({ error: 'Invalid rating' });
+
+    let payload;
+    if (Array.isArray(ratingField.options)) {
+      const opt = ratingField.options.find(
+        (o) => o.value && o.value.text === String(parsed)
+      );
+      if (!opt)
+        return res.status(400).json({ error: 'Rating option not found' });
+      payload = { idValue: opt.id };
+    } else {
+      payload = { value: { text: String(parsed) } };
+    }
+
+    const oauth = {
+      consumer_key: process.env.TRELLO_OAUTH_KEY,
+      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+      token: req.user.token,
+      token_secret: req.user.tokenSecret,
+    };
+    const oauth1a = require('oauth-1.0a');
+    const crypto = require('crypto');
+    const oauthClient = oauth1a({
+      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
+      signature_method: 'HMAC-SHA1',
+      hash_function(base_string, key) {
+        return crypto.createHmac('sha1', key).update(base_string).digest('base64');
+      },
+    });
+
+    const url = `https://api.trello.com/1/cards/${cardId}/customField/${ratingField.id}/item`;
+    const request_data = { url, method: 'PUT', data: payload };
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(request_data, {
+        key: oauth.token,
+        secret: oauth.token_secret,
+      })
+    );
+
+    await axios.put(url, payload, { headers });
+    res.json({ success: true });
+  } catch (err) {
+    console.log('Error in /api/rate-place:', err);
+    next(err);
+  }
+});
+
 module.exports = router;
