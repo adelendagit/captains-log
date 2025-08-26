@@ -163,7 +163,30 @@ function initMap(stops, places, logs = null) {
     map = leafletMap;
   } else {
     map = L.map("map").setView([0, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    // Base OpenStreetMap layer (not added by default so we can toggle to it)
+    const osmBase = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    });
+
+    // OpenSeaMap layer group (OSM + seamarks)
+    const osmForSeaMap = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    });
+    const seamarks = L.tileLayer(
+      "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
+      {
+        attribution: "&copy; OpenSeaMap contributors"
+      }
+    );
+    const seaMap = L.layerGroup([osmForSeaMap, seamarks]).addTo(map);
+
+    // Allow switching between plain OSM and OpenSeaMap
+    L.control.layers({
+      OpenSeaMap: seaMap,
+      OpenStreetMap: osmBase
+    }).addTo(map);
+
     leafletMap = map;
   }
 
@@ -1314,7 +1337,29 @@ function renderLogMap(logs = [], stops = []) {
 
   // create map
   window.histMap = L.map(mapDiv).setView([0,0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(window.histMap);
+
+  // Plain OpenStreetMap layer for toggling
+  const histOsmBase = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  });
+
+  // Grouped OpenSeaMap layer (OSM + seamarks)
+  const histOsmForSeaMap = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  });
+  const histSeamarks = L.tileLayer(
+    "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
+    {
+      attribution: "&copy; OpenSeaMap contributors"
+    }
+  );
+  const histSeaMap = L.layerGroup([histOsmForSeaMap, histSeamarks]).addTo(window.histMap);
+
+  // Layer control to switch views
+  L.control.layers({
+    OpenSeaMap: histSeaMap,
+    OpenStreetMap: histOsmBase
+  }).addTo(window.histMap);
 
   const bounds = [];
   markers.forEach(m => {
