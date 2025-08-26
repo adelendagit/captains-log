@@ -683,6 +683,8 @@ function initTableDragAndDrop() {
     tbody._sortable = null;
   }
 
+  if (!canPlan) return;
+
   tbody._sortable = Sortable.create(tbody, {
     handle: 'td',
     animation: 150,
@@ -745,6 +747,8 @@ function initCardsDragAndDrop() {
       dayDiv._sortable.destroy();
       dayDiv._sortable = null;
     }
+
+    if (!canPlan) return;
 
     dayDiv._sortable = Sortable.create(dayDiv, {
       group: 'stops', // allow cross-day dragging
