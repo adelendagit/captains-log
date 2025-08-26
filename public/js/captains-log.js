@@ -163,7 +163,17 @@ function initMap(stops, places, logs = null) {
     map = leafletMap;
   } else {
     map = L.map("map").setView([0, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+    const seamarks = L.tileLayer(
+      "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
+      {
+        attribution: "&copy; OpenSeaMap contributors",
+        transparent: true
+      }
+    ).addTo(map);
+    L.control.layers({ OpenStreetMap: osm }, { "Sea Marks": seamarks }).addTo(map);
     leafletMap = map;
   }
 
@@ -1314,7 +1324,17 @@ function renderLogMap(logs = [], stops = []) {
 
   // create map
   window.histMap = L.map(mapDiv).setView([0,0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(window.histMap);
+  const histOsm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(window.histMap);
+  const histSeamarks = L.tileLayer(
+    "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
+    {
+      attribution: "&copy; OpenSeaMap contributors",
+      transparent: true
+    }
+  ).addTo(window.histMap);
+  L.control.layers({ OpenStreetMap: histOsm }, { "Sea Marks": histSeamarks }).addTo(window.histMap);
 
   const bounds = [];
   markers.forEach(m => {
