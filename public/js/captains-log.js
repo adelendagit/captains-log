@@ -1233,6 +1233,30 @@ function renderLogSummary(logs = []) {
   div.innerHTML = totalsHtml + latestHtml;
 }
 
+function renderBrokenItems(logs = []) {
+  const div = document.getElementById("broken-items");
+  if (!div) return;
+
+  const itemsByName = {};
+  logs
+    .filter(l => (l.type === "Broken" || l.type === "Fixed") && l.item)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .forEach(l => {
+      itemsByName[l.item] = { item: l.item, fixed: l.type === "Fixed" };
+    });
+
+  const entries = Object.values(itemsByName);
+  if (!entries.length) {
+    div.innerHTML = "";
+    return;
+  }
+
+  const list = entries
+    .map(e => `<li>${e.item}: ${e.fixed ? "Fixed" : "Broken"}</li>`)
+    .join("");
+  div.innerHTML = `<h4>Broken Items</h4><ul>${list}</ul>`;
+}
+
 // Render historical map (only arrived unique places). Uses window.histMap to cleanup.
 function renderLogMap(logs = [], stops = []) {
   console.log("Rendering historical map with", logs.length, "logs and", stops.length, "stops");
@@ -1409,6 +1433,7 @@ function setupLogTab(stops = []) {
     }
     renderHistoricalLog(logsToShow, stops);
     renderLogSummary(logsToShow);
+    renderBrokenItems(logsToShow);
     window._lastLogMapData = logsToShow;
 
     // --- ADD THIS: update the map if the log tab is visible ---
@@ -1512,6 +1537,7 @@ function setupHistoricalTripLinks(stops = []) {
       const filtered = filterLogsByDate(allLogsCache, start, end);
       renderHistoricalLog(filtered, stops);
       renderLogSummary(filtered);
+      renderBrokenItems(filtered);
       renderLogMap(filtered, stops);
     });
   });
