@@ -211,10 +211,14 @@ router.get('/api/logs', async (req, res, next) => {
             type = "BBQ gas change";
           } else if (brokenMatch) {
             type = "Broken";
-            item = brokenMatch[1].trim();
+            item = brokenMatch[1]
+              .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
+              .trim();
           } else if (fixedMatch) {
             type = "Fixed";
-            item = fixedMatch[1].trim();
+            item = fixedMatch[1]
+              .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
+              .trim();
           }
         }
 
