@@ -372,6 +372,9 @@ body {
 .map-planned-marker {
   filter: drop-shadow(0 0 6px #0077cc88);
 }
+.map-log-marker {
+  filter: drop-shadow(0 0 4px #5555);
+}
 .leaflet-interactive.map-stop-marker {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.18));
 }

@@ -13,6 +13,8 @@ let stops = [];
 let places = [];
 let plannedOnlyToggle = null;
 
+let logLayerGroup = null;
+
 let mostRecentTripRange = null;
 
 let canPlan = false;
@@ -113,15 +115,14 @@ async function preloadAllLogs() {
     mostRecentTripRange = json.mostRecentTripRange || null;
     // If log tab is visible, render now
     if (isLogTabActive()) {
-      // Use your default filter (most recent trip)
       currentLogFilter = null;
-      // You need to pass stops to renderFilteredLogs; if not in scope, make sure it is
       if (typeof stops !== "undefined") {
-        // Call the same render function as in setupLogTab
         const logBtn = document.querySelector('[data-tab="log"]');
         if (logBtn) logBtn.click();
       }
     }
+    // --- Add this to update the planning map with logs ---
+    renderMapWithToggle();
   } catch (err) {
     console.error("Failed to preload logs:", err);
     allLogsCache = [];
@@ -133,9 +134,16 @@ function isLogTabActive() {
   return logSection && !logSection.classList.contains('hidden');
 }
 
-function initMap(stops, places) {
-  const map = L.map("map").setView([0, 0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+function initMap(stops, places, logs = null) {
+  // Only create the map if it doesn't exist
+  let map;
+  if (leafletMap) {
+    map = leafletMap;
+  } else {
+    map = L.map("map").setView([0, 0], 2);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    leafletMap = map;
+  }
 
   const stopCoords = [];
 
@@ -147,7 +155,6 @@ function initMap(stops, places) {
     // choose color: blue for current, else by rating
     const color = s.dueComplete ? "#3182bd" : getColorForRating(s.rating);
 
-    // ...inside stops.forEach in initMap...
     let popupHtml = `<strong>${s.dueComplete ? "Current:" : ""} ${s.name}</strong><br>`;
     if (!s.dueComplete) {
       popupHtml += `${new Date(s.due).toLocaleDateString()}<br>`;
@@ -160,10 +167,10 @@ function initMap(stops, places) {
     }
 
     L.circleMarker(ll, {
-      radius: 14, // larger for easier tapping
+      radius: 14,
       fillColor: color,
-      color: "#222", // darker border for contrast
-      weight: 3,     // thicker border
+      color: "#cac8c8ff",
+      weight: 3,
       fillOpacity: 0.88,
       opacity: 1,
       className: "map-stop-marker"
@@ -173,9 +180,9 @@ function initMap(stops, places) {
       .bindTooltip(s.name, { permanent: true, direction: "right", offset: [10, 0], className: "map-label" });
   });
 
-    if (stopCoords.length > 1) {
+  if (stopCoords.length > 1) {
     const polyline = L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(map);
-  
+
     // Add direction arrows
     const arrowHeadFn =
       (L.Symbol && L.Symbol.arrowHead) ||
@@ -223,58 +230,125 @@ function initMap(stops, places) {
     L.circleMarker(ll, {
       radius: 10,
       fillColor: color,
-      color: "#000",
+      color: "#ffffffff",
       weight: 1,
       fillOpacity: 0.5,
     })
       .addTo(map)
       .bindPopup(popupHtml)
       .bindTooltip(p.name, {
-        permanent: false, // only show on hover/tap
+        permanent: false,
         direction: "right",
         offset: [10, 0],
         className: "map-label"
-      })
+      });
   });
 
-  // Attach event listener for plan button when popup opens
+  // --- Log data layer ---
+  // Use a LayerGroup so we can update log data without recreating the map
+  if (logLayerGroup) {
+    logLayerGroup.clearLayers();
+  } else {
+    logLayerGroup = L.layerGroup().addTo(map);
+  }
+
+  if (logs && Array.isArray(logs)) {
+    // Find all arrived logs, unique by cardId
+    const arrived = logs
+      .filter(l => l.type === "Arrived")
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const unique = [];
+    const seen = new Set();
+    arrived.forEach(l => {
+      if (!seen.has(l.cardId)) { seen.add(l.cardId); unique.push(l); }
+    });
+
+    // Add the first departed log if it exists and has coordinates
+    const firstDeparted = logs
+      .filter(l => l.type === "Departed")
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+
+    if (
+      firstDeparted &&
+      typeof firstDeparted.lat === "number" &&
+      typeof firstDeparted.lng === "number" &&
+      !seen.has(firstDeparted.cardId)
+    ) {
+      unique.unshift(firstDeparted);
+    }
+
+    // Plot markers and route
+    const logMarkers = unique.map(l => ({
+      lat: typeof l.lat === "number" ? l.lat : null,
+      lng: typeof l.lng === "number" ? l.lng : null,
+      name: l.cardName,
+      rating: l.rating,
+      navilyUrl: l.navilyUrl,
+      trelloUrl: l.trelloUrl,
+      date: l.timestamp
+    })).filter(m => typeof m.lat === "number" && typeof m.lng === "number");
+
+    const logCoords = logMarkers.map(m => [m.lat, m.lng]);
+    if (logCoords.length > 1) {
+      L.polyline(logCoords, {
+        color: "#888",         // lighter gray
+        weight: 2,
+        opacity: 0.5,          // more faint
+        dashArray: "4 6"       // dashed line
+      }).addTo(logLayerGroup);
+    }
+    logMarkers.forEach(m => {
+      const color = getColorForRating(m.rating);
+      L.circleMarker([m.lat, m.lng], {
+        radius: 4,
+        fillColor: color,
+        color: "transparent",
+        weight: 0,
+        fillOpacity: 0.88,
+        opacity: 1,
+        className: "map-log-marker"
+      })
+        .addTo(logLayerGroup)
+        .bindPopup(`<strong>${m.name}</strong><br>${m.rating ? makeStars(m.rating) : ""}<br>${new Date(m.date).toLocaleDateString()}`)
+        .bindTooltip(m.name, { permanent: false, direction: "right", offset: [10,0], className: "map-label" });
+    });
+  }
+
+  // Attach event listener for plan/remove button when popup opens
   map.on('popupopen', function(e) {
     const btn = e.popup._contentNode.querySelector('.plan-btn');
     if (btn) {
       btn.addEventListener('click', async (ev) => {
-        console.log('Plan button clicked for card ID:', btn.getAttribute('data-card-id'));
         ev.preventDefault();
         const cardId = btn.getAttribute('data-card-id');
         // Find the latest due date
-      const lastDue = stops
-        .filter(s => s.due)
-        .map(s => new Date(s.due))
-        .sort((a, b) => b - a)[0];
-      const nextDue = new Date(lastDue);
-      nextDue.setDate(nextDue.getDate() + 1);
-      // Call backend to update the card's due date
-      const res = await fetch(`/api/plan-stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId, due: nextDue.toISOString() })
-      });
-      if (res.ok) {
-        // Refresh planning data, table, and map
-        const data = await fetchData();
-        stops = data.stops;
-        places = data.places;
-        renderMapWithToggle();
-        renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
-      } else {
-        alert('Failed to plan stop.');
-      }
+        const lastDue = stops
+          .filter(s => s.due)
+          .map(s => new Date(s.due))
+          .sort((a, b) => b - a)[0];
+        const nextDue = new Date(lastDue);
+        nextDue.setDate(nextDue.getDate() + 1);
+        // Call backend to update the card's due date
+        const res = await fetch(`/api/plan-stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId, due: nextDue.toISOString() })
+        });
+        if (res.ok) {
+          const data = await fetchData();
+          stops = data.stops;
+          places = data.places;
+          renderMapWithToggle();
+          renderTable(stops, parseFloat(document.getElementById("speed-input").value));
+          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
+        } else {
+          alert('Failed to plan stop.');
+        }
       });
     }
     const removeBtn = e.popup._contentNode.querySelector('.remove-btn');
     if (removeBtn) {
       removeBtn.addEventListener('click', async (ev) => {
-        console.log('Remove button clicked for card ID:', removeBtn.getAttribute('data-card-id'));
         ev.preventDefault();
         ev.stopPropagation();
         const cardId = removeBtn.getAttribute('data-card-id');
@@ -297,7 +371,7 @@ function initMap(stops, places) {
       });
     }
   });
-  
+
   return map;
 }
 
@@ -1109,17 +1183,23 @@ function renderLogMap(logs = [], stops = []) {
 }
 
 function renderMapWithToggle() {
-    // Properly remove any existing map instance
-    if (leafletMap) {
-      leafletMap.remove();
-      leafletMap = null;
-    }
-    if (plannedOnlyToggle.checked) {
-      leafletMap = initMap(stops, []);
-    } else {
-      leafletMap = initMap(stops, places);
-    }
+  // Only pass logs if they are loaded
+  let logs = null;
+  if (allLogsCache && Array.isArray(allLogsCache) && mostRecentTripRange && mostRecentTripRange.start) {
+    logs = filterLogsByDate(allLogsCache, mostRecentTripRange.start, mostRecentTripRange.end);
   }
+  if (!leafletMap) {
+    // First time: create the map
+    if (plannedOnlyToggle.checked) {
+      leafletMap = initMap(stops, [], logs);
+    } else {
+      leafletMap = initMap(stops, places, logs);
+    }
+  } else {
+    // Map exists: just update log layer and planned/places markers
+    initMap(stops, plannedOnlyToggle.checked ? [] : places, logs);
+  }
+}
 
 function getMostRecentTripRangeFromTrips(trips) {
   // Flatten all trips into one array if grouped by year
