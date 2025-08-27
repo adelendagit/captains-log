@@ -695,6 +695,10 @@ function initTableDragAndDrop() {
     animation: 150,
     filter: '.day-header-row,.current-stop-row',
     draggable: '.sortable-stop-row',
+    // Delay drag start on touch devices so the page can scroll normally
+    delay: 200,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 10,
     onEnd: async function (evt) {
       // Walk through all rows, updating data-day for each stop row to match the most recent day header above it
       const rows = Array.from(tbody.querySelectorAll('tr'));
