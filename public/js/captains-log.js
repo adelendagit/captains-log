@@ -362,7 +362,6 @@ function initMap(stops, places, logs = null) {
           places = data.places;
           renderMapWithToggle();
           renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
         } else {
           alert('Failed to plan stop.');
         }
@@ -386,7 +385,6 @@ function initMap(stops, places, logs = null) {
           places = data.places;
           renderMapWithToggle();
           renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
         } else {
           alert('Failed to remove stop.');
         }
@@ -397,117 +395,6 @@ function initMap(stops, places, logs = null) {
   return map;
 }
 
-function renderList(stops, speed) {
-  const listEl = document.getElementById("planning-list");
-  listEl.innerHTML = "";
-  listEl.classList.add("timeline");
-
-  // current location
-  const current = stops.find((s) => s.dueComplete);
-  if (current) {
-    const li = document.createElement("li");
-    li.className = "stop-card current";
-    li.innerHTML = `
-      <h4>Current: ${current.name}</h4>
-      <div class="links">
-        ${
-          current.navilyUrl
-            ? `<a href="${current.navilyUrl}" target="_blank">Navily</a>`
-            : ""
-        }
-        <a href="${current.trelloUrl}" target="_blank">Trello</a>
-      </div>
-    `;
-    listEl.appendChild(li);
-  }
-
-  // 2) Group all future stops by calendar day and compute gaps
-  const future = stops.filter(s => !s.dueComplete);
-  future.forEach((s, idx) => {
-    const next = future[idx + 1];
-    if (next) {
-      const diff = new Date(next.due) - new Date(s.due);
-      s.hoursToNext = diff / 3600000;
-      s.overnight   = next.due.slice(0,10) !== s.due.slice(0,10);
-    } else {
-      s.hoursToNext = null;
-      s.overnight   = false;
-    }
-  });
-
-  const byDay = future.reduce((acc, s) => {
-    const day = s.due.slice(0, 10);
-    (acc[day] ??= []).push(s);
-    return acc;
-  }, {});
-
-
-  // 3) Iterate each day in order
-  let prevStop = current;
-  Object.keys(byDay).sort().forEach(dayKey => {
-    // Day header
-    const dateHeader = document.createElement('h3');
-    dateHeader.textContent = new Date(dayKey).toLocaleDateString();
-    listEl.appendChild(dateHeader);
-
-    // Stops for that day
-    byDay[dayKey].forEach((s) => {
-      // A) compute distance & ETA from previous point
-      const prev = prevStop;
-      let infoHtml = '';
-      if (prev) {
-        const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
-        const nm     = toNM(meters);
-        const eta    = formatDurationRounded(nm / speed);
-        infoHtml = `<em>${nm.toFixed(1)} NM, ETA: ${eta}</em>`;
-      }
-
-      // B) info about time until next stop
-      let stayHtml = '';
-      if (s.hoursToNext != null) {
-        const hrs = Math.round(s.hoursToNext);
-        const overnightText = s.overnight ? ' (overnight)' : '';
-        stayHtml = `<div class="stay">${hrs}h until next stop${overnightText}</div>`;
-      }
-
-      // C) badges for labels (safe fallback)
-      const labels = Array.isArray(s.labels) ? s.labels : [];
-      const badges = labels
-        .map(l => {
-          const bg = l.color || '#888';
-          const fg = badgeTextColor(bg);
-          return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-        })
-        .join('');
-
-      // D) star‑rating
-      const stars = makeStars(s.rating);
-      const ratingHtml = stars ? `<div class="rating">${stars}</div>` : '';
-
-      // E) build the card
-      const li = document.createElement('li');
-      li.className = 'stop-card' + (s.overnight ? ' overnight' : '');
-      li.onclick   = () => window.open(s.trelloUrl, '_blank');
-
-      li.innerHTML = `
-        <div class="header">${badges}</div>
-        <h4>${s.name}</h4>
-        <div class="subtitle">${s.listName}</div>
-        ${ratingHtml}
-        <div class="info">${infoHtml}</div>
-        ${stayHtml}
-        <div class="links">
-          <a href="${s.trelloUrl}"  target="_blank">Trello</a>
-          ${s.navilyUrl
-            ? `<a href="${s.navilyUrl}" target="_blank">Navily</a>`
-            : ''}
-        </div>
-      `;
-      listEl.appendChild(li);
-      prevStop = s;
-    });
-  });
-}
 
 function handlePlanButtonClicks() {
   document.querySelectorAll('.plan-btn').forEach(btn => {
@@ -535,7 +422,6 @@ function handlePlanButtonClicks() {
         places = data.places;
         renderMapWithToggle();
         renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
       } else {
         alert('Failed to plan stop.');
       }
@@ -561,7 +447,6 @@ function handleRemoveButtonClicks() {
         places = data.places;
         renderMapWithToggle();
         renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-        renderCards(stops, parseFloat(document.getElementById("speed-input").value));
       } else {
         alert('Failed to remove stop.');
       }
@@ -615,12 +500,12 @@ function renderTable(stops, speed) {
     const tr = document.createElement("tr");
     tr.className = "current-stop-row";
     tr.innerHTML = `
-      <td>${current.name} <span class="current-badge-table">Current</span></td>
-      <td>${labels}</td>
-      <td>${stars}</td>
-      <td></td>
-      <td></td>
-      <td>${links}</td>
+      <td data-label="Name">${current.name} <span class="current-badge-table">Current</span></td>
+      <td data-label="Labels">${labels}</td>
+      <td data-label="Rating">${stars}</td>
+      <td data-label="Distance (NM)"></td>
+      <td data-label="ETA"></td>
+      <td data-label="Links">${links}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -704,12 +589,12 @@ function renderTable(stops, speed) {
         const tr = document.createElement("tr");
         tr.className = "current-stop-row";
         tr.innerHTML = `
-          <td>${current.name} <span class="current-badge-table">Current</span></td>
-          <td>${labels}</td>
-          <td>${stars}</td>
-          <td></td>
-          <td></td>
-          <td>${links}</td>
+          <td data-label="Name">${current.name} <span class="current-badge-table">Current</span></td>
+          <td data-label="Labels">${labels}</td>
+          <td data-label="Rating">${stars}</td>
+          <td data-label="Distance (NM)"></td>
+          <td data-label="ETA"></td>
+          <td data-label="Links">${links}</td>
         `;
         tbody.appendChild(tr);
         prevStop = current;
@@ -755,12 +640,12 @@ function renderTable(stops, speed) {
         tr.className = "sortable-stop-row";
         tr.setAttribute("data-day", dayKey);
         tr.innerHTML = `
-          <td>${s.name}</td>
-          <td>${labels}</td>
-          <td>${stars}</td>
-          <td>${nm}</td>
-          <td>${eta}</td>
-          <td>${links}</td>
+          <td data-label="Name">${s.name}</td>
+          <td data-label="Labels">${labels}</td>
+          <td data-label="Rating">${stars}</td>
+          <td data-label="Distance (NM)">${nm}</td>
+          <td data-label="ETA">${eta}</td>
+          <td data-label="Links">${links}</td>
         `;
         tbody.appendChild(tr);
         prevStop = s;
@@ -854,218 +739,12 @@ function initTableDragAndDrop() {
           places = data.places;
           renderMapWithToggle();
           renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-          renderCards(stops, parseFloat(document.getElementById("speed-input").value));
         }, 1000);
       }
     }
   });
 }
 
-function initCardsDragAndDrop() {
-  document.querySelectorAll('.sortable-day').forEach(dayDiv => {
-    // Destroy previous Sortable if any
-    if (dayDiv._sortable) {
-      dayDiv._sortable.destroy();
-      dayDiv._sortable = null;
-    }
-
-    if (!canPlan) return;
-
-    dayDiv._sortable = Sortable.create(dayDiv, {
-      group: 'stops', // allow cross-day dragging
-      animation: 150,
-      draggable: '.stop-card',
-      onEnd: async function (evt) {
-        // Collect updates for ALL days after any drag
-        const allUpdates = [];
-        document.querySelectorAll('.sortable-day').forEach(dayDiv2 => {
-          const day = dayDiv2.getAttribute('data-day');
-          const cards = Array.from(dayDiv2.querySelectorAll('.stop-card'));
-          const baseDate = new Date(day + 'T08:00:00');
-          cards.forEach((card, i) => {
-            allUpdates.push({
-              cardId: card.getAttribute('data-card-id'),
-              due: new Date(baseDate.getTime() + i * 60 * 60 * 1000).toISOString()
-            });
-          });
-        });
-
-        if (allUpdates.length) {
-          await fetch('/api/reorder-stops', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates: allUpdates })
-          });
-          setTimeout(async () => {
-            const data = await fetchData();
-            stops = data.stops;
-            places = data.places;
-            renderMapWithToggle();
-            renderTable(stops, parseFloat(document.getElementById("speed-input").value));
-            renderCards(stops, parseFloat(document.getElementById("speed-input").value));
-          }, 1000);
-        }
-      }
-    });
-  });
-}
-
-function renderCards(stops, speed) {
-  updateSummary(stops, speed);
-  const container = document.getElementById("planning-list");
-  container.innerHTML = "";
-
-  function getLatLng(stop) {
-    return (typeof stop.lat === "number" && typeof stop.lng === "number")
-      ? [stop.lat, stop.lng]
-      : [null, null];
-  }
-
-  const current = stops.find(s => s.dueComplete);
-
-  // Group all future stops by date only
-  const future = stops.filter(s => !s.dueComplete && s.due);
-  const byDay = future.reduce((acc, s) => {
-    const day = s.due.slice(0, 10);
-    (acc[day] ??= []).push(s);
-    return acc;
-  }, {});
-
-  let prevStop = current;
-  Object.keys(byDay).sort().forEach(dayKey => {
-    // Day totals
-    let dayTotalNM = 0, dayTotalH = 0;
-    let dayPrev = prevStop;
-    byDay[dayKey].forEach((s) => {
-      if (dayPrev) {
-        const [lat1, lng1] = getLatLng(dayPrev);
-        const [lat2, lng2] = getLatLng(s);
-        if (
-          typeof lat1 === "number" && typeof lng1 === "number" &&
-          typeof lat2 === "number" && typeof lng2 === "number"
-        ) {
-          const meters = haversine(lat1, lng1, lat2, lng2);
-          const nm = toNM(meters);
-          dayTotalNM += nm;
-          dayTotalH += nm / speed;
-        }
-      }
-      dayPrev = s;
-    });
-
-    const dayHeader = document.createElement("h3");
-    dayHeader.textContent = `${formatDayLabel(dayKey)}${dayTotalNM ? ` • ${dayTotalNM.toFixed(1)} NM` : ""}${dayTotalH ? ` • ${formatDurationRounded(dayTotalH)}` : ""}`;
-    dayHeader.className = "day-header";
-    container.appendChild(dayHeader);
-
-    // Create a div for this day’s stops
-    const dayDiv = document.createElement("div");
-    dayDiv.className = "sortable-day";
-    dayDiv.setAttribute("data-day", dayKey);
-
-    // Sort stops by time
-    byDay[dayKey].sort((a, b) => new Date(a.due) - new Date(b.due));
-
-    // Insert current stop first if it belongs to this day
-    if (current && current.due && current.due.slice(0,10) === dayKey) {
-      const stars = makeStars(current.rating);
-      const links = `
-        <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
-          <i class="fab fa-trello"></i>
-        </a>
-        ${current.navilyUrl ? `
-          <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
-            <i class="fa-solid fa-anchor"></i>
-          </a>
-        ` : ""}
-      `;
-      const labels = Array.isArray(current.labels) ? current.labels.map(l => {
-        const bg = l.color || '#888';
-        const fg = badgeTextColor(bg);
-        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-      }).join('') : '';
-      const card = document.createElement("div");
-      card.className = "stop-card current-stop";
-      card.innerHTML = `
-        <div class="stop-header">
-          ${labels}<span class="current-badge">Current</span>
-        </div>
-        <div class="stop-name">${current.name}</div>
-        <div class="stop-rating">${stars}</div>
-        <div class="stop-links">${links}</div>
-      `;
-      container.appendChild(card);
-      prevStop = current;
-    }
-
-    // Now render the rest of the stops for this day
-    byDay[dayKey].forEach((s, idx) => {
-      let nm = "", eta = "";
-      if (prevStop) {
-        const [lat1, lng1] = getLatLng(prevStop);
-        const [lat2, lng2] = getLatLng(s);
-        if (
-          typeof lat1 === "number" && typeof lng1 === "number" &&
-          typeof lat2 === "number" && typeof lng2 === "number"
-        ) {
-          const meters = haversine(lat1, lng1, lat2, lng2);
-          nm = toNM(meters).toFixed(1);
-          eta = formatDurationRounded(nm / speed);
-        }
-      }
-      const stars = makeStars(s.rating);
-      const removeBtn = canPlan && s.due
-        ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
-        : "";
-      const links = `
-        <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
-          <i class="fab fa-trello"></i>
-        </a>
-        ${s.navilyUrl ? `
-          <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
-            <i class="fa-solid fa-anchor"></i>
-          </a>
-        ` : ""}
-        ${removeBtn}
-      `;
-      const labels = Array.isArray(s.labels) ? s.labels.map(l => {
-        const bg = l.color || '#888';
-        const fg = badgeTextColor(bg);
-        return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-      }).join('') : '';
-      const card = document.createElement("div");
-      card.className = "stop-card";
-      card.setAttribute("data-card-id", s.id); // <-- add this
-      card.innerHTML = `
-        <div class="stop-header">${labels}</div>
-        <div class="stop-name">${s.name}</div>
-        <div class="stop-rating">${stars}</div>
-        <div class="stop-distance"><strong>Distance:</strong> ${nm} NM</div>
-        <div class="stop-eta"><strong>ETA:</strong> ${eta}</div>
-        <div class="stop-links">${links}</div>
-      `;
-      dayDiv.appendChild(card);
-      prevStop = s;
-    });
-
-    container.appendChild(dayDiv); // <-- append the day's div
-  });
-
-  function formatDayLabel(dateStr) {
-    if (!dateStr || dateStr === "No Date") return "No Date";
-    const date = new Date(dateStr);
-    const today = new Date();
-    const tomorrow = new Date();
-    tomorrow.setDate(today.getDate() + 1);
-
-    function ymd(d) { return d.toISOString().slice(0,10); }
-    if (ymd(date) === ymd(today)) return "Today";
-    if (ymd(date) === ymd(tomorrow)) return "Tomorrow";
-    return date.toLocaleDateString(undefined, { weekday: "short" }); // e.g. "Mon"
-  }
-  handleRemoveButtonClicks();
-  initCardsDragAndDrop();
-}
 
 function renderHistoricalLog(logs = [], stops = []) {
   const section = document.getElementById("log-list");
@@ -1558,7 +1237,6 @@ async function init() {
 
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
-  renderCards(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
   setupHistoricalTripLinks(stops);
 
@@ -1566,7 +1244,6 @@ async function init() {
   speedInput.addEventListener("input", () => {
     const speed = parseFloat(speedInput.value) || 0;
     renderTable(stops, speed);
-    renderCards(stops, speed);
   });
 
   plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
