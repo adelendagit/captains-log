@@ -185,6 +185,14 @@ function initMap(stops, places, logs = null) {
     const color = getMarkerColor(s.rating, s.labels);
 
     let popupHtml = `<strong>${s.name}</strong><br>`;
+    if (s.desc) {
+      const escaped = s.desc
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+      popupHtml += `<div class="popup-desc collapsed">${escaped}</div>`;
+      popupHtml += `<button class="desc-toggle">Show more</button><br>`;
+    }
     if (s.due) {
       popupHtml += `${new Date(s.due).toLocaleDateString()}<br>`;
     }
@@ -256,6 +264,14 @@ function initMap(stops, places, logs = null) {
     const color = getMarkerColor(p.rating, p.labels);
 
     let popupHtml = `<strong>${p.name}</strong><br>`;
+    if (p.desc) {
+      const escaped = p.desc
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+      popupHtml += `<div class="popup-desc collapsed">${escaped}</div>`;
+      popupHtml += `<button class="desc-toggle">Show more</button><br>`;
+    }
     popupHtml += `Rating: ${p.rating ?? "–"}/5<br>`;
     popupHtml += `<a href="${p.trelloUrl}" target="_blank">Trello</a>`;
     if (canPlan) {
@@ -367,6 +383,9 @@ function initMap(stops, places, logs = null) {
     if (btn) {
       btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = "Planning...";
         const cardId = btn.getAttribute("data-card-id");
         // Find the latest due date
         const lastDue = stops
@@ -382,18 +401,37 @@ function initMap(stops, places, logs = null) {
           body: JSON.stringify({ cardId, due: nextDue.toISOString() }),
         });
         if (res.ok) {
-          const data = await fetchData();
-          stops = data.stops;
-          places = data.places;
-          renderMapWithToggle();
-          renderTable(
-            stops,
-            parseFloat(document.getElementById("speed-input").value),
-          );
+          btn.textContent = "Planned!";
+          setTimeout(async () => {
+            const data = await fetchData();
+            stops = data.stops;
+            places = data.places;
+            renderMapWithToggle();
+            renderTable(
+              stops,
+              parseFloat(document.getElementById("speed-input").value),
+            );
+          }, 500);
         } else {
+          btn.disabled = false;
+          btn.textContent = originalText;
           alert("Failed to plan stop.");
         }
       });
+    }
+    const toggle = e.popup._contentNode.querySelector(".desc-toggle");
+    if (toggle) {
+      const descEl = e.popup._contentNode.querySelector(".popup-desc");
+      toggle.addEventListener("click", () => {
+        const collapsed = descEl.classList.toggle("collapsed");
+        toggle.textContent = collapsed ? "Show more" : "Show less";
+      });
+      if (descEl) {
+        const fullHeight = descEl.scrollHeight;
+        if (fullHeight <= descEl.clientHeight + 1) {
+          toggle.style.display = "none";
+        }
+      }
     }
     const removeBtn = e.popup._contentNode.querySelector(".remove-btn");
     if (removeBtn) {
