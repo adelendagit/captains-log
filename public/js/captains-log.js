@@ -568,38 +568,6 @@ function renderTable(stops, speed) {
       // Sort stops by time
       stopsForDay.sort((a, b) => new Date(a.due) - new Date(b.due));
 
-      // Insert current stop first if it belongs to this day
-      if (current && current.due && current.due.slice(0,10) === dayKey) {
-        const stars = makeStars(current.rating);
-        const links = `
-          <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
-            <i class="fab fa-trello"></i>
-          </a>
-          ${current.navilyUrl ? `
-            <a href="${current.navilyUrl}" target="_blank" title="Open in Navily">
-              <i class="fa-solid fa-anchor"></i>
-            </a>
-          ` : ""}
-        `;
-        const labels = Array.isArray(current.labels) ? current.labels.map(l => {
-          const bg = l.color || '#888';
-          const fg = badgeTextColor(bg);
-          return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-        }).join('') : '';
-        const tr = document.createElement("tr");
-        tr.className = "current-stop-row";
-        tr.innerHTML = `
-          <td data-label="Name">${current.name} <span class="current-badge-table">Current</span></td>
-          <td data-label="Labels">${labels}</td>
-          <td data-label="Rating">${stars}</td>
-          <td data-label="Distance (NM)"></td>
-          <td data-label="ETA"></td>
-          <td data-label="Links">${links}</td>
-        `;
-        tbody.appendChild(tr);
-        prevStop = current;
-      }
-
       // Now render the rest of the stops for this day
       stopsForDay.forEach((s, idx) => {
         let nm = "", eta = "";
