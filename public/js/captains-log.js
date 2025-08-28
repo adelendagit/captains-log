@@ -558,7 +558,9 @@ function renderTable(stops, speed) {
 
   const current = stops.find((s) => s.dueComplete);
   if (current) {
-    const stars = makeStars(current.rating);
+    const stars = canPlan
+      ? makeEditableStars(current.rating, current.id)
+      : makeStars(current.rating);
     const links = `
       <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
         <i class="fab fa-trello"></i>
@@ -680,7 +682,9 @@ function renderTable(stops, speed) {
             eta = formatDurationRounded(nm / speed);
           }
         }
-        const stars = makeStars(s.rating);
+        const stars = canPlan
+          ? makeEditableStars(s.rating, s.id)
+          : makeStars(s.rating);
         const removeBtn =
           canPlan && s.due
             ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
@@ -711,10 +715,12 @@ function renderTable(stops, speed) {
               .join("") +
             `</div>`
           : "";
+        const markerColor = getMarkerColor(s.rating, s.labels);
         const tr = document.createElement("tr");
         tr.setAttribute("data-card-id", s.id);
         tr.className = "sortable-stop-row";
         tr.setAttribute("data-day", dayKey);
+        tr.style.borderLeft = `4px solid ${markerColor}`;
         tr.innerHTML = `
           <td>${s.name}</td>
           <td>${labels}</td>
@@ -735,6 +741,30 @@ function renderTable(stops, speed) {
         tr.innerHTML = `<td colspan="6" style="text-align:center; color:#bbb; font-style:italic;">No plans...</td>`;
         tbody.appendChild(tr);
       }
+    }
+    if (canPlan) {
+      document.querySelectorAll(".stars.editable").forEach(container => {
+        container.querySelectorAll(".star").forEach(star => {
+          star.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const rating = parseInt(star.getAttribute("data-value"), 10);
+            const cardId = container.getAttribute("data-card-id");
+            const res = await fetch("/api/rate-place", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cardId, rating }),
+            });
+            if (res.ok) {
+              container.querySelectorAll(".star").forEach(s => {
+                const val = parseInt(s.getAttribute("data-value"), 10);
+                s.textContent = val <= rating ? "★" : "☆";
+              });
+            } else {
+              alert("Failed to save rating");
+            }
+          });
+        });
+      });
     }
   });
 

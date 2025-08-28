@@ -51,6 +51,7 @@ body {
 
 .sortable-stop-row {
   cursor: move;
+  border-left: 4px solid transparent;
 }
 
 .user-btn,
@@ -294,7 +295,11 @@ body {
   min-width: 100px;
   display: block;
 }
-
+.planning-table td:first-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0.2em;
+}
 .planning-table td:last-child {
   border-bottom: none;
 }
