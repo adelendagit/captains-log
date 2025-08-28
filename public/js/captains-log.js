@@ -1012,7 +1012,6 @@ function renderLogSummary(logs = []) {
   // --- Totals across the selected logs ---
   let totalNM = 0;
   let totalHrs = 0;
-  let totalDiesel = 0;
   let lastDepart = null;
 
   const chron = [...logs].sort(
@@ -1035,17 +1034,7 @@ function renderLogSummary(logs = []) {
       lastDepart = null;
     }
 
-    if (l.type === "Diesel" && typeof l.dieselLitres === "number") {
-      totalDiesel += l.dieselLitres;
-    }
   });
-
-  const efficiency = totalDiesel > 0 ? totalNM / totalDiesel : null;
-  const latestDiesel = chron
-    .filter((l) => l.type === "Diesel" && typeof l.dieselLitres === "number")
-    .slice(-1)[0];
-  const remainingRange =
-    efficiency && latestDiesel ? latestDiesel.dieselLitres * efficiency : null;
 
   const latest = (type) =>
     logs
@@ -1103,9 +1092,6 @@ function renderLogSummary(logs = []) {
     <ul>
       <li>Total miles travelled: ${totalNM.toFixed(1)} NM</li>
       <li>Total hours travelled: ${formatDurationRounded(totalHrs)}</li>
-      <li>Total diesel used: ${totalDiesel.toFixed(1)} litres</li>
-      <li>Estimated diesel fuel efficiency: ${efficiency ? efficiency.toFixed(2) + " NM/litre" : "N/A"}</li>
-      <li>Estimated remaining diesel range: ${remainingRange ? remainingRange.toFixed(1) + " NM" : "N/A"}</li>
     </ul>
   `;
 
@@ -1114,6 +1100,81 @@ function renderLogSummary(logs = []) {
     : "";
 
   div.innerHTML = totalsHtml + latestHtml;
+}
+
+function renderDieselInfo(logs = []) {
+  const div = document.getElementById("diesel-info");
+  if (!div) return;
+
+  const TANK_CAPACITY = 140; // litres
+  let fuelRemaining = TANK_CAPACITY;
+  let distanceSinceFill = 0;
+  let lastEfficiency = null;
+  let lastFill = null;
+  let lastDepart = null;
+  let totalBurnt = 0;
+
+  const chron = [...logs].sort(
+    (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+  );
+
+  chron.forEach((l) => {
+    if (l.type === "Departed" && l.lat != null && l.lng != null) {
+      lastDepart = l;
+    } else if (
+      l.type === "Arrived" &&
+      lastDepart &&
+      l.lat != null &&
+      l.lng != null
+    ) {
+      const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
+      const nm = toNM(meters);
+      distanceSinceFill += nm;
+      if (lastEfficiency) {
+        fuelRemaining -= nm / lastEfficiency;
+      }
+      lastDepart = null;
+    } else if (l.type === "Diesel" && typeof l.dieselLitres === "number") {
+      if (distanceSinceFill > 0 && l.dieselLitres > 0) {
+        lastEfficiency = distanceSinceFill / l.dieselLitres;
+      }
+      totalBurnt += l.dieselLitres;
+      fuelRemaining = TANK_CAPACITY;
+      distanceSinceFill = 0;
+      lastFill = { timestamp: l.timestamp, litres: l.dieselLitres };
+    }
+  });
+
+  fuelRemaining = Math.max(0, Math.min(TANK_CAPACITY, fuelRemaining));
+  const burntSinceLastFill = TANK_CAPACITY - fuelRemaining;
+  totalBurnt += burntSinceLastFill;
+  const range = lastEfficiency ? fuelRemaining * lastEfficiency : null;
+
+  if (!lastEfficiency) {
+    div.innerHTML =
+      "<h4>Diesel</h4><p>Not enough data to estimate usage.</p>";
+    return;
+  }
+
+  div.innerHTML = `
+    <h4>Diesel</h4>
+    <ul>
+      <li>Last fill: ${
+        lastFill
+          ? new Date(lastFill.timestamp).toLocaleDateString() +
+            (lastFill.litres != null
+              ? ` (${lastFill.litres} litres)`
+              : "")
+          : "N/A"
+      }</li>
+      <li>Fuel economy: ${lastEfficiency.toFixed(2)} NM/litre</li>
+      <li>Diesel burnt: ${totalBurnt.toFixed(1)} litres</li>
+      <li>Diesel left: ${fuelRemaining.toFixed(1)} litres</li>
+      <li>Estimated range: ${
+        range != null ? range.toFixed(1) + " NM" : "N/A"
+      }</li>
+    </ul>
+  `;
 }
 
 function renderBrokenItems(logs = []) {
@@ -1360,6 +1421,7 @@ function setupLogTab(stops = []) {
     }
     renderHistoricalLog(logsToShow, stops);
     renderLogSummary(logsToShow);
+    renderDieselInfo(logsToShow);
     renderBrokenItems(logsToShow);
     window._lastLogMapData = logsToShow;
 
@@ -1469,6 +1531,7 @@ function setupHistoricalTripLinks(stops = []) {
       const filtered = filterLogsByDate(allLogsCache, start, end);
       renderHistoricalLog(filtered, stops);
       renderLogSummary(filtered);
+      renderDieselInfo(filtered);
       renderBrokenItems(filtered);
       renderLogMap(filtered, stops);
     });
