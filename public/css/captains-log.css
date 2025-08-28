@@ -694,3 +694,48 @@ body {
     flex: 1 1 350px;
   }
 }
+
+/* Diesel gauge styles */
+.diesel-gauge-container {
+  position: relative;
+  width: 200px;
+  margin-bottom: 1rem;
+}
+
+.diesel-gauge {
+  width: 100%;
+  height: auto;
+}
+
+.gauge-bg {
+  fill: none;
+  stroke: #ddd;
+  stroke-width: 10;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke: #4caf50;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.gauge-needle {
+  stroke: #ff4136;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.gauge-label {
+  font-size: 10px;
+  fill: #333;
+}
+
+.gauge-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -10%);
+  font-weight: bold;
+  font-size: 0.9rem;
+}
