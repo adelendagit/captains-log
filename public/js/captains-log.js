@@ -365,9 +365,9 @@ function initMap(stops, places, logs = null) {
         className: "map-log-marker",
       })
         .addTo(logLayerGroup)
-        .bindPopup(
-          `<strong>${m.name}</strong><br>${m.rating ? makeStars(m.rating) : ""}<br>${new Date(m.date).toLocaleDateString()}`,
-        )
+        // .bindPopup(
+        //   `<strong>${m.name}</strong><br>${m.rating ? makeStars(m.rating) : ""}<br>${new Date(m.date).toLocaleDateString()}`,
+        // )
         .bindTooltip(m.name, {
           permanent: false,
           direction: "right",
