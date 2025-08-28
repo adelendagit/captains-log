@@ -634,9 +634,7 @@ function renderTable(stops, speed) {
       <td>${current.name} <span class="current-badge-table">Current</span></td>
       <td>${labels}</td>
       <td>${stars}</td>
-      <td data-label="Distance (NM)"></td>
-      <td data-label="ETA"></td>
-      <td>${links}</td>
+      <td colspan="3" data-label="Links">${links}</td>
     `;
     tbody.appendChild(tr);
   }
