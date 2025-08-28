@@ -200,7 +200,13 @@ function initMap(stops, places, logs = null) {
       ? makeEditableStars(s.rating, s.id)
       : makeStars(s.rating);
     popupHtml += `Rating: ${starsHtml}<br>`;
-    popupHtml += `<a href="${s.trelloUrl}" target="_blank">Trello</a>`;
+    const trelloLink = s.trelloUrl
+      ? `<a href="${s.trelloUrl}" target="_blank" title="Open in Trello"><i class="fab fa-trello"></i></a>`
+      : "";
+    const navilyLink = s.navilyUrl
+      ? `<a href="${s.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
+      : "";
+    popupHtml += `${trelloLink} ${navilyLink}`;
     if (canPlan && s.due) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${s.id}">Plan</button>`;
       popupHtml += `<button class="remove-btn" data-card-id="${s.id}">Remove</button>`;
@@ -279,7 +285,13 @@ function initMap(stops, places, logs = null) {
       ? makeEditableStars(p.rating, p.id)
       : makeStars(p.rating);
     popupHtml += `Rating: ${starsHtml}<br>`;
-    popupHtml += `<a href="${p.trelloUrl}" target="_blank">Trello</a>`;
+    const trelloLink = p.trelloUrl
+      ? `<a href="${p.trelloUrl}" target="_blank" title="Open in Trello"><i class="fab fa-trello"></i></a>`
+      : "";
+    const navilyLink = p.navilyUrl
+      ? `<a href="${p.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
+      : "";
+    popupHtml += `${trelloLink} ${navilyLink}`;
     if (canPlan) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
     }
