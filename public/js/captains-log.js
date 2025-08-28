@@ -585,12 +585,12 @@ function renderTable(stops, speed) {
     const tr = document.createElement("tr");
     tr.className = "current-stop-row";
     tr.innerHTML = `
-      <td data-label="Name">${current.name} <span class="current-badge-table">Current</span></td>
-      <td data-label="Labels">${labels}</td>
-      <td data-label="Rating">${stars}</td>
+      <td>${current.name} <span class="current-badge-table">Current</span></td>
+      <td>${labels}</td>
+      <td>${stars}</td>
       <td data-label="Distance (NM)"></td>
       <td data-label="ETA"></td>
-      <td data-label="Links">${links}</td>
+      <td>${links}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -701,25 +701,27 @@ function renderTable(stops, speed) {
           ${removeBtn}
         `;
         const labels = Array.isArray(s.labels)
-          ? s.labels
+          ? `<div class="labels-wrap">` +
+            s.labels
               .map((l) => {
                 const bg = l.color || "#888";
                 const fg = badgeTextColor(bg);
                 return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
               })
-              .join("")
+              .join("") +
+            `</div>`
           : "";
         const tr = document.createElement("tr");
         tr.setAttribute("data-card-id", s.id);
         tr.className = "sortable-stop-row";
         tr.setAttribute("data-day", dayKey);
         tr.innerHTML = `
-          <td data-label="Name">${s.name}</td>
-          <td data-label="Labels">${labels}</td>
-          <td data-label="Rating">${stars}</td>
+          <td>${s.name}</td>
+          <td>${labels}</td>
+          <td>${stars}</td>
           <td data-label="Distance (NM)">${nm}</td>
           <td data-label="ETA">${eta}</td>
-          <td data-label="Links">${links}</td>
+          <td>${links}</td>
         `;
         tbody.appendChild(tr);
         prevStop = s;
