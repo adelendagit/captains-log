@@ -1156,15 +1156,28 @@ function renderDieselInfo(logs = []) {
     return;
   }
 
+  const pct = fuelRemaining / TANK_CAPACITY;
+  const angle = pct * 180 - 90; // -90 is empty, +90 is full
+  const arcTotal = 126; // approximate path length of the semicircle
+  const arcLen = pct * arcTotal;
+
   div.innerHTML = `
     <h4>Diesel</h4>
+    <div class="diesel-gauge-container">
+      <svg viewBox="0 0 100 60" class="diesel-gauge">
+        <path class="gauge-bg" d="M10 50 a40 40 0 0 1 80 0" />
+        <path class="gauge-fill" d="M10 50 a40 40 0 0 1 80 0" style="stroke-dasharray:${arcLen.toFixed(1)} ${arcTotal}" />
+        <line class="gauge-needle" x1="50" y1="50" x2="50" y2="15" transform="rotate(${angle} 50 50)" />
+        <text x="10" y="58" class="gauge-label">E</text>
+        <text x="90" y="58" text-anchor="end" class="gauge-label">F</text>
+      </svg>
+      <div class="gauge-center">${fuelRemaining.toFixed(1)}L</div>
+    </div>
     <ul>
       <li>Last fill: ${
         lastFill
           ? new Date(lastFill.timestamp).toLocaleDateString() +
-            (lastFill.litres != null
-              ? ` (${lastFill.litres} litres)`
-              : "")
+            (lastFill.litres != null ? ` (${lastFill.litres} litres)` : "")
           : "N/A"
       }</li>
       <li>Fuel economy: ${lastEfficiency.toFixed(2)} NM/litre</li>
