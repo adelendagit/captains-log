@@ -1,4 +1,9 @@
 // public/js/captains-log.js
+/* eslint-env browser */
+/* global L, Sortable */
+
+const TRELLO_LABEL_COLORS =
+  (typeof window !== "undefined" && window.TRELLO_LABEL_COLORS) || {};
 
 let leafletMap = null;
 
@@ -103,16 +108,6 @@ function getMarkerColor(r, labels = []) {
     (l) => l.name && l.name.toLowerCase() === "visited",
   );
   return hasVisited ? "#555555" : "#d3d3d3"; // dark grey if visited, else light grey
-}
-
-// pick legible text color for a background
-function badgeTextColor(bg) {
-  const hex = bg.replace("#", "");
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? "#000" : "#fff";
 }
 
 // build star rating markup
@@ -622,9 +617,12 @@ function renderTable(stops, speed) {
     const labels = Array.isArray(current.labels)
       ? current.labels
           .map((l) => {
-            const bg = l.color || "#888";
-            const fg = badgeTextColor(bg);
-            return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+            const c =
+              TRELLO_LABEL_COLORS[l.color] || {
+                background: "#888",
+                foreground: "#fff",
+              };
+            return `<span class="label" style="background:${c.background};color:${c.foreground}">${l.name}</span>`;
           })
           .join("")
       : "";
@@ -750,9 +748,12 @@ function renderTable(stops, speed) {
           ? `<div class="labels-wrap">` +
             s.labels
               .map((l) => {
-                const bg = l.color || "#888";
-                const fg = badgeTextColor(bg);
-                return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+                const c =
+                  TRELLO_LABEL_COLORS[l.color] || {
+                    background: "#888",
+                    foreground: "#fff",
+                  };
+                return `<span class="label" style="background:${c.background};color:${c.foreground}">${l.name}</span>`;
               })
               .join("") +
             `</div>`
