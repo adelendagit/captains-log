@@ -196,7 +196,10 @@ function initMap(stops, places, logs = null) {
     if (s.due) {
       popupHtml += `${new Date(s.due).toLocaleDateString()}<br>`;
     }
-    popupHtml += `Rating: ${s.rating ?? "–"}/5<br>`;
+    const starsHtml = canPlan
+      ? makeEditableStars(s.rating, s.id)
+      : makeStars(s.rating);
+    popupHtml += `Rating: ${starsHtml}<br>`;
     popupHtml += `<a href="${s.trelloUrl}" target="_blank">Trello</a>`;
     if (canPlan && s.due) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${s.id}">Plan</button>`;
@@ -272,7 +275,10 @@ function initMap(stops, places, logs = null) {
       popupHtml += `<div class="popup-desc collapsed">${escaped}</div>`;
       popupHtml += `<button class="desc-toggle">Show more</button><br>`;
     }
-    popupHtml += `Rating: ${p.rating ?? "–"}/5<br>`;
+    const starsHtml = canPlan
+      ? makeEditableStars(p.rating, p.id)
+      : makeStars(p.rating);
+    popupHtml += `Rating: ${starsHtml}<br>`;
     popupHtml += `<a href="${p.trelloUrl}" target="_blank">Trello</a>`;
     if (canPlan) {
       popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
@@ -458,6 +464,32 @@ function initMap(stops, places, logs = null) {
           alert("Failed to remove stop.");
         }
       });
+    }
+    // Enable editable stars in popup
+    if (canPlan) {
+      const container = e.popup._contentNode.querySelector(".stars.editable");
+      if (container) {
+        container.querySelectorAll(".star").forEach(star => {
+          star.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            const rating = parseInt(star.getAttribute("data-value"), 10);
+            const cardId = container.getAttribute("data-card-id");
+            const res = await fetch("/api/rate-place", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cardId, rating }),
+            });
+            if (res.ok) {
+              container.querySelectorAll(".star").forEach(s => {
+                const val = parseInt(s.getAttribute("data-value"), 10);
+                s.textContent = val <= rating ? "★" : "☆";
+              });
+            } else {
+              alert("Failed to save rating");
+            }
+          });
+        });
+      }
     }
   });
 
