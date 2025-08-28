@@ -6,6 +6,7 @@ const {
   fetchAllComments,
   fetchBoardWithAllComments,
 } = require("../services/trello");
+const { TRELLO_LABEL_COLORS } = require("../src/trelloColors");
 
 function extractTimestamp(text, fallback, cardId) {
   const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
@@ -60,19 +61,6 @@ router.get("/api/data", async (req, res, next) => {
     // map of list IDs → names
     const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
 
-    const colorMap = {
-      green: "#61bd4f",
-      yellow: "#f2d600",
-      orange: "#ff9f1a",
-      red: "#eb5a46",
-      purple: "#c377e0",
-      blue: "#0079bf",
-      sky: "#00c2e0",
-      lime: "#51e898",
-      pink: "#ff78cb",
-      black: "#344563",
-    };
-
     const stops = cards
       .filter((c) => c.due && c.idList !== tripsListId)
       .map((c) => {
@@ -82,7 +70,7 @@ router.get("/api/data", async (req, res, next) => {
 
         const labels = (c.labels || []).map((l) => ({
           name: l.name,
-          color: colorMap[l.color] || "#888",
+          color: l.color,
         }));
 
         return {
@@ -114,7 +102,7 @@ router.get("/api/data", async (req, res, next) => {
         const ratingText = getCFTextOrDropdown(c, customFields, "⭐️");
         const labels = (c.labels || []).map((l) => ({
           name: l.name,
-          color: colorMap[l.color] || "#888",
+          color: l.color,
         }));
         return {
           id: c.id,
@@ -348,7 +336,12 @@ router.get("/captains-log", async (req, res, next) => {
       .map(([year, arr]) => ({ year, trips: arr }))
       .sort((a, b) => b.year.localeCompare(a.year));
 
-    res.render("captains-log", { planningStops, historical, user: req.user });
+    res.render("captains-log", {
+      planningStops,
+      historical,
+      user: req.user,
+      trelloColors: TRELLO_LABEL_COLORS,
+    });
   } catch (err) {
     next(err);
   }
