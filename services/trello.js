@@ -13,6 +13,15 @@ async function fetchBoard() {
   return data;
 }
 
+// Fetch a limited number of recent comments (actions)
+async function fetchRecentComments(limit = 100) {
+  const url =
+    BASE_URL +
+    `/actions?filter=commentCard&limit=${limit}&key=${KEY}&token=${TOKEN}`;
+  const { data } = await axios.get(url);
+  return data;
+}
+
 async function fetchAllComments() {
   let allActions = [];
   let before = null;
@@ -39,4 +48,9 @@ async function fetchBoardWithAllComments() {
   return board;
 }
 
-module.exports = { fetchBoard, fetchAllComments, fetchBoardWithAllComments };
+module.exports = {
+  fetchBoard,
+  fetchAllComments,
+  fetchBoardWithAllComments,
+  fetchRecentComments,
+};
