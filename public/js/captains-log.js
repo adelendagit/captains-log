@@ -41,8 +41,14 @@ function formatDuration(h) {
 
 function formatDurationRounded(h) {
   if (!isFinite(h)) return "";
-  // Round to nearest 15 minutes
-  const totalMinutes = Math.round((h * 60) / 15) * 15;
+  let totalMinutes;
+  if (h * 60 < 15) {
+    // For durations under 15 minutes, round to nearest 5 minutes
+    totalMinutes = Math.round((h * 60) / 5) * 5;
+  } else {
+    // Otherwise, round to nearest 15 minutes
+    totalMinutes = Math.round((h * 60) / 15) * 15;
+  }
   const hh = Math.floor(totalMinutes / 60);
   const mm = totalMinutes % 60;
   if (hh && mm) return `${hh}h ${mm}m`;
@@ -691,13 +697,15 @@ function renderTable(stops, speed) {
         dayPrev = s;
       });
 
+      let dayTotalNMValue =  dayTotalNM >= 1 ? Math.round(dayTotalNM).toString() : dayTotalNM.toFixed(1);
+
       const dayRow = document.createElement("tr");
       dayRow.className = "day-header-row";
       dayRow.setAttribute("data-day", dayKey);
       dayRow.innerHTML = `<td colspan="6" class="day-header-table">
         ${formatDayLabel(dayKey)}
         <span class="day-totals">
-          ${dayTotalNM ? `&nbsp;•&nbsp;${dayTotalNM.toFixed(1)} NM` : ""}
+          &nbsp;•&nbsp;${dayTotalNMValue} NM
           ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
         </span>
       </td>`;
@@ -720,7 +728,8 @@ function renderTable(stops, speed) {
             typeof lng2 === "number"
           ) {
             const meters = haversine(lat1, lng1, lat2, lng2);
-            nm = toNM(meters).toFixed(1);
+            let nmValue = toNM(meters);
+            nm = nmValue >= 1 ? Math.round(nmValue).toString() : nmValue.toFixed(1);
             eta = formatDurationRounded(nm / speed);
           }
         }
@@ -767,8 +776,7 @@ function renderTable(stops, speed) {
           <td>${s.name}</td>
           <td>${labels}</td>
           <td>${stars}</td>
-          <td data-label="Distance (NM)">${nm}</td>
-          <td data-label="ETA">${eta}</td>
+          <td>${nm} NM&nbsp;•&nbsp;${eta}</td>
           <td>${links}</td>
         `;
         tbody.appendChild(tr);
