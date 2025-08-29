@@ -18,6 +18,7 @@ let logLayerGroup = null;
 let mostRecentTripRange = null;
 
 let canPlan = false;
+let currentStatus = null;
 
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
@@ -72,10 +73,19 @@ function updateSummary(stops, speed) {
   if (!summaryEl) return;
 
   const future = stops.filter((s) => !s.dueComplete && s.due);
-  const current = stops.find((s) => s.dueComplete) || null;
-  let prev = current;
-  let totalNM = 0;
 
+  let prev = null;
+  if (currentStatus) {
+    if (currentStatus.status === "arrived" && currentStatus.current) {
+      prev = stops.find((s) => s.id === currentStatus.current.id) || currentStatus.current;
+    } else if (currentStatus.status === "underway" && currentStatus.from) {
+      prev = stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+    }
+  } else {
+    prev = stops.find((s) => s.dueComplete) || null;
+  }
+
+  let totalNM = 0;
   future.forEach((s) => {
     if (prev) {
       const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
@@ -89,10 +99,19 @@ function updateSummary(stops, speed) {
 }
 
 async function fetchData() {
-  const res = await fetch("/api/data");
-  const data = await res.json();
+  const [dataRes, statusRes] = await Promise.all([
+    fetch("/api/data"),
+    fetch("/api/current-stop"),
+  ]);
+  const data = await dataRes.json();
   canPlan = data.canPlan;
-  return data;
+  let statusJson = null;
+  try {
+    statusJson = await statusRes.json();
+  } catch (e) {
+    statusJson = { status: "unknown" };
+  }
+  return { ...data, currentStatus: statusJson };
 }
 
 // map rating/labels → color
@@ -430,6 +449,7 @@ function initMap(stops, places, logs = null) {
             const data = await fetchData();
             stops = data.stops;
             places = data.places;
+            currentStatus = data.currentStatus;
             renderMapWithToggle();
             renderTable(
               stops,
@@ -473,6 +493,7 @@ function initMap(stops, places, logs = null) {
           const data = await fetchData();
           stops = data.stops;
           places = data.places;
+          currentStatus = data.currentStatus;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -541,6 +562,7 @@ function handlePlanButtonClicks() {
         const data = await fetchData();
         stops = data.stops;
         places = data.places;
+        currentStatus = data.currentStatus;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -569,6 +591,7 @@ function handleRemoveButtonClicks() {
         const data = await fetchData();
         stops = data.stops;
         places = data.places;
+        currentStatus = data.currentStatus;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -606,7 +629,21 @@ function renderTable(stops, speed) {
       : [null, null];
   }
 
-  const current = stops.find((s) => s.dueComplete);
+  let current = null;
+  let departed = null;
+  if (currentStatus) {
+    if (currentStatus.status === "arrived" && currentStatus.current) {
+      current =
+        stops.find((s) => s.id === currentStatus.current.id) ||
+        currentStatus.current;
+    } else if (currentStatus.status === "underway" && currentStatus.from) {
+      departed =
+        stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+    }
+  } else {
+    current = stops.find((s) => s.dueComplete) || null;
+  }
+
   if (current) {
     const stars = canPlan
       ? makeEditableStars(current.rating, current.id)
@@ -643,6 +680,17 @@ function renderTable(stops, speed) {
       <td colspan="3">${links}</td>
     `;
     tbody.appendChild(tr);
+  } else if (departed) {
+    const nextStop = currentStatus.destination
+      ? stops.find((s) => s.id === currentStatus.destination.id) ||
+        currentStatus.destination
+      : null;
+    const tr = document.createElement("tr");
+    tr.className = "current-stop-row";
+    tr.innerHTML = `<td colspan="6"><span class="current-badge-table">Underway</span> left ${departed.name}${
+      nextStop ? `, heading to ${nextStop.name}` : ""
+    }</td>`;
+    tbody.appendChild(tr);
   }
 
   // Group all future stops by date only
@@ -666,7 +714,7 @@ function renderTable(stops, speed) {
     : todayStr;
   const dateRange = getDateRange(firstDate, lastDate);
 
-  let prevStop = current;
+  let prevStop = current || departed;
   dateRange.forEach((dayKey) => {
     const stopsForDay = byDay[dayKey] || [];
 
@@ -905,6 +953,7 @@ function initTableDragAndDrop() {
           const data = await fetchData();
           stops = data.stops;
           places = data.places;
+          currentStatus = data.currentStatus;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -1563,6 +1612,7 @@ async function init() {
   const data = await fetchData();
   stops = data.stops;
   places = data.places;
+  currentStatus = data.currentStatus;
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
