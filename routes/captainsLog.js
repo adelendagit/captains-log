@@ -3,8 +3,9 @@ const router = express.Router();
 const axios = require("axios");
 const {
   fetchBoard,
-  fetchAllComments,
   fetchBoardWithAllComments,
+  fetchAllComments,
+  fetchRecentComments,
 } = require("../services/trello");
 
 function extractTimestamp(text, fallback, cardId) {
@@ -308,6 +309,76 @@ router.get("/api/logs", async (req, res, next) => {
       : null;
 
     res.json({ logs: filteredLogs, mostRecentTripRange });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Determine current status and stop based on recent comments
+router.get("/api/current-stop", async (req, res, next) => {
+  try {
+    const { cards, lists, customFields } = await fetchBoard();
+    const comments = await fetchRecentComments(100);
+
+    const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
+    const tripsList = lists.find((l) => l.name === "Trips");
+    const tripsListId = tripsList ? tripsList.id : null;
+
+    function buildStop(card) {
+      if (!card) return null;
+      return {
+        id: card.id,
+        name: card.name,
+        listName: listNames[card.idList],
+        due: card.due,
+        lat: getCFNumber(card, customFields, "Latitude"),
+        lng: getCFNumber(card, customFields, "Longitude"),
+        trelloUrl: card.shortUrl,
+      };
+    }
+
+    const actions = comments
+      .filter((a) => a.type === "commentCard" && a.data && a.data.text)
+      .map((a) => ({
+        ...a,
+        ts: extractTimestamp(a.data.text, a.date, a.data.card.id),
+      }));
+
+    const lastArrived = actions
+      .filter((a) => /^arrived\b/i.test(a.data.text))
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+
+    const lastDeparted = actions
+      .filter((a) => /^departed\b/i.test(a.data.text))
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+
+    const upcomingStops = cards
+      .filter(
+        (c) => c.due && !c.dueComplete && c.idList !== tripsListId,
+      )
+      .sort((a, b) => new Date(a.due) - new Date(b.due));
+    const plannedDestination = buildStop(upcomingStops[0]);
+
+    let result = { status: "unknown", plannedDestination };
+
+    if (
+      lastDeparted &&
+      (!lastArrived || new Date(lastDeparted.ts) > new Date(lastArrived.ts))
+    ) {
+      result.status = "underway";
+      result.from = buildStop(
+        cards.find((c) => c.id === lastDeparted.data.card.id),
+      );
+      result.destination = plannedDestination;
+    } else if (lastArrived) {
+      result.status = "arrived";
+      result.current = buildStop(
+        cards.find((c) => c.id === lastArrived.data.card.id),
+      );
+      result.destination = plannedDestination;
+    }
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
