@@ -512,6 +512,10 @@ body {
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.18));
 }
 
+.map-current-marker {
+  filter: drop-shadow(0 0 6px #0077cc);
+}
+
 .stars.editable .star {
   cursor: pointer;
 }
