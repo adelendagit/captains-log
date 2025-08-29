@@ -46,6 +46,19 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   return null;
 }
 
+const colorMap = {
+  green: "#61bd4f",
+  yellow: "#f2d600",
+  orange: "#ff9f1a",
+  red: "#eb5a46",
+  purple: "#c377e0",
+  blue: "#0079bf",
+  sky: "#00c2e0",
+  lime: "#51e898",
+  pink: "#ff78cb",
+  black: "#344563",
+};
+
 router.get("/api/data", async (req, res, next) => {
   try {
     const { cards, lists, customFields, members } = await fetchBoard();
@@ -60,19 +73,6 @@ router.get("/api/data", async (req, res, next) => {
 
     // map of list IDs → names
     const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
-
-    const colorMap = {
-      green: "#61bd4f",
-      yellow: "#f2d600",
-      orange: "#ff9f1a",
-      red: "#eb5a46",
-      purple: "#c377e0",
-      blue: "#0079bf",
-      sky: "#00c2e0",
-      lime: "#51e898",
-      pink: "#ff78cb",
-      black: "#344563",
-    };
 
     const stops = cards
       .filter((c) => c.due && c.idList !== tripsListId)
@@ -326,6 +326,12 @@ router.get("/api/current-stop", async (req, res, next) => {
 
     function buildStop(card) {
       if (!card) return null;
+      const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
+      const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
+      const labels = (card.labels || []).map((l) => ({
+        name: l.name,
+        color: colorMap[l.color] || "#888",
+      }));
       return {
         id: card.id,
         name: card.name,
@@ -334,6 +340,9 @@ router.get("/api/current-stop", async (req, res, next) => {
         lat: getCFNumber(card, customFields, "Latitude"),
         lng: getCFNumber(card, customFields, "Longitude"),
         trelloUrl: card.shortUrl,
+        navilyUrl: getCFTextOrDropdown(card, customFields, "Navily"),
+        rating: ratingNum,
+        labels,
       };
     }
 

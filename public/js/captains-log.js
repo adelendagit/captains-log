@@ -18,6 +18,7 @@ let logLayerGroup = null;
 let mostRecentTripRange = null;
 
 let canPlan = false;
+let currentStatus = null;
 
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
@@ -72,10 +73,19 @@ function updateSummary(stops, speed) {
   if (!summaryEl) return;
 
   const future = stops.filter((s) => !s.dueComplete && s.due);
-  const current = stops.find((s) => s.dueComplete) || null;
-  let prev = current;
-  let totalNM = 0;
 
+  let prev = null;
+  if (currentStatus) {
+    if (currentStatus.status === "arrived" && currentStatus.current) {
+      prev = stops.find((s) => s.id === currentStatus.current.id) || currentStatus.current;
+    } else if (currentStatus.status === "underway" && currentStatus.from) {
+      prev = stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+    }
+  } else {
+    prev = stops.find((s) => s.dueComplete) || null;
+  }
+
+  let totalNM = 0;
   future.forEach((s) => {
     if (prev) {
       const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
@@ -89,10 +99,19 @@ function updateSummary(stops, speed) {
 }
 
 async function fetchData() {
-  const res = await fetch("/api/data");
-  const data = await res.json();
+  const [dataRes, statusRes] = await Promise.all([
+    fetch("/api/data"),
+    fetch("/api/current-stop"),
+  ]);
+  const data = await dataRes.json();
   canPlan = data.canPlan;
-  return data;
+  let statusJson = null;
+  try {
+    statusJson = await statusRes.json();
+  } catch (e) {
+    statusJson = { status: "unknown" };
+  }
+  return { ...data, currentStatus: statusJson };
 }
 
 // map rating/labels → color
@@ -181,10 +200,26 @@ function initMap(stops, places, logs = null) {
     leafletMap = map;
   }
 
+  const mapStops = [...stops];
+  let highlightId = null;
+  if (currentStatus) {
+    if (currentStatus.status === "arrived" && currentStatus.current) {
+      highlightId = currentStatus.current.id;
+      if (!mapStops.some((s) => s.id === highlightId)) {
+        mapStops.unshift(currentStatus.current);
+      }
+    } else if (currentStatus.status === "underway" && currentStatus.from) {
+      highlightId = currentStatus.from.id;
+      if (!mapStops.some((s) => s.id === highlightId)) {
+        mapStops.unshift(currentStatus.from);
+      }
+    }
+  }
+
   const stopCoords = [];
 
   // plot planned stops only
-  stops.forEach((s) => {
+  mapStops.forEach((s) => {
     const ll = [s.lat, s.lng];
     stopCoords.push(ll);
 
@@ -218,14 +253,17 @@ function initMap(stops, places, logs = null) {
       popupHtml += `<button class="remove-btn" data-card-id="${s.id}">Remove</button>`;
     }
 
+    const isHighlight = highlightId && s.id === highlightId;
     L.circleMarker(ll, {
       radius: 14,
       fillColor: color,
-      color: "#cac8c8ff",
-      weight: 3,
+      color: isHighlight ? "#0077cc" : "#cac8c8ff",
+      weight: isHighlight ? 4 : 3,
       fillOpacity: 0.88,
       opacity: 1,
-      className: "map-stop-marker",
+      className: isHighlight
+        ? "map-stop-marker map-current-marker"
+        : "map-stop-marker",
     })
       .addTo(map)
       .bindPopup(popupHtml)
@@ -430,6 +468,7 @@ function initMap(stops, places, logs = null) {
             const data = await fetchData();
             stops = data.stops;
             places = data.places;
+            currentStatus = data.currentStatus;
             renderMapWithToggle();
             renderTable(
               stops,
@@ -473,6 +512,7 @@ function initMap(stops, places, logs = null) {
           const data = await fetchData();
           stops = data.stops;
           places = data.places;
+          currentStatus = data.currentStatus;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -541,6 +581,7 @@ function handlePlanButtonClicks() {
         const data = await fetchData();
         stops = data.stops;
         places = data.places;
+        currentStatus = data.currentStatus;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -569,6 +610,7 @@ function handleRemoveButtonClicks() {
         const data = await fetchData();
         stops = data.stops;
         places = data.places;
+        currentStatus = data.currentStatus;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -606,7 +648,21 @@ function renderTable(stops, speed) {
       : [null, null];
   }
 
-  const current = stops.find((s) => s.dueComplete);
+  let current = null;
+  let departed = null;
+  if (currentStatus) {
+    if (currentStatus.status === "arrived" && currentStatus.current) {
+      current =
+        stops.find((s) => s.id === currentStatus.current.id) ||
+        currentStatus.current;
+    } else if (currentStatus.status === "underway" && currentStatus.from) {
+      departed =
+        stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+    }
+  } else {
+    current = stops.find((s) => s.dueComplete) || null;
+  }
+
   if (current) {
     const stars = canPlan
       ? makeEditableStars(current.rating, current.id)
@@ -643,6 +699,48 @@ function renderTable(stops, speed) {
       <td colspan="3">${links}</td>
     `;
     tbody.appendChild(tr);
+  } else if (departed) {
+    const nextStop = currentStatus.destination
+      ? stops.find((s) => s.id === currentStatus.destination.id) ||
+        currentStatus.destination
+      : null;
+    const stars = canPlan
+      ? makeEditableStars(departed.rating, departed.id)
+      : makeStars(departed.rating);
+    const links = `
+      <a href="${departed.trelloUrl}" target="_blank" title="Open in Trello">
+        <i class="fab fa-trello"></i>
+      </a>
+      ${
+        departed.navilyUrl
+          ? `
+        <a href="${departed.navilyUrl}" target="_blank" title="Open in Navily">
+          <i class="fa-solid fa-anchor"></i>
+        </a>
+      `
+          : ""
+      }
+    `;
+    const labels = Array.isArray(departed.labels)
+      ? departed.labels
+          .map((l) => {
+            const bg = l.color || "#888";
+            const fg = badgeTextColor(bg);
+            return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+          })
+          .join("")
+      : "";
+    const tr = document.createElement("tr");
+    tr.className = "current-stop-row";
+    tr.innerHTML = `
+      <td>${departed.name} <span class="current-badge-table">Underway</span></td>
+      <td>${labels}</td>
+      <td>${stars}</td>
+      <td colspan="3">${links}${
+        nextStop ? `, heading to ${nextStop.name}` : ""
+      }</td>
+    `;
+    tbody.appendChild(tr);
   }
 
   // Group all future stops by date only
@@ -666,7 +764,7 @@ function renderTable(stops, speed) {
     : todayStr;
   const dateRange = getDateRange(firstDate, lastDate);
 
-  let prevStop = current;
+  let prevStop = current || departed;
   dateRange.forEach((dayKey) => {
     const stopsForDay = byDay[dayKey] || [];
 
@@ -905,6 +1003,7 @@ function initTableDragAndDrop() {
           const data = await fetchData();
           stops = data.stops;
           places = data.places;
+          currentStatus = data.currentStatus;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -1563,6 +1662,7 @@ async function init() {
   const data = await fetchData();
   stops = data.stops;
   places = data.places;
+  currentStatus = data.currentStatus;
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
