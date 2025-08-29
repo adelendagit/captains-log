@@ -19,6 +19,8 @@ let mostRecentTripRange = null;
 
 let canPlan = false;
 let currentStatus = null;
+let underwayMarker = null;
+let underwayInterval = null;
 
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
@@ -33,6 +35,19 @@ function haversine(lat1, lon1, lat2, lon2) {
 }
 function toNM(m) {
   return m / 1852;
+}
+
+function getExpectedPosition(from, to, departedAt, speed) {
+  const totalMeters = haversine(from.lat, from.lng, to.lat, to.lng);
+  const totalNm = toNM(totalMeters);
+  const hours = (Date.now() - new Date(departedAt)) / 36e5;
+  const traveledNm = hours * speed;
+  const frac = totalNm > 0 ? Math.min(traveledNm / totalNm, 1) : 0;
+  return {
+    lat: from.lat + (to.lat - from.lat) * frac,
+    lng: from.lng + (to.lng - from.lng) * frac,
+    fraction: frac,
+  };
 }
 function formatDuration(h) {
   const hh = Math.floor(h),
@@ -439,6 +454,45 @@ function initMap(stops, places, logs = null) {
     });
   }
 
+  if (underwayMarker) {
+    map.removeLayer(underwayMarker);
+    underwayMarker = null;
+  }
+  if (underwayInterval) {
+    clearInterval(underwayInterval);
+    underwayInterval = null;
+  }
+
+  function updateUnderwayMarker() {
+    if (underwayMarker) {
+      map.removeLayer(underwayMarker);
+      underwayMarker = null;
+    }
+    if (
+      currentStatus &&
+      currentStatus.status === "underway" &&
+      currentStatus.from &&
+      currentStatus.destination &&
+      currentStatus.departedAt
+    ) {
+      const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+      if (speed > 0) {
+        const pos = getExpectedPosition(
+          currentStatus.from,
+          currentStatus.destination,
+          currentStatus.departedAt,
+          speed,
+        );
+        underwayMarker = L.marker([pos.lat, pos.lng], {
+          icon: L.divIcon({ className: "underway-marker", html: "⛵" }),
+        }).addTo(map);
+      }
+    }
+  }
+
+  updateUnderwayMarker();
+  underwayInterval = setInterval(updateUnderwayMarker, 60000);
+
   // Attach event listener for plan/remove button when popup opens
   map.on("popupopen", function (e) {
     const btn = e.popup._contentNode.querySelector(".plan-btn");
@@ -733,7 +787,7 @@ function renderTable(stops, speed) {
     const tr = document.createElement("tr");
     tr.className = "current-stop-row";
     tr.innerHTML = `
-      <td>${departed.name} <span class="current-badge-table">Underway</span></td>
+      <td>${departed.name} <span class="current-badge-table underway-badge">Underway</span></td>
       <td>${labels}</td>
       <td>${stars}</td>
       <td colspan="3">${links}${
@@ -1599,6 +1653,11 @@ function initTabs() {
           leafletMap.remove();
           leafletMap = null;
         }
+        if (underwayInterval) {
+          clearInterval(underwayInterval);
+          underwayInterval = null;
+        }
+        underwayMarker = null;
       } else if (btn.dataset.tab === "planning" && mapDiv) {
         mapDiv.style.display = "";
         // Re-initialize the map if needed
@@ -1676,6 +1735,7 @@ async function init() {
   speedInput.addEventListener("input", () => {
     const speed = parseFloat(speedInput.value) || 0;
     renderTable(stops, speed);
+    renderMapWithToggle();
   });
 
   plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
