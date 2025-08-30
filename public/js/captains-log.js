@@ -1347,19 +1347,19 @@ function renderDieselInfo(logs = []) {
       </svg>
       <div class="gauge-center">${fuelRemaining.toFixed(1)}L</div>
     </div>
-    <ul>
-      <li>Last fill: ${
+    <ul class="diesel-stats">
+      <li><span class="label">Last fill</span><span class="value">${
         lastFill
           ? new Date(lastFill.timestamp).toLocaleDateString() +
             (lastFill.litres != null ? ` (${lastFill.litres} litres)` : "")
           : "N/A"
-      }</li>
-      <li>Fuel economy: ${lastEfficiency.toFixed(2)} NM/litre</li>
-      <li>Diesel burnt: ${totalBurnt.toFixed(1)} litres</li>
-      <li>Diesel left: ${fuelRemaining.toFixed(1)} litres</li>
-      <li>Estimated range: ${
+      }</span></li>
+      <li><span class="label">Fuel economy</span><span class="value">${lastEfficiency.toFixed(2)} NM/litre</span></li>
+      <li><span class="label">Diesel burnt</span><span class="value">${totalBurnt.toFixed(1)} litres</span></li>
+      <li><span class="label">Diesel left</span><span class="value">${fuelRemaining.toFixed(1)} litres</span></li>
+      <li><span class="label">Estimated range</span><span class="value">${
         range != null ? range.toFixed(1) + " NM" : "N/A"
-      }</li>
+      }</span></li>
     </ul>
   `;
 }
