@@ -232,7 +232,7 @@ body {
   border-radius: 0.25rem;
   font-size: 0.7rem;
   margin-bottom: 0.2em;
-  margin-right: 0.5em;      /* Add this for extra horizontal space */
+  margin-right: 0.5em; /* Add this for extra horizontal space */
   white-space: nowrap; /* Prevent label text from breaking inside the label */
 }
 .rating {
@@ -268,10 +268,10 @@ body {
 }
 
 .planning-table tr {
-  margin-bottom: 1.2em;
+  margin-bottom: 0;
   background: #fff;
-  border-radius: 0.5em;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  border-radius: 0;
+  box-shadow: none;
   padding: 0.5em 0;
 }
 
@@ -343,7 +343,20 @@ body {
   }
 }
 
-.day-header-row,
+.day-header-row {
+  background: #eaf6fb;
+  color: #0077cc;
+  font-weight: bold;
+  font-size: 1.1em;
+  letter-spacing: 0.03em;
+  padding-top: 1.2em;
+  border: 1px solid #e0e0e0;
+  border-bottom: none;
+  border-radius: 0.5em 0.5em 0 0;
+  margin-top: 1rem;
+  display: block;
+}
+
 .area-header-table {
   background: #eaf6fb;
   color: #0077cc;
@@ -355,6 +368,19 @@ body {
   border-radius: 0.5em 0.5em 0 0;
   margin-bottom: 0.5em;
   display: block;
+}
+
+.planning-table tr[data-day]:not(.day-header-row) {
+  border-left: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.planning-table tr.day-end-row {
+  border-left: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 0 0 0.5em 0.5em;
+  margin-bottom: 1rem;
 }
 
 .day-header-table {
@@ -543,8 +569,6 @@ body {
 .stars.editable .star {
   cursor: pointer;
 }
-
-
 
 .area-header-table {
   background: #eaf6fb;
