@@ -1386,9 +1386,18 @@ function renderBrokenItems(logs = []) {
   }
 
   const list = entries
-    .map((e) => `<li>${e.item}: ${e.fixed ? "Fixed" : "Broken"}</li>`)
+    .map(
+      (e) => `
+      <li class="broken-item">
+        <span class="item-name">${e.item}</span>
+        <span class="status ${e.fixed ? "fixed" : "broken"}">
+          <i class="fa-solid ${e.fixed ? "fa-check" : "fa-circle-xmark"}"></i>
+          ${e.fixed ? "Fixed" : "Broken"}
+        </span>
+      </li>`,
+    )
     .join("");
-  div.innerHTML = `<h4>Broken Items</h4><ul>${list}</ul>`;
+  div.innerHTML = `<h4>Broken Items</h4><ul class="broken-items-list">${list}</ul>`;
 }
 
 // Render historical map (only arrived unique places). Uses window.histMap to cleanup.
