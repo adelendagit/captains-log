@@ -379,6 +379,7 @@ router.get("/api/current-stop", async (req, res, next) => {
         cards.find((c) => c.id === lastDeparted.data.card.id),
       );
       result.destination = plannedDestination;
+      result.departedAt = lastDeparted.ts;
     } else if (lastArrived) {
       result.status = "arrived";
       result.current = buildStop(

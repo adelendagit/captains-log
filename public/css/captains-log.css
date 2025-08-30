@@ -323,6 +323,26 @@ body {
   margin-left: 0.5em;
 }
 
+.current-badge-table.underway-badge {
+  background: #ff9800;
+  animation: pulse 1s ease-in-out infinite;
+}
+.current-badge-table.underway-badge::after {
+  content: " \26F5"; /* sailboat emoji */
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .day-header-row,
 .area-header-table {
   background: #eaf6fb;
@@ -514,6 +534,10 @@ body {
 
 .map-current-marker {
   filter: drop-shadow(0 0 6px #0077cc);
+}
+
+.underway-marker {
+  font-size: 24px;
 }
 
 .stars.editable .star {
