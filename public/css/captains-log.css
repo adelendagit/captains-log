@@ -791,3 +791,55 @@ body {
   font-weight: bold;
   font-size: 0.9rem;
 }
+
+/* Broken items styles */
+#broken-items {
+  background: #fff;
+  padding: 1em;
+  border-radius: 0.5em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1em;
+}
+
+#broken-items h4 {
+  margin-top: 0;
+  font-size: 1.2em;
+}
+
+.broken-items-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.broken-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6em 0.8em;
+  background: #f7fafc;
+  border-radius: 0.5em;
+}
+
+.broken-item .status {
+  font-size: 0.85em;
+  font-weight: 600;
+  padding: 0.2em 0.7em;
+  border-radius: 1em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.broken-item .status.broken {
+  background: #ffeaea;
+  color: #d93025;
+}
+
+.broken-item .status.fixed {
+  background: #e6f4ea;
+  color: #107c10;
+}
