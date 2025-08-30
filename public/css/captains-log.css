@@ -748,48 +748,86 @@ body {
 }
 
 /* Diesel gauge styles */
+#diesel-info {
+  background: #fff;
+  padding: 1em;
+  border-radius: 0.5em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  max-width: 260px;
+}
+
 .diesel-gauge-container {
   position: relative;
-  width: 200px;
-  margin-bottom: 1rem;
+  width: 220px;
+  margin: 0 auto 1rem;
 }
 
 .diesel-gauge {
   width: 100%;
   height: auto;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .gauge-bg {
   fill: none;
-  stroke: #ddd;
-  stroke-width: 10;
+  stroke: #e0e0e0;
+  stroke-width: 12;
 }
 
 .gauge-fill {
   fill: none;
-  stroke: #4caf50;
-  stroke-width: 10;
+  stroke: #00bcd4;
+  stroke-width: 12;
   stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease;
 }
 
 .gauge-needle {
-  stroke: #ff4136;
+  stroke: #ff5252;
   stroke-width: 2;
   stroke-linecap: round;
+  transition: transform 0.3s ease;
 }
 
 .gauge-label {
-  font-size: 10px;
-  fill: #333;
+  font-size: 11px;
+  fill: #666;
 }
 
 .gauge-center {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -10%);
-  font-weight: bold;
-  font-size: 0.9rem;
+  transform: translate(-50%, -40%);
+  font-weight: 600;
+  font-size: 1rem;
+  color: #333;
+}
+
+.diesel-stats {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.diesel-stats li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.diesel-stats li:last-child {
+  border-bottom: none;
+}
+
+.diesel-stats .label {
+  color: #666;
+}
+
+.diesel-stats .value {
+  font-weight: 600;
 }
 
 /* Broken items styles */
