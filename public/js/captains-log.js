@@ -92,9 +92,12 @@ function updateSummary(stops, speed) {
   let prev = null;
   if (currentStatus) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
-      prev = stops.find((s) => s.id === currentStatus.current.id) || currentStatus.current;
+      prev =
+        stops.find((s) => s.id === currentStatus.current.id) ||
+        currentStatus.current;
     } else if (currentStatus.status === "underway" && currentStatus.from) {
-      prev = stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+      prev =
+        stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
     }
   } else {
     prev = stops.find((s) => s.dueComplete) || null;
@@ -475,7 +478,8 @@ function initMap(stops, places, logs = null) {
       currentStatus.destination &&
       currentStatus.departedAt
     ) {
-      const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+      const speed =
+        parseFloat(document.getElementById("speed-input").value) || 0;
       if (speed > 0) {
         const pos = getExpectedPosition(
           currentStatus.from,
@@ -581,7 +585,7 @@ function initMap(stops, places, logs = null) {
     if (canPlan) {
       const container = e.popup._contentNode.querySelector(".stars.editable");
       if (container) {
-        container.querySelectorAll(".star").forEach(star => {
+        container.querySelectorAll(".star").forEach((star) => {
           star.addEventListener("click", async (ev) => {
             ev.stopPropagation();
             const rating = parseInt(star.getAttribute("data-value"), 10);
@@ -592,7 +596,7 @@ function initMap(stops, places, logs = null) {
               body: JSON.stringify({ cardId, rating }),
             });
             if (res.ok) {
-              container.querySelectorAll(".star").forEach(s => {
+              container.querySelectorAll(".star").forEach((s) => {
                 const val = parseInt(s.getAttribute("data-value"), 10);
                 s.textContent = val <= rating ? "★" : "☆";
               });
@@ -830,6 +834,7 @@ function renderTable(stops, speed) {
       let dayTotalNM = 0,
         dayTotalH = 0;
       let dayPrev = prevStop;
+      const dayRows = [];
       stopsForDay.forEach((s) => {
         if (dayPrev) {
           const [lat1, lng1] = getLatLng(dayPrev);
@@ -849,7 +854,10 @@ function renderTable(stops, speed) {
         dayPrev = s;
       });
 
-      let dayTotalNMValue =  dayTotalNM >= 1 ? Math.round(dayTotalNM).toString() : dayTotalNM.toFixed(1);
+      let dayTotalNMValue =
+        dayTotalNM >= 1
+          ? Math.round(dayTotalNM).toString()
+          : dayTotalNM.toFixed(1);
 
       const dayRow = document.createElement("tr");
       dayRow.className = "day-header-row";
@@ -862,6 +870,7 @@ function renderTable(stops, speed) {
         </span>
       </td>`;
       tbody.appendChild(dayRow);
+      dayRows.push(dayRow);
 
       // Sort stops by time
       stopsForDay.sort((a, b) => new Date(a.due) - new Date(b.due));
@@ -881,7 +890,10 @@ function renderTable(stops, speed) {
           ) {
             const meters = haversine(lat1, lng1, lat2, lng2);
             let nmValue = toNM(meters);
-            nm = nmValue >= 1 ? Math.round(nmValue).toString() : nmValue.toFixed(1);
+            nm =
+              nmValue >= 1
+                ? Math.round(nmValue).toString()
+                : nmValue.toFixed(1);
             eta = formatDurationRounded(nm / speed);
           }
         }
@@ -932,6 +944,7 @@ function renderTable(stops, speed) {
           <td>${links}</td>
         `;
         tbody.appendChild(tr);
+        dayRows.push(tr);
         prevStop = s;
       });
 
@@ -942,11 +955,15 @@ function renderTable(stops, speed) {
         tr.setAttribute("data-day", dayKey);
         tr.innerHTML = `<td colspan="6" style="text-align:center; color:#bbb; font-style:italic;">No plans...</td>`;
         tbody.appendChild(tr);
+        dayRows.push(tr);
       }
+
+      const lastRow = dayRows[dayRows.length - 1];
+      if (lastRow) lastRow.classList.add("day-end-row");
     }
     if (canPlan) {
-      document.querySelectorAll(".stars.editable").forEach(container => {
-        container.querySelectorAll(".star").forEach(star => {
+      document.querySelectorAll(".stars.editable").forEach((container) => {
+        container.querySelectorAll(".star").forEach((star) => {
           star.addEventListener("click", async (e) => {
             e.stopPropagation();
             const rating = parseInt(star.getAttribute("data-value"), 10);
@@ -957,7 +974,7 @@ function renderTable(stops, speed) {
               body: JSON.stringify({ cardId, rating }),
             });
             if (res.ok) {
-              container.querySelectorAll(".star").forEach(s => {
+              container.querySelectorAll(".star").forEach((s) => {
                 const val = parseInt(s.getAttribute("data-value"), 10);
                 s.textContent = val <= rating ? "★" : "☆";
               });
@@ -1192,7 +1209,6 @@ function renderLogSummary(logs = []) {
       if (isFinite(hrs)) totalHrs += hrs;
       lastDepart = null;
     }
-
   });
 
   const latest = (type) =>
@@ -1310,8 +1326,7 @@ function renderDieselInfo(logs = []) {
   const range = lastEfficiency ? fuelRemaining * lastEfficiency : null;
 
   if (!lastEfficiency) {
-    div.innerHTML =
-      "<h4>Diesel</h4><p>Not enough data to estimate usage.</p>";
+    div.innerHTML = "<h4>Diesel</h4><p>Not enough data to estimate usage.</p>";
     return;
   }
 
