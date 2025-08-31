@@ -119,35 +119,18 @@ function updateSummary(stops, speed) {
   // --- Additional stats ---
   const totalStops = future.length;
   let totalDays = 0;
-  let longestStay = 0;
-  let longestStayName = null;
   if (future.length > 0) {
     const first = new Date(future[0].due);
     const last = new Date(future[future.length - 1].due);
     totalDays = Math.round((last - first) / 86400000) + 1;
-
-    for (let i = 0; i < future.length - 1; i++) {
-      const cur = new Date(future[i].due);
-      const next = new Date(future[i + 1].due);
-      const stay = (next - cur) / 86400000;
-      if (stay > longestStay) {
-        longestStay = stay;
-        longestStayName = future[i].name;
-      }
-    }
   }
 
   const totalH = totalNM / speed;
-  const longestStayText =
-    longestStayName != null
-      ? `${longestStay.toFixed(1)} days in ${longestStayName}`
-      : "N/A";
 
   summaryEl.innerHTML = `
     <div class="summary-item"><i class="fa-solid fa-location-dot"></i><span>${totalStops} stops</span></div>
     <div class="summary-item"><i class="fa-solid fa-calendar-days"></i><span>${totalDays} days away</span></div>
     <div class="summary-item"><i class="fa-solid fa-route"></i><span>${totalNM.toFixed(1)} NM</span></div>
-    <div class="summary-item"><i class="fa-solid fa-bed"></i><span>Longest stay: ${longestStayText}</span></div>
     <div class="summary-item"><i class="fa-solid fa-clock"></i><span>${formatDurationRounded(totalH)}</span></div>
   `;
 }
