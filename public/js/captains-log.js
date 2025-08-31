@@ -403,9 +403,9 @@ function initMap(stops, places, logs = null) {
   }
 
   if (logs && Array.isArray(logs)) {
-    // Find all arrived logs, unique by cardId
+    // Find all arrived/visited logs, unique by cardId
     const arrived = logs
-      .filter((l) => l.type === "Arrived")
+      .filter((l) => l.type === "Arrived" || l.type === "Visited")
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     const unique = [];
     const seen = new Set();
@@ -1125,9 +1125,9 @@ function renderHistoricalLog(logs = [], stops = []) {
   if (!section) return;
   section.innerHTML = "";
 
-  // Find all arrived logs
+  // Find all arrived or visited logs
   const arrived = logs
-    .filter((l) => l.type === "Arrived")
+    .filter((l) => l.type === "Arrived" || l.type === "Visited")
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // DESCENDING
 
   // Find the first departed log (earliest by timestamp)
@@ -1230,6 +1230,7 @@ function renderLogSummary(logs = []) {
   let longestStay = 0;
   let longestStayName = null;
   const stopSet = new Set();
+  let lastPoint = null;
 
   chron.forEach((l) => {
     if (l.type === "Departed") {
@@ -1242,24 +1243,44 @@ function renderLogSummary(logs = []) {
         }
         lastArrive = null;
       }
-      if (l.lat != null && l.lng != null) lastDepart = l;
-    } else if (l.type === "Arrived") {
-      stopSet.add(l.cardId || l.cardName);
+      if (l.lat != null && l.lng != null) {
+        lastDepart = l;
+        lastPoint = l;
+      }
+    } else if (l.type === "Visited") {
       if (
-        lastDepart &&
-        lastDepart.lat != null &&
-        lastDepart.lng != null &&
+        lastPoint &&
+        lastPoint.lat != null &&
+        lastPoint.lng != null &&
         l.lat != null &&
         l.lng != null
       ) {
-        const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
+        const meters = haversine(lastPoint.lat, lastPoint.lng, l.lat, l.lng);
         totalNM += toNM(meters);
+      }
+      if (l.lat != null && l.lng != null) {
+        lastPoint = l;
+      }
+    } else if (l.type === "Arrived") {
+      stopSet.add(l.cardId || l.cardName);
+      if (
+        lastPoint &&
+        lastPoint.lat != null &&
+        lastPoint.lng != null &&
+        l.lat != null &&
+        l.lng != null
+      ) {
+        const meters = haversine(lastPoint.lat, lastPoint.lng, l.lat, l.lng);
+        totalNM += toNM(meters);
+      }
+      if (lastDepart) {
         const hrs =
           (new Date(l.timestamp) - new Date(lastDepart.timestamp)) / 3600000;
         if (isFinite(hrs)) totalHrs += hrs;
       }
       lastArrive = l;
       lastDepart = null;
+      lastPoint = l;
     }
   });
 
@@ -1296,6 +1317,7 @@ function renderDieselInfo(logs = []) {
   let lastFill = null;
   let lastDepart = null;
   let totalBurnt = 0;
+  let lastPoint = null;
 
   const chron = [...logs].sort(
     (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
@@ -1304,19 +1326,38 @@ function renderDieselInfo(logs = []) {
   chron.forEach((l) => {
     if (l.type === "Departed" && l.lat != null && l.lng != null) {
       lastDepart = l;
+      lastPoint = l;
     } else if (
-      l.type === "Arrived" &&
-      lastDepart &&
+      l.type === "Visited" &&
+      lastPoint &&
+      lastPoint.lat != null &&
+      lastPoint.lng != null &&
       l.lat != null &&
       l.lng != null
     ) {
-      const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
+      const meters = haversine(lastPoint.lat, lastPoint.lng, l.lat, l.lng);
+      const nm = toNM(meters);
+      distanceSinceFill += nm;
+      if (lastEfficiency) {
+        fuelRemaining -= nm / lastEfficiency;
+      }
+      lastPoint = l;
+    } else if (
+      l.type === "Arrived" &&
+      lastPoint &&
+      lastPoint.lat != null &&
+      lastPoint.lng != null &&
+      l.lat != null &&
+      l.lng != null
+    ) {
+      const meters = haversine(lastPoint.lat, lastPoint.lng, l.lat, l.lng);
       const nm = toNM(meters);
       distanceSinceFill += nm;
       if (lastEfficiency) {
         fuelRemaining -= nm / lastEfficiency;
       }
       lastDepart = null;
+      lastPoint = null;
     } else if (l.type === "Diesel" && typeof l.dieselLitres === "number") {
       if (distanceSinceFill > 0 && l.dieselLitres > 0) {
         lastEfficiency = distanceSinceFill / l.dieselLitres;
@@ -1432,7 +1473,7 @@ function renderLogMap(logs = [], stops = []) {
   mapDiv.innerHTML = "";
 
   const arrived = logs
-    .filter((l) => l.type === "Arrived")
+    .filter((l) => l.type === "Arrived" || l.type === "Visited")
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
   // unique by cardId
