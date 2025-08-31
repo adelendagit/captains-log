@@ -207,6 +207,8 @@ router.get("/api/logs", async (req, res, next) => {
           type = "Arrived";
         } else if (/^departed\b/i.test(text)) {
           type = "Departed";
+        } else if (/^visited\b/i.test(text)) {
+          type = "Visited";
         } else if (/^water\b/i.test(text)) {
           type = "Water";
         } else {
