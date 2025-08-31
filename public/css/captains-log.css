@@ -330,6 +330,21 @@ body {
   content: " \26F5"; /* sailboat emoji */
 }
 
+.underway-row {
+  background: #fff3e0;
+  border-left: 4px solid #ff9800;
+}
+
+.underway-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+
+.underway-info .current-badge-table {
+  margin-bottom: 0.3em;
+}
+
 @keyframes pulse {
   0% {
     transform: scale(1);

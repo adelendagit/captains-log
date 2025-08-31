@@ -781,41 +781,56 @@ function renderTable(stops, speed) {
       ? stops.find((s) => s.id === currentStatus.destination.id) ||
         currentStatus.destination
       : null;
-    const stars = canPlan
-      ? makeEditableStars(departed.rating, departed.id)
-      : makeStars(departed.rating);
-    const links = `
-      <a href="${departed.trelloUrl}" target="_blank" title="Open in Trello">
-        <i class="fab fa-trello"></i>
-      </a>
-      ${
-        departed.navilyUrl
-          ? `
-        <a href="${departed.navilyUrl}" target="_blank" title="Open in Navily">
-          <i class="fa-solid fa-anchor"></i>
-        </a>
-      `
-          : ""
-      }
-    `;
-    const labels = Array.isArray(departed.labels)
-      ? departed.labels
-          .map((l) => {
-            const bg = l.color || "#888";
-            const fg = badgeTextColor(bg);
-            return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-          })
-          .join("")
-      : "";
+    const speed = parseFloat(document.getElementById("speed-input").value) || 0;
+    const departedAt = currentStatus.departedAt
+      ? new Date(currentStatus.departedAt)
+      : null;
+
+    let posHtml = "";
+    let etaHtml = "";
+    let durationHtml = "";
+    if (departedAt) {
+      durationHtml = formatDurationRounded((Date.now() - departedAt) / 36e5);
+    }
+    if (speed > 0 && departedAt && nextStop) {
+      const pos = getExpectedPosition(
+        currentStatus.from,
+        nextStop,
+        currentStatus.departedAt,
+        speed,
+      );
+      posHtml = `${pos.lat.toFixed(2)}, ${pos.lng.toFixed(2)}`;
+
+      const totalMeters = haversine(
+        currentStatus.from.lat,
+        currentStatus.from.lng,
+        nextStop.lat,
+        nextStop.lng,
+      );
+      const totalNm = toNM(totalMeters);
+      const traveledNm = pos.fraction * totalNm;
+      const remainingNm = totalNm - traveledNm;
+      const etaDate = new Date(Date.now() + (remainingNm / speed) * 36e5);
+      etaHtml = etaDate.toLocaleString();
+    }
+
     const tr = document.createElement("tr");
-    tr.className = "current-stop-row";
+    tr.className = "current-stop-row underway-row";
     tr.innerHTML = `
-      <td>${departed.name} <span class="current-badge-table underway-badge">Underway</span></td>
-      <td>${labels}</td>
-      <td>${stars}</td>
-      <td colspan="3">${links}${
-        nextStop ? `, heading to ${nextStop.name}` : ""
-      }</td>
+      <td colspan="6">
+        <div class="underway-info">
+          <span class="current-badge-table underway-badge">Underway</span>
+          ${nextStop ? `<div>Heading to ${nextStop.name}</div>` : ""}
+          ${
+            departedAt
+              ? `<div>Departed: ${departedAt.toLocaleString()}</div>`
+              : ""
+          }
+          ${posHtml ? `<div>Estimated position: ${posHtml}</div>` : ""}
+          ${etaHtml ? `<div>ETA: ${etaHtml}</div>` : ""}
+          ${durationHtml ? `<div>Time underway: ${durationHtml}</div>` : ""}
+        </div>
+      </td>
     `;
     tbody.appendChild(tr);
   }
