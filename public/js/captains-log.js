@@ -424,10 +424,17 @@ function initMap(stops, places, logs = null) {
     if (
       firstDeparted &&
       typeof firstDeparted.lat === "number" &&
-      typeof firstDeparted.lng === "number" &&
-      !seen.has(firstDeparted.cardId)
+      typeof firstDeparted.lng === "number"
     ) {
-      unique.unshift(firstDeparted);
+      const hasCoordsForCard = unique.some(
+        (u) =>
+          u.cardId === firstDeparted.cardId &&
+          typeof u.lat === "number" &&
+          typeof u.lng === "number",
+      );
+      if (!hasCoordsForCard) {
+        unique.unshift(firstDeparted);
+      }
     }
 
     // Plot markers and route
@@ -449,7 +456,7 @@ function initMap(stops, places, logs = null) {
         color: "#888", // lighter gray
         weight: 2,
         opacity: 0.5, // more faint
-        dashArray: "4 6", // dashed line
+        dashArray: "2 8", // dotted line
       }).addTo(logLayerGroup);
     }
     logMarkers.forEach((m) => {
