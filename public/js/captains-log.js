@@ -87,8 +87,12 @@ function updateSummary(stops, speed) {
   const summaryEl = document.getElementById("planning-summary");
   if (!summaryEl) return;
 
-  const future = stops.filter((s) => !s.dueComplete && s.due);
+  // Consider only upcoming stops with a due date
+  const future = stops
+    .filter((s) => !s.dueComplete && s.due)
+    .sort((a, b) => new Date(a.due) - new Date(b.due));
 
+  // --- Totals for distance ---
   let prev = null;
   if (currentStatus) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
@@ -112,8 +116,40 @@ function updateSummary(stops, speed) {
     prev = s;
   });
 
+  // --- Additional stats ---
+  const totalStops = future.length;
+  let totalDays = 0;
+  let longestStay = 0;
+  let longestStayName = null;
+  if (future.length > 0) {
+    const first = new Date(future[0].due);
+    const last = new Date(future[future.length - 1].due);
+    totalDays = Math.round((last - first) / 86400000) + 1;
+
+    for (let i = 0; i < future.length - 1; i++) {
+      const cur = new Date(future[i].due);
+      const next = new Date(future[i + 1].due);
+      const stay = (next - cur) / 86400000;
+      if (stay > longestStay) {
+        longestStay = stay;
+        longestStayName = future[i].name;
+      }
+    }
+  }
+
   const totalH = totalNM / speed;
-  summaryEl.textContent = `Total: ${totalNM.toFixed(1)} NM • ${formatDurationRounded(totalH)}`;
+  const longestStayText =
+    longestStayName != null
+      ? `${longestStay.toFixed(1)} days in ${longestStayName}`
+      : "N/A";
+
+  summaryEl.innerHTML = `
+    <div class="summary-item"><i class="fa-solid fa-location-dot"></i><span>${totalStops} stops</span></div>
+    <div class="summary-item"><i class="fa-solid fa-calendar-days"></i><span>${totalDays} days away</span></div>
+    <div class="summary-item"><i class="fa-solid fa-route"></i><span>${totalNM.toFixed(1)} NM</span></div>
+    <div class="summary-item"><i class="fa-solid fa-bed"></i><span>Longest stay: ${longestStayText}</span></div>
+    <div class="summary-item"><i class="fa-solid fa-clock"></i><span>${formatDurationRounded(totalH)}</span></div>
+  `;
 }
 
 async function fetchData() {
@@ -1185,96 +1221,70 @@ function renderLogSummary(logs = []) {
   const div = document.getElementById("log-summary");
   if (!div) return;
 
-  // --- Totals across the selected logs ---
-  let totalNM = 0;
-  let totalHrs = 0;
-  let lastDepart = null;
-
   const chron = [...logs].sort(
     (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
   );
+
+  let totalNM = 0;
+  let totalHrs = 0;
+  let lastDepart = null;
+  let lastArrive = null;
+  let longestStay = 0;
+  let longestStayName = null;
+  const stopSet = new Set();
+
   chron.forEach((l) => {
-    if (l.type === "Departed" && l.lat != null && l.lng != null) {
-      lastDepart = l;
-    } else if (
-      l.type === "Arrived" &&
-      lastDepart &&
-      l.lat != null &&
-      l.lng != null
-    ) {
-      const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
-      totalNM += toNM(meters);
-      const hrs =
-        (new Date(l.timestamp) - new Date(lastDepart.timestamp)) / 3600000;
-      if (isFinite(hrs)) totalHrs += hrs;
+    if (l.type === "Departed") {
+      if (lastArrive) {
+        const stay =
+          (new Date(l.timestamp) - new Date(lastArrive.timestamp)) / 86400000;
+        if (stay > longestStay) {
+          longestStay = stay;
+          longestStayName = lastArrive.cardName;
+        }
+        lastArrive = null;
+      }
+      if (l.lat != null && l.lng != null) lastDepart = l;
+    } else if (l.type === "Arrived") {
+      stopSet.add(l.cardId || l.cardName);
+      if (
+        lastDepart &&
+        lastDepart.lat != null &&
+        lastDepart.lng != null &&
+        l.lat != null &&
+        l.lng != null
+      ) {
+        const meters = haversine(lastDepart.lat, lastDepart.lng, l.lat, l.lng);
+        totalNM += toNM(meters);
+        const hrs =
+          (new Date(l.timestamp) - new Date(lastDepart.timestamp)) / 3600000;
+        if (isFinite(hrs)) totalHrs += hrs;
+      }
+      lastArrive = l;
       lastDepart = null;
     }
   });
 
-  const latest = (type) =>
-    logs
-      .filter((l) => l.type === type)
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-
-  const water = latest("Water");
-  const diesel = latest("Diesel");
-  const seaTemp = latest("Sea Temperature");
-  const gasChange = latest("Gas tank change");
-  const gasRefill = latest("Gas tank refill");
-  const bbqGas = latest("BBQ gas change");
-  const broken = latest("Broken");
-  const fixed = latest("Fixed");
-
-  const items = [];
-  if (water)
-    items.push(
-      `<li>Water: ${new Date(water.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (diesel) {
-    items.push(
-      `<li>Diesel: ${new Date(diesel.timestamp).toLocaleDateString()}${
-        diesel.dieselLitres != null ? ` (${diesel.dieselLitres} litres)` : ""
-      }</li>`,
-    );
+  const arrivals = chron.filter((l) => l.type === "Arrived");
+  let totalDays = 0;
+  if (arrivals.length > 0) {
+    const first = new Date(arrivals[0].timestamp);
+    const last = new Date(arrivals[arrivals.length - 1].timestamp);
+    totalDays = Math.round((last - first) / 86400000) + 1;
   }
-  if (seaTemp)
-    items.push(
-      `<li>Sea Temperature: ${seaTemp.seaTemp}&deg; on ${new Date(seaTemp.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (gasChange)
-    items.push(
-      `<li>Gas tank change: ${new Date(gasChange.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (gasRefill)
-    items.push(
-      `<li>Gas tank refill: ${new Date(gasRefill.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (bbqGas)
-    items.push(
-      `<li>BBQ gas change: ${new Date(bbqGas.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (broken)
-    items.push(
-      `<li>Broken: ${broken.item || ""} on ${new Date(broken.timestamp).toLocaleDateString()}</li>`,
-    );
-  if (fixed)
-    items.push(
-      `<li>Fixed: ${fixed.item || ""} on ${new Date(fixed.timestamp).toLocaleDateString()}</li>`,
-    );
 
-  const totalsHtml = `
-    <h4>Totals</h4>
-    <ul>
-      <li>Total miles travelled: ${totalNM.toFixed(1)} NM</li>
-      <li>Total hours travelled: ${formatDurationRounded(totalHrs)}</li>
-    </ul>
+  const longestStayText =
+    longestStayName != null
+      ? `${longestStay.toFixed(1)} days in ${longestStayName}`
+      : "N/A";
+
+  div.innerHTML = `
+    <div class="summary-item"><i class="fa-solid fa-location-dot"></i><span>${stopSet.size} stops</span></div>
+    <div class="summary-item"><i class="fa-solid fa-calendar-days"></i><span>${totalDays} days away</span></div>
+    <div class="summary-item"><i class="fa-solid fa-route"></i><span>${totalNM.toFixed(1)} NM</span></div>
+    <div class="summary-item"><i class="fa-solid fa-bed"></i><span>Longest stay: ${longestStayText}</span></div>
+    <div class="summary-item"><i class="fa-solid fa-clock"></i><span>${formatDurationRounded(totalHrs)}</span></div>
   `;
-
-  const latestHtml = items.length
-    ? `<h4>Latest</h4><ul>${items.join("")}</ul>`
-    : "";
-
-  div.innerHTML = totalsHtml + latestHtml;
 }
 
 function renderDieselInfo(logs = []) {

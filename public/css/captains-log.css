@@ -469,10 +469,26 @@ body {
   cursor: pointer;
 }
 
-.planning-summary {
-  text-align: right;
-  font-weight: 600;
+.summary-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-around;
   margin: 0.5rem 0 1rem;
+  padding: 0.5rem 1rem;
+  background: #f0f4f8;
+  border-radius: 0.5rem;
+  font-weight: 600;
+}
+
+.summary-panel .summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #333;
+}
+
+.summary-panel .summary-item i {
   color: #0077cc;
 }
 
