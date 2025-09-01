@@ -424,8 +424,8 @@ function initMap(stops, places, logs = null) {
     if (
       firstDeparted &&
       typeof firstDeparted.lat === "number" &&
-      typeof firstDeparted.lng === "number" &&
-      !seen.has(firstDeparted.cardId)
+      typeof firstDeparted.lng === "number" //&&
+      //!seen.has(firstDeparted.cardId)
     ) {
       unique.unshift(firstDeparted);
     }
@@ -1494,9 +1494,10 @@ function renderLogMap(logs = [], stops = []) {
   if (
     firstDeparted &&
     typeof firstDeparted.lat === "number" &&
-    typeof firstDeparted.lng === "number" &&
-    !seen.has(firstDeparted.cardId)
+    typeof firstDeparted.lng === "number" //&&
+    //!seen.has(firstDeparted.cardId)
   ) {
+    // Always add the first departed point at the start, even if cardId matches
     unique.unshift(firstDeparted); // Add at the start
   }
 
