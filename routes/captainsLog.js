@@ -250,11 +250,18 @@ router.get("/api/logs", async (req, res, next) => {
         if (!type) return null;
         const card = cards.find((c) => c.id === a.data.card.id);
         const timestamp = extractTimestamp(text, a.date, a.data.card.id);
+        const labels = card
+          ? (card.labels || []).map((l) => ({
+              name: l.name,
+              color: colorMap[l.color] || "#888",
+            }))
+          : [];
         return {
           area: card && card.idList ? listNames[card.idList] : "Unknown",
           cardName: card ? card.name : a.data.card.name || "Unknown",
           type,
           timestamp,
+          labels,
           comment: text,
           cardId: a.data.card.id,
           trelloUrl: card ? card.shortUrl : undefined,
@@ -280,7 +287,7 @@ router.get("/api/logs", async (req, res, next) => {
       })
       .filter(Boolean);
 
-    let filteredLogs = logs; // <--- ADD THIS LINE
+    let filteredLogs = logs;
 
     // If trip=all, return all logs
     if (req.query.trip === "all") {

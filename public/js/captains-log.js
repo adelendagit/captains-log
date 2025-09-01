@@ -1835,3 +1835,144 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 });
+// Enhanced log rendering with labels and distance
+renderHistoricalLog = function (logs = [], stops = []) {
+  const section = document.getElementById("log-list");
+  if (!section) return;
+  section.innerHTML = "";
+
+  const chron = logs
+    .filter((l) => l.type === "Arrived" || l.type === "Visited")
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  const firstDeparted = logs
+    .filter((l) => l.type === "Departed")
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+  if (firstDeparted) {
+    chron.unshift(firstDeparted);
+  }
+
+  if (!chron.length) {
+    section.innerHTML = "<p>No visits found.</p>";
+    return;
+  }
+
+  let prev = null;
+  chron.forEach((l) => {
+    let dist = null;
+    if (
+      prev &&
+      prev.lat != null &&
+      prev.lng != null &&
+      l.lat != null &&
+      l.lng != null
+    ) {
+      const meters = haversine(prev.lat, prev.lng, l.lat, l.lng);
+      dist = toNM(meters);
+    }
+    l._distanceNm = dist;
+    prev = l;
+  });
+
+  const header = document.createElement("div");
+  header.className = "historical-log-header";
+  header.innerHTML = `
+    <div>Place</div>
+    <div>Labels</div>
+    <div>Distance</div>
+    <div>Date</div>
+    <div>Rating</div>
+    <div>Links</div>
+  `;
+  section.appendChild(header);
+
+  const displayLogs = [...chron].reverse();
+
+  displayLogs.forEach((l) => {
+    const stop =
+      stops.find((s) => s.id === l.cardId) ||
+      stops.find((s) => s.name === l.cardName);
+    const currentRating = stop ? stop.rating : l.rating;
+    const ratingHtml = canPlan
+      ? makeEditableStars(currentRating, l.cardId)
+      : currentRating != null
+        ? makeStars(currentRating)
+        : "";
+    const navily =
+      stop && stop.navilyUrl
+        ? `<a href="${stop.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
+        : l.navilyUrl
+          ? `<a href="${l.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
+          : "";
+    const trello = l.trelloUrl
+      ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>`
+      : "";
+    const labelsArr =
+      stop && Array.isArray(stop.labels)
+        ? stop.labels
+        : Array.isArray(l.labels)
+          ? l.labels
+          : [];
+    const labelsHtml = labelsArr
+      .map((lab) => {
+        const bg = lab.color || "#888";
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
+      })
+      .join("");
+    const distHtml =
+      l._distanceNm != null ? `${l._distanceNm.toFixed(1)} NM` : "";
+    const dateStr = new Date(l.timestamp).toLocaleString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const div = document.createElement("div");
+    div.className = "historical-log-entry";
+    div.innerHTML = `
+      <div class="historical-log-place">${l.cardName}</div>
+      <div class="historical-log-labels">${labelsHtml}</div>
+      <div class="historical-log-distance">${distHtml}</div>
+      <div class="historical-log-date">${dateStr}</div>
+      <div class="historical-log-rating">${ratingHtml}</div>
+      <div class="historical-log-links">${navily}${trello}</div>
+    `;
+    section.appendChild(div);
+
+    if (canPlan) {
+      const container = div.querySelector(".stars.editable");
+      if (container) {
+        container.querySelectorAll(".star").forEach((star) => {
+          star.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const rating = parseInt(star.getAttribute("data-value"), 10);
+            const cardId = container.getAttribute("data-card-id");
+            const res = await fetch("/api/rate-place", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cardId, rating }),
+            });
+            if (res.ok) {
+              container.querySelectorAll(".star").forEach((s) => {
+                const val = parseInt(s.getAttribute("data-value"), 10);
+                s.textContent = val <= rating ? "★" : "☆";
+              });
+              const stop = stops.find((s) => s.id === cardId);
+              if (stop) stop.rating = rating;
+              if (lastLoadedLogs) {
+                lastLoadedLogs.forEach((log) => {
+                  if (log.cardId === cardId) log.rating = rating;
+                });
+              }
+            } else {
+              alert("Failed to save rating");
+            }
+          });
+        });
+      }
+    }
+  });
+};
