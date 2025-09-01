@@ -699,6 +699,14 @@ body {
 }
 #log-list {
   overflow-x: auto;
+  background: #fff;
+  padding: 1em;
+  border-radius: 0.5em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  margin-bottom: 1em;
 }
 @media (min-width: 900px) {
   .log-layout {
@@ -752,15 +760,14 @@ body {
   grid-template-columns: 1.2fr 1fr 0.8fr 1.2fr 0.8fr auto;
   gap: 0.5em;
   align-items: center;
-  padding: 0.7em 0.5em;
+  padding: 0.6em 0.8em;
+  background: #f7fafc;
+  border-radius: 0.5em;
 }
 .historical-log-header {
   font-weight: 600;
-  background: #f7fafc;
-  border-bottom: 2px solid #e0e0e0;
 }
 .historical-log-entry {
-  border-bottom: 1px solid #f0f0f0;
   font-size: 1em;
 }
 .historical-log-place {
@@ -789,6 +796,7 @@ body {
 .historical-log-rating {
   color: #ffb400;
   font-size: 1.2em;
+  letter-spacing: 0.1em;
 }
 .historical-log-links a {
   margin-right: 0.5em;
