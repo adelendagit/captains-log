@@ -61,7 +61,7 @@ const colorMap = {
 
 router.get("/api/data", async (req, res, next) => {
   try {
-    const { cards, lists, customFields, members } = await fetchBoard();
+    const { cards, lists, customFields, members, labels: boardLabelsRaw } = await fetchBoard();
 
     console.log(
       "Custom field definitions:",
@@ -82,6 +82,7 @@ router.get("/api/data", async (req, res, next) => {
         console.log(`Card "${c.name}" → dropdown text:`, ratingText);
 
         const labels = (c.labels || []).map((l) => ({
+          id: l.id,
           name: l.name,
           color: colorMap[l.color] || "#888",
         }));
@@ -114,6 +115,7 @@ router.get("/api/data", async (req, res, next) => {
       .map((c) => {
         const ratingText = getCFTextOrDropdown(c, customFields, "⭐️");
         const labels = (c.labels || []).map((l) => ({
+          id: l.id,
           name: l.name,
           color: colorMap[l.color] || "#888",
         }));
@@ -130,6 +132,12 @@ router.get("/api/data", async (req, res, next) => {
         };
       });
 
+    const boardLabels = (boardLabelsRaw || []).map((l) => ({
+      id: l.id,
+      name: l.name,
+      color: colorMap[l.color] || "#888",
+    }));
+
     // Determine if user can plan
     let canPlan = false;
     if (req.user && members) {
@@ -144,7 +152,7 @@ router.get("/api/data", async (req, res, next) => {
       );
     }
 
-    res.json({ stops, places, canPlan });
+    res.json({ stops, places, canPlan, boardLabels });
   } catch (err) {
     next(err);
   }
@@ -252,6 +260,7 @@ router.get("/api/logs", async (req, res, next) => {
         const timestamp = extractTimestamp(text, a.date, a.data.card.id);
         const labels = card
           ? (card.labels || []).map((l) => ({
+              id: l.id,
               name: l.name,
               color: colorMap[l.color] || "#888",
             }))
@@ -338,6 +347,7 @@ router.get("/api/current-stop", async (req, res, next) => {
       const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
       const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
       const labels = (card.labels || []).map((l) => ({
+        id: l.id,
         name: l.name,
         color: colorMap[l.color] || "#888",
       }));
@@ -680,6 +690,94 @@ router.post("/api/rate-place", async (req, res, next) => {
     res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/rate-place:", err);
+    next(err);
+  }
+});
+
+router.post("/api/update-labels", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const { cardId, labels } = req.body;
+    if (!cardId || !Array.isArray(labels)) {
+      return res.status(400).json({ error: "Missing cardId or labels" });
+    }
+
+    const board = await fetchBoard();
+    const { members } = board;
+    const userId =
+      req.user.id ||
+      req.user.idMember ||
+      (req.user.profile && req.user.profile.id);
+    const isMember = members.some(
+      (m) =>
+        m.id === userId &&
+        (m.memberType === "admin" || m.memberType === "normal"),
+    );
+    if (!isMember) return res.status(403).json({ error: "Not a board member" });
+
+    const oauth = {
+      consumer_key: process.env.TRELLO_OAUTH_KEY,
+      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+      token: req.user.token,
+      token_secret: req.user.tokenSecret,
+    };
+    const oauth1a = require("oauth-1.0a");
+    const crypto = require("crypto");
+    const oauthClient = oauth1a({
+      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
+      signature_method: "HMAC-SHA1",
+      hash_function(base_string, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(base_string)
+          .digest("base64");
+      },
+    });
+
+    const getUrl = `https://api.trello.com/1/cards/${cardId}?fields=idLabels`;
+    const getReq = { url: getUrl, method: "GET" };
+    const getHeaders = oauthClient.toHeader(
+      oauthClient.authorize(getReq, {
+        key: oauth.token,
+        secret: oauth.token_secret,
+      }),
+    );
+    const cardRes = await axios.get(getUrl, {
+      headers: getHeaders,
+    });
+    const current = cardRes.data.idLabels || [];
+
+    const toAdd = labels.filter((id) => !current.includes(id));
+    const toRemove = current.filter((id) => !labels.includes(id));
+
+    for (const id of toAdd) {
+      const url = `https://api.trello.com/1/cards/${cardId}/idLabels`;
+      const request_data = { url, method: "POST", data: { value: id } };
+      const headers = oauthClient.toHeader(
+        oauthClient.authorize(request_data, {
+          key: oauth.token,
+          secret: oauth.token_secret,
+        }),
+      );
+      await axios.post(url, null, { params: { value: id }, headers });
+    }
+
+    for (const id of toRemove) {
+      const url = `https://api.trello.com/1/cards/${cardId}/idLabels/${id}`;
+      const request_data = { url, method: "DELETE" };
+      const headers = oauthClient.toHeader(
+        oauthClient.authorize(request_data, {
+          key: oauth.token,
+          secret: oauth.token_secret,
+        }),
+      );
+      await axios.delete(url, { headers });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.log("Error in /api/update-labels:", err);
     next(err);
   }
 });

@@ -18,6 +18,7 @@ let logLayerGroup = null;
 let mostRecentTripRange = null;
 
 let canPlan = false;
+let boardLabels = [];
 let currentStatus = null;
 let underwayMarker = null;
 let underwayInterval = null;
@@ -142,6 +143,7 @@ async function fetchData() {
   ]);
   const data = await dataRes.json();
   canPlan = data.canPlan;
+  boardLabels = data.boardLabels || [];
   let statusJson = null;
   try {
     statusJson = await statusRes.json();
@@ -194,6 +196,88 @@ function makeEditableStars(r, cardId) {
   }
   html += "</span>";
   return html;
+}
+
+let labelEditorEl = null;
+function showLabelEditor(targetEl, cardId, currentIds) {
+  if (labelEditorEl) labelEditorEl.remove();
+  labelEditorEl = document.createElement("div");
+  labelEditorEl.className = "label-editor";
+
+  boardLabels.forEach((lab) => {
+    const id = `label-edit-${lab.id}`;
+    const wrapper = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = lab.id;
+    cb.id = id;
+    if (currentIds.includes(lab.id)) cb.checked = true;
+    const span = document.createElement("span");
+    span.className = "label";
+    span.textContent = lab.name;
+    span.style.background = lab.color || "#888";
+    span.style.color = badgeTextColor(lab.color || "#888");
+    wrapper.appendChild(cb);
+    wrapper.appendChild(span);
+    labelEditorEl.appendChild(wrapper);
+  });
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.addEventListener("click", async () => {
+    const selected = Array.from(
+      labelEditorEl.querySelectorAll("input[type=checkbox]:checked"),
+    ).map((cb) => cb.value);
+    const res = await fetch("/api/update-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId, labels: selected }),
+    });
+    if (res.ok) {
+      const newLabels = boardLabels.filter((l) => selected.includes(l.id));
+      targetEl.innerHTML = newLabels
+        .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
+        .map((lab) => {
+          const fg = badgeTextColor(lab.color || "#888");
+          return `<span class="label" style="background:${lab.color};color:${fg}">${lab.name}</span>`;
+        })
+        .join("");
+      const stop = stops.find((s) => s.id === cardId);
+      if (stop) stop.labels = newLabels;
+      if (lastLoadedLogs) {
+        lastLoadedLogs.forEach((log) => {
+          if (log.cardId === cardId) log.labels = newLabels;
+        });
+      }
+    } else {
+      alert("Failed to update labels");
+    }
+    labelEditorEl.remove();
+    labelEditorEl = null;
+  });
+  labelEditorEl.appendChild(saveBtn);
+
+  const rect = targetEl.getBoundingClientRect();
+  labelEditorEl.style.top = `${rect.bottom + window.scrollY}px`;
+  labelEditorEl.style.left = `${rect.left + window.scrollX}px`;
+  document.body.appendChild(labelEditorEl);
+
+  setTimeout(() => {
+    document.addEventListener(
+      "click",
+      function handler(e) {
+        if (
+          labelEditorEl &&
+          !labelEditorEl.contains(e.target) &&
+          e.target !== targetEl
+        ) {
+          labelEditorEl.remove();
+          labelEditorEl = null;
+          document.removeEventListener("click", handler);
+        }
+      },
+    );
+  }, 0);
 }
 
 async function preloadAllLogs() {
@@ -546,6 +630,7 @@ function initMap(stops, places, logs = null) {
             stops = data.stops;
             places = data.places;
             currentStatus = data.currentStatus;
+            boardLabels = data.boardLabels || boardLabels;
             renderMapWithToggle();
             renderTable(
               stops,
@@ -590,6 +675,7 @@ function initMap(stops, places, logs = null) {
           stops = data.stops;
           places = data.places;
           currentStatus = data.currentStatus;
+          boardLabels = data.boardLabels || boardLabels;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -659,6 +745,7 @@ function handlePlanButtonClicks() {
         stops = data.stops;
         places = data.places;
         currentStatus = data.currentStatus;
+        boardLabels = data.boardLabels || boardLabels;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -688,6 +775,7 @@ function handleRemoveButtonClicks() {
         stops = data.stops;
         places = data.places;
         currentStatus = data.currentStatus;
+        boardLabels = data.boardLabels || boardLabels;
         renderMapWithToggle();
         renderTable(
           stops,
@@ -1109,6 +1197,7 @@ function initTableDragAndDrop() {
           stops = data.stops;
           places = data.places;
           currentStatus = data.currentStatus;
+          boardLabels = data.boardLabels || boardLabels;
           renderMapWithToggle();
           renderTable(
             stops,
@@ -1796,6 +1885,7 @@ async function init() {
   stops = data.stops;
   places = data.places;
   currentStatus = data.currentStatus;
+  boardLabels = data.boardLabels || boardLabels;
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
@@ -1903,7 +1993,7 @@ renderHistoricalLog = function (logs = [], stops = []) {
         : l.navilyUrl
           ? `<a href="${l.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
           : "";
-    const trello = l.trelloUrl
+      const trello = l.trelloUrl
       ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>`
       : "";
     const labelsArr =
@@ -1984,6 +2074,15 @@ renderHistoricalLog = function (logs = [], stops = []) {
               alert("Failed to save rating");
             }
           });
+        });
+      }
+
+      const labelContainer = div.querySelector(".historical-log-labels");
+      if (labelContainer) {
+        labelContainer.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const currentIds = labelsArr.map((lab) => lab.id);
+          showLabelEditor(labelContainer, l.cardId, currentIds);
         });
       }
     }
