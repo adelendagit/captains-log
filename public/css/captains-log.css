@@ -681,6 +681,40 @@ body {
   background: #005fa3;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
+
+/* Layout for log section */
+.log-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+.log-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+#log-map {
+  height: 350px;
+  margin-top: 2rem;
+}
+#log-list {
+  overflow-x: auto;
+}
+@media (min-width: 900px) {
+  .log-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .log-left {
+    flex: 1 1 50%;
+  }
+  #log-map {
+    height: 60vh;
+  }
+  #log-list {
+    flex: 1 1 50%;
+  }
+}
 .historical-trip-list {
   list-style: none;
   padding: 0;
@@ -712,23 +746,41 @@ body {
   color: #005fa3;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
+.historical-log-header,
 .historical-log-entry {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.8fr 1.2fr 0.8fr auto;
+  gap: 0.5em;
   align-items: center;
-  gap: 1em;
   padding: 0.7em 0.5em;
+}
+.historical-log-header {
+  font-weight: 600;
+  background: #f7fafc;
+  border-bottom: 2px solid #e0e0e0;
+}
+.historical-log-entry {
   border-bottom: 1px solid #f0f0f0;
   font-size: 1em;
 }
 .historical-log-place {
   font-weight: 600;
   color: #0077cc;
-  min-width: 120px;
+}
+.historical-log-labels .label {
+  display: inline-block;
+  padding: 0.1em 0.4em;
+  margin: 0 0.2em 0.2em 0;
+  border-radius: 0.3em;
+  font-size: 0.8em;
+}
+.historical-log-distance {
+  color: #555;
+  font-size: 0.9em;
 }
 .historical-log-date {
   color: #555;
   font-size: 0.95em;
-  min-width: 110px;
 }
 .historical-log-rating {
   color: #ffb400;
@@ -738,6 +790,40 @@ body {
   margin-right: 0.5em;
   color: #0077cc;
   font-size: 1.2em;
+}
+
+@media (max-width: 600px) {
+  .historical-log-header {
+    display: none;
+  }
+  .historical-log-entry {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "place rating"
+      "labels labels"
+      "distance date"
+      "links links";
+  }
+  .historical-log-place {
+    grid-area: place;
+  }
+  .historical-log-rating {
+    grid-area: rating;
+    justify-self: end;
+  }
+  .historical-log-labels {
+    grid-area: labels;
+  }
+  .historical-log-distance {
+    grid-area: distance;
+  }
+  .historical-log-date {
+    grid-area: date;
+    justify-self: end;
+  }
+  .historical-log-links {
+    grid-area: links;
+  }
 }
 @media (max-width: 899px) {
   .log-table {

@@ -95,15 +95,19 @@
 </section>
 
 <section id="log" class="tab-content hidden">
-  <div id="log-map" style="height: 350px; margin-top: 2rem;"></div>
-  <div id="log-controls" style="margin-bottom:1em;">
-    <button id="show-last-trip-btn">Show Current/Last Trip</button>
-    <button id="show-all-logs-btn">Show All Logs</button>
+  <div class="log-layout">
+    <div class="log-left">
+      <div id="log-map"></div>
+      <div id="log-controls">
+        <button id="show-last-trip-btn">Show Current/Last Trip</button>
+        <button id="show-all-logs-btn">Show All Logs</button>
+      </div>
+      <div id="diesel-info"></div>
+      <div id="log-summary" class="summary-panel"></div>
+      <div id="broken-items"></div>
+    </div>
+    <div id="log-list"></div>
   </div>
-  <div id="diesel-info" style="margin-bottom:1em;"></div>
-  <div id="log-summary" class="summary-panel" style="margin-bottom:1em;"></div>
-  <div id="broken-items"></div>
-  <div id="log-list"></div>
 </section>
 </main>
 
