@@ -1907,6 +1907,11 @@ async function init() {
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
 
+  // When there are no planned stops, show all places so users can plan the first one
+  if (stops.length === 0) {
+    plannedOnlyToggle.checked = false;
+  }
+
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
