@@ -5,7 +5,7 @@ const TOKEN      = process.env.TRELLO_TOKEN;
 
 const BASE_URL = `https://api.trello.com/1/boards/${BOARD_ID}`;
 const QUERY    = `?key=${KEY}&token=${TOKEN}`
-  + `&cards=all&card_customFieldItems=true&lists=all&fields=all`
+  + `&cards=open&card_customFieldItems=true&lists=open&fields=all`
   + `&customFields=true&members=all&labels=all`;
 
 async function fetchBoard() {
