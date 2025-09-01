@@ -1878,7 +1878,6 @@ renderHistoricalLog = function (logs = [], stops = []) {
   header.className = "historical-log-header";
   header.innerHTML = `
     <div>Place</div>
-    <div>Labels</div>
     <div>Distance</div>
     <div>Date</div>
     <div>Rating</div>
@@ -1949,11 +1948,11 @@ renderHistoricalLog = function (logs = [], stops = []) {
     div.className = "historical-log-entry";
     div.innerHTML = `
       <div class="historical-log-place">${l.cardName}</div>
-      <div class="historical-log-labels">${labelsHtml}</div>
       <div class="historical-log-distance">${distHtml}</div>
       <div class="historical-log-date">${dateStr}</div>
       <div class="historical-log-rating">${ratingHtml}</div>
       <div class="historical-log-links">${navily}${trello}</div>
+      <div class="historical-log-labels">${labelsHtml}</div>
     `;
     section.appendChild(div);
 
