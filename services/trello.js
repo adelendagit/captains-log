@@ -8,8 +8,14 @@ const QUERY    = `?key=${KEY}&token=${TOKEN}`
   + `&cards=open&card_customFieldItems=true&lists=open&fields=all`
   + `&customFields=true&members=all&labels=all`;
 
+function filterCardsToOpenLists(board) {
+  const openListIds = new Set(board.lists.map(list => list.id));
+  board.cards = board.cards.filter(card => openListIds.has(card.idList));
+}
+
 async function fetchBoard() {
   const { data } = await axios.get(BASE_URL + QUERY);
+  filterCardsToOpenLists(data);
   return data;
 }
 
@@ -44,6 +50,7 @@ async function fetchAllComments() {
 
 async function fetchBoardWithAllComments() {
   const { data: board } = await axios.get(BASE_URL + QUERY);
+  filterCardsToOpenLists(board);
   board.allComments = await fetchAllComments();
   return board;
 }
