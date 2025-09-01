@@ -1907,18 +1907,28 @@ renderHistoricalLog = function (logs = [], stops = []) {
     const trello = l.trelloUrl
       ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>`
       : "";
-    const labelsHtml =
+    const labelsArr =
       stop && Array.isArray(stop.labels)
         ? stop.labels
-            .map((lab) => {
-              const bg = lab.color || "#888";
-              const fg = badgeTextColor(bg);
-              return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
-            })
-            .join("")
-        : "";
+        : Array.isArray(l.labels)
+          ? l.labels
+          : [];
+    const labelsHtml = labelsArr
+      .map((lab) => {
+        const bg = lab.color || "#888";
+        const fg = badgeTextColor(bg);
+        return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
+      })
+      .join("");
     const distHtml =
       l._distanceNm != null ? `${l._distanceNm.toFixed(1)} NM` : "";
+    const dateStr = new Date(l.timestamp).toLocaleString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const div = document.createElement("div");
     div.className = "historical-log-entry";
@@ -1926,7 +1936,7 @@ renderHistoricalLog = function (logs = [], stops = []) {
       <div class="historical-log-place">${l.cardName}</div>
       <div class="historical-log-labels">${labelsHtml}</div>
       <div class="historical-log-distance">${distHtml}</div>
-      <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+      <div class="historical-log-date">${dateStr}</div>
       <div class="historical-log-rating">${ratingHtml}</div>
       <div class="historical-log-links">${navily}${trello}</div>
     `;

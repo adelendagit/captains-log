@@ -767,6 +767,10 @@ body {
   font-weight: 600;
   color: #0077cc;
 }
+.historical-log-labels {
+  display: flex;
+  flex-wrap: wrap;
+}
 .historical-log-labels .label {
   display: inline-block;
   padding: 0.1em 0.4em;
