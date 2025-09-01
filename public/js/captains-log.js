@@ -621,12 +621,15 @@ function initMap(stops, places, logs = null) {
         const originalText = btn.textContent;
         btn.textContent = "Planning...";
         const cardId = btn.getAttribute("data-card-id");
-        // Find the latest due date
+        // Find the latest due date (if any)
         const lastDue = stops
           .filter((s) => s.due)
           .map((s) => new Date(s.due))
           .sort((a, b) => b - a)[0];
-        const nextDue = new Date(lastDue);
+
+        // If there are no currently planned stops, start from today
+        const nextDue = lastDue ? new Date(lastDue) : new Date();
+        // Plan for the following day
         nextDue.setDate(nextDue.getDate() + 1);
         // Call backend to update the card's due date
         const res = await fetch(`/api/plan-stop`, {
@@ -737,12 +740,15 @@ function handlePlanButtonClicks() {
       );
       e.preventDefault();
       const cardId = btn.getAttribute("data-card-id");
-      // Find the latest due date
+      // Find the latest due date (if any)
       const lastDue = stops
         .filter((s) => s.due)
         .map((s) => new Date(s.due))
         .sort((a, b) => b - a)[0];
-      const nextDue = new Date(lastDue);
+
+      // Start from today if no stops are currently planned
+      const nextDue = lastDue ? new Date(lastDue) : new Date();
+      // Move to the following day for the new stop
       nextDue.setDate(nextDue.getDate() + 1);
       // Call backend to update the card's due date
       const res = await fetch(`/api/plan-stop`, {
@@ -1900,6 +1906,11 @@ async function init() {
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
+
+  // When there are no planned stops, show all places so users can plan the first one
+  if (stops.length === 0) {
+    plannedOnlyToggle.checked = false;
+  }
 
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
