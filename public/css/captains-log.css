@@ -789,6 +789,7 @@ body {
 .historical-log-rating {
   color: #ffb400;
   font-size: 1.2em;
+  letter-spacing: 0.1em;
 }
 .historical-log-links a {
   margin-right: 0.5em;

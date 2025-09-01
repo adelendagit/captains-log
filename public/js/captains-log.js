@@ -1914,15 +1914,30 @@ renderHistoricalLog = function (logs = [], stops = []) {
           ? l.labels
           : [];
     const labelsHtml = labelsArr
+      .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
       .map((lab) => {
         const bg = lab.color || "#888";
         const fg = badgeTextColor(bg);
         return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
       })
       .join("");
-    const distHtml =
-      l._distanceNm != null ? `${l._distanceNm.toFixed(1)} NM` : "";
-    const dateStr = new Date(l.timestamp).toLocaleString([], {
+
+    let distHtml = "";
+    if (l._distanceNm != null) {
+      let rounded;
+      if (l._distanceNm < 1) {
+        rounded = l._distanceNm < 0.75 ? 0.5 : 1;
+      } else {
+        rounded = Math.round(l._distanceNm);
+      }
+      const display =
+        rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1);
+      distHtml = `${display} NM`;
+    }
+    const d = new Date(l.timestamp);
+    const ms = 30 * 60 * 1000; // 30 minutes in ms
+    const roundedDate = new Date(Math.round(d.getTime() / ms) * ms);
+    const dateStr = roundedDate.toLocaleString([], {
       year: "numeric",
       month: "short",
       day: "numeric",
