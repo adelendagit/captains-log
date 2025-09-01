@@ -1170,7 +1170,7 @@ function renderHistoricalLog(logs = [], stops = []) {
     div.className = "historical-log-entry";
     div.innerHTML = `
       <div class="historical-log-place">${l.cardName}</div>
-      <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+      <div class="historical-log-date">${new Date(l.timestamp).toLocaleDateString([], { day: "numeric", month: "short" })} ${new Date(l.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
       <div class="historical-log-rating">${ratingHtml}</div>
       <div class="historical-log-links">${navily}${trello}</div>
       <div class="historical-log-type">${l.type}</div>
@@ -1937,7 +1937,6 @@ renderHistoricalLog = function (logs = [], stops = []) {
     const ms = 30 * 60 * 1000; // 30 minutes in ms
     const roundedDate = new Date(Math.round(d.getTime() / ms) * ms);
     const dateStr = roundedDate.toLocaleString([], {
-      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
