@@ -198,13 +198,34 @@ function makeEditableStars(r, cardId) {
   return html;
 }
 
+function labelsToHtml(labelsArr) {
+  const html = labelsArr
+    .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
+    .map((lab) => {
+      const bg = lab.color || "#888";
+      const fg = badgeTextColor(bg);
+      return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
+    })
+    .join("");
+  return html || `<span class="label placeholder">Add label</span>`;
+}
+
 let labelEditorEl = null;
 function showLabelEditor(targetEl, cardId, currentIds) {
   if (labelEditorEl) labelEditorEl.remove();
   labelEditorEl = document.createElement("div");
   labelEditorEl.className = "label-editor";
 
-  boardLabels.forEach((lab) => {
+  const sorted = [...boardLabels].sort((a, b) => {
+    const colorA = a.color || "";
+    const colorB = b.color || "";
+    if (colorA === colorB) {
+      return (a.name || "").localeCompare(b.name || "");
+    }
+    return colorA.localeCompare(colorB);
+  });
+
+  sorted.forEach((lab) => {
     const id = `label-edit-${lab.id}`;
     const wrapper = document.createElement("label");
     const cb = document.createElement("input");
@@ -220,42 +241,32 @@ function showLabelEditor(targetEl, cardId, currentIds) {
     wrapper.appendChild(cb);
     wrapper.appendChild(span);
     labelEditorEl.appendChild(wrapper);
-  });
 
-  const saveBtn = document.createElement("button");
-  saveBtn.textContent = "Save";
-  saveBtn.addEventListener("click", async () => {
-    const selected = Array.from(
-      labelEditorEl.querySelectorAll("input[type=checkbox]:checked"),
-    ).map((cb) => cb.value);
-    const res = await fetch("/api/update-labels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId, labels: selected }),
-    });
-    if (res.ok) {
-      const newLabels = boardLabels.filter((l) => selected.includes(l.id));
-      targetEl.innerHTML = newLabels
-        .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
-        .map((lab) => {
-          const fg = badgeTextColor(lab.color || "#888");
-          return `<span class="label" style="background:${lab.color};color:${fg}">${lab.name}</span>`;
-        })
-        .join("");
-      const stop = stops.find((s) => s.id === cardId);
-      if (stop) stop.labels = newLabels;
-      if (lastLoadedLogs) {
-        lastLoadedLogs.forEach((log) => {
-          if (log.cardId === cardId) log.labels = newLabels;
-        });
+    cb.addEventListener("change", async () => {
+      const selected = Array.from(
+        labelEditorEl.querySelectorAll("input[type=checkbox]:checked"),
+      ).map((input) => input.value);
+      const res = await fetch("/api/update-labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId, labels: selected }),
+      });
+      if (res.ok) {
+        const newLabels = boardLabels.filter((l) => selected.includes(l.id));
+        targetEl.innerHTML = labelsToHtml(newLabels);
+        const stop = stops.find((s) => s.id === cardId);
+        if (stop) stop.labels = newLabels;
+        if (lastLoadedLogs) {
+          lastLoadedLogs.forEach((log) => {
+            if (log.cardId === cardId) log.labels = newLabels;
+          });
+        }
+      } else {
+        alert("Failed to update labels");
+        cb.checked = !cb.checked;
       }
-    } else {
-      alert("Failed to update labels");
-    }
-    labelEditorEl.remove();
-    labelEditorEl = null;
+    });
   });
-  labelEditorEl.appendChild(saveBtn);
 
   const rect = targetEl.getBoundingClientRect();
   labelEditorEl.style.top = `${rect.bottom + window.scrollY}px`;
@@ -2002,14 +2013,7 @@ renderHistoricalLog = function (logs = [], stops = []) {
         : Array.isArray(l.labels)
           ? l.labels
           : [];
-    const labelsHtml = labelsArr
-      .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
-      .map((lab) => {
-        const bg = lab.color || "#888";
-        const fg = badgeTextColor(bg);
-        return `<span class="label" style="background:${bg};color:${fg}">${lab.name}</span>`;
-      })
-      .join("");
+    const labelsHtml = labelsToHtml(labelsArr);
 
     let distHtml = "";
     if (l._distanceNm != null) {

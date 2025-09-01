@@ -779,6 +779,7 @@ body {
   flex-wrap: wrap;
   grid-column: 1 / -1;
   margin-top: 0.3em;
+  cursor: pointer;
 }
 .historical-log-labels .label {
   display: inline-block;
@@ -786,6 +787,10 @@ body {
   margin: 0 0.2em 0.2em 0;
   border-radius: 0.3em;
   font-size: 0.8em;
+}
+.historical-log-labels .label.placeholder {
+  background: #eee;
+  color: #333;
 }
 .historical-log-distance {
   color: #555;
@@ -823,10 +828,6 @@ body {
 }
 .label-editor label input {
   margin-right: 0.3em;
-}
-.label-editor button {
-  margin-top: 0.5em;
-  width: 100%;
 }
 
 @media (max-width: 600px) {
