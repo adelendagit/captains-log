@@ -49,6 +49,9 @@ app.use(
       fontSrc: [
         "'self'",
         "https://unpkg.com"
+      ],
+      manifestSrc: [
+        "'self'"
       ]
     }
   })

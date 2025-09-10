@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Sail -->
+  <path d="M35 65 L65 65 L50 30 Z" stroke="#0A2540" stroke-width="2" fill="none"/>
+
+  <!-- Location pin (integrated into sail) -->
+  <circle cx="50" cy="30" r="6" stroke="#0A2540" stroke-width="2" fill="none"/>
+  <path d="M50 36 L50 45" stroke="#0A2540" stroke-width="2"/>
+
+  <!-- Hull -->
+  <path d="M25 65 Q50 75 75 65" stroke="#0A2540" stroke-width="2" fill="none"/>
+
+  <!-- Water line -->
+  <path d="M35 72 Q50 78 65 72" stroke="#0A2540" stroke-width="2" fill="none"/>
+</svg>
+
