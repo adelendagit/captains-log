@@ -2,6 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+let pngToIco = require('png-to-ico');
+if (pngToIco && pngToIco.default) pngToIco = pngToIco.default;
 
 async function ensureDir(p) {
   await fs.promises.mkdir(p, { recursive: true });
@@ -35,10 +37,28 @@ async function generate() {
     await png.toFile(t.file);
     console.log(`Wrote ${t.file}`);
   }
+
+  // Generate small PNGs for favicon and then an .ico bundle
+  const faviconPngs = [16, 32, 48];
+  const genPngPaths = [];
+  for (const s of faviconPngs) {
+    const out = path.join(outDir, `favicon-${s}.png`);
+    const svgBuffer = await fs.promises.readFile(srcSvg);
+    await sharp(svgBuffer, { density: 1024 })
+      .resize(s, s, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toFile(out);
+    console.log(`Wrote ${out}`);
+    genPngPaths.push(out);
+  }
+
+  const icoBuf = await pngToIco(genPngPaths);
+  const icoPath = path.join(__dirname, '..', 'public', 'favicon.ico');
+  await fs.promises.writeFile(icoPath, icoBuf);
+  console.log(`Wrote ${icoPath}`);
 }
 
 generate().catch(err => {
   console.error(err);
   process.exit(1);
 });
-
