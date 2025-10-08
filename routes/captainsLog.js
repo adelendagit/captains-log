@@ -6,6 +6,7 @@ const {
   fetchBoardWithAllComments,
   fetchAllComments,
   fetchRecentComments,
+  fetchBoardWithCredentials,
 } = require("../services/trello");
 
 function extractTimestamp(text, fallback, cardId) {
@@ -58,6 +59,105 @@ const colorMap = {
   pink: "#ff78cb",
   black: "#344563",
 };
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+router.get("/api/closest-locations", async (req, res, next) => {
+  try {
+    const {
+      lat,
+      latitude,
+      long,
+      lng,
+      longitude,
+      apiKey,
+      token,
+      limit,
+    } = req.query;
+
+    const latitudeValue = parseFloat(lat ?? latitude);
+    const longitudeValue = parseFloat(long ?? lng ?? longitude);
+
+    if (!Number.isFinite(latitudeValue) || !Number.isFinite(longitudeValue)) {
+      return res
+        .status(400)
+        .json({ error: "Missing or invalid latitude/longitude values" });
+    }
+
+    if (!apiKey || !token) {
+      return res.status(400).json({ error: "Missing apiKey or token" });
+    }
+
+    const parsedLimit = parseInt(limit ?? "1", 10);
+    const limitValue = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 1;
+
+    const board = await fetchBoardWithCredentials(apiKey, token);
+    const { cards, lists, customFields } = board;
+
+    const hasLatitude = customFields.some((field) => field.name === "Latitude");
+    const hasLongitude = customFields.some((field) => field.name === "Longitude");
+
+    if (!hasLatitude || !hasLongitude) {
+      return res.status(500).json({
+        error: "Latitude and Longitude custom fields are required on the board",
+      });
+    }
+
+    const listNames = Object.fromEntries(lists.map((list) => [list.id, list.name]));
+
+    const closestCards = cards
+      .map((card) => {
+        const cardLat = getCFNumber(card, customFields, "Latitude");
+        const cardLng = getCFNumber(card, customFields, "Longitude");
+
+        if (cardLat == null || cardLng == null) {
+          return null;
+        }
+
+        const distance = calculateDistanceKm(
+          latitudeValue,
+          longitudeValue,
+          cardLat,
+          cardLng,
+        );
+
+        return {
+          card,
+          distance,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limitValue)
+      .map(({ card }) => ({
+        id: card.id,
+        name: card.name,
+        url: card.shortUrl,
+        list: listNames[card.idList],
+        desc: card.desc,
+      }));
+
+    res.json({ locations: closestCards });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/api/data", async (req, res, next) => {
   try {
