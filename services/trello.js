@@ -62,6 +62,18 @@ async function fetchAllComments() {
   return allActions;
 }
 
+async function fetchCommentPage({ before = null, limit = 1000 } = {}) {
+  const url =
+    BASE_URL +
+    `/actions?filter=commentCard&limit=${limit}${
+      before ? `&before=${before}` : ""
+    }&key=${KEY}&token=${TOKEN}`;
+  const { data } = await axios.get(url);
+  const done = data.length < limit;
+  const nextBefore = done ? null : data[data.length - 1].id;
+  return { data, done, nextBefore };
+}
+
 async function fetchBoardWithAllComments() {
   const { data: board } = await axios.get(BASE_URL + buildQuery(KEY, TOKEN));
   filterCardsToOpenLists(board);
@@ -74,5 +86,6 @@ module.exports = {
   fetchAllComments,
   fetchBoardWithAllComments,
   fetchBoardWithCredentials,
+  fetchCommentPage,
   fetchRecentComments,
 };
