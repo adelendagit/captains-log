@@ -4,7 +4,7 @@ const axios = require("axios");
 const {
   fetchBoard,
   fetchBoardWithAllComments,
-  fetchAllComments,
+  fetchCommentPage,
   fetchRecentComments,
   fetchBoardWithCredentials,
 } = require("../services/trello");
@@ -76,6 +76,98 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function buildLogsFromComments(actions, cards, listNames, customFields) {
+  return actions
+    .filter((a) => a.type === "commentCard" && a.data && a.data.text)
+    .map((a) => {
+      const text = a.data.text;
+      let type = null;
+      let dieselLitres = null;
+      let seaTemp = null;
+      let item = null;
+
+      if (/^arrived\b/i.test(text)) {
+        type = "Arrived";
+      } else if (/^departed\b/i.test(text)) {
+        type = "Departed";
+      } else if (/^visited\b/i.test(text)) {
+        type = "Visited";
+      } else if (/^water\b/i.test(text)) {
+        type = "Water";
+      } else {
+        const dieselMatch = text.match(
+          /^diesel\s*([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?/i,
+        );
+        const tempMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\u00B0/);
+        const gasChangeMatch = /^gas tank change\b/i.test(text);
+        const gasRefillMatch = /^gas tank refill\b/i.test(text);
+        const bbqGasMatch = /^bbq gas change\b/i.test(text);
+        const brokenMatch = text.match(/^broken\s+(.+)/i);
+        const fixedMatch = text.match(/^fixed\s+(.+)/i);
+
+        if (dieselMatch) {
+          type = "Diesel";
+          dieselLitres = parseFloat(dieselMatch[1]);
+        } else if (tempMatch) {
+          type = "Sea Temperature";
+          seaTemp = parseFloat(tempMatch[1]);
+        } else if (gasChangeMatch) {
+          type = "Gas tank change";
+        } else if (gasRefillMatch) {
+          type = "Gas tank refill";
+        } else if (bbqGasMatch) {
+          type = "BBQ gas change";
+        } else if (brokenMatch) {
+          type = "Broken";
+          item = brokenMatch[1]
+            .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
+            .trim();
+        } else if (fixedMatch) {
+          type = "Fixed";
+          item = fixedMatch[1]
+            .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
+            .trim();
+        }
+      }
+
+      if (!type) return null;
+      const card = cards.find((c) => c.id === a.data.card.id);
+      const timestamp = extractTimestamp(text, a.date, a.data.card.id);
+      const labels = card
+        ? (card.labels || []).map((l) => ({
+            id: l.id,
+            name: l.name,
+            color: colorMap[l.color] || "#888",
+          }))
+        : [];
+      return {
+        area: card && card.idList ? listNames[card.idList] : "Unknown",
+        cardName: card ? card.name : a.data.card.name || "Unknown",
+        type,
+        timestamp,
+        labels,
+        comment: text,
+        cardId: a.data.card.id,
+        trelloUrl: card ? card.shortUrl : undefined,
+        lat: card ? getCFNumber(card, customFields, "Latitude") : null,
+        lng: card ? getCFNumber(card, customFields, "Longitude") : null,
+        rating: card
+          ? (() => {
+              const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
+              return ratingText != null ? parseInt(ratingText, 10) : null;
+            })()
+          : null,
+        navilyUrl: card
+          ? getCFTextOrDropdown(card, customFields, "Navily")
+          : null,
+        dieselLitres,
+        seaTemp,
+        item,
+      };
+    })
+    .filter(Boolean);
 }
 
 router.get("/api/closest-locations", async (req, res, next) => {
@@ -264,29 +356,6 @@ router.get("/api/logs", async (req, res, next) => {
     const { cards, lists, customFields, allComments } = board;
     const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
 
-    function getCFNumber(card, boardCFs, name) {
-      const def = boardCFs.find((f) => f.name === name);
-      if (!def) return null;
-      const item = card.customFieldItems.find(
-        (i) => i.idCustomField === def.id,
-      );
-      return item?.value?.number ? Number(item.value.number) : null;
-    }
-    function getCFTextOrDropdown(card, boardCFs, name) {
-      const def = boardCFs.find((f) => f.name === name);
-      if (!def) return null;
-      const item = card.customFieldItems.find(
-        (i) => i.idCustomField === def.id,
-      );
-      if (!item) return null;
-      if (item.value?.text != null) return item.value.text;
-      if (item.idValue && Array.isArray(def.options)) {
-        const opt = def.options.find((o) => o.id === item.idValue);
-        return opt?.value?.text ?? null;
-      }
-      return null;
-    }
-
     // Get trips from cards in the Trips list
     const tripsList = lists.find((l) => l.name === "Trips");
     const trips = cards
@@ -302,99 +371,12 @@ router.get("/api/logs", async (req, res, next) => {
     // Find most recent trip
     const mostRecentTrip = trips[0];
 
-    const logs = allComments
-      .filter((a) => a.type === "commentCard" && a.data && a.data.text)
-      .map((a) => {
-        const text = a.data.text;
-        let type = null;
-        let dieselLitres = null;
-        let seaTemp = null;
-        let item = null;
-
-        if (/^arrived\b/i.test(text)) {
-          type = "Arrived";
-        } else if (/^departed\b/i.test(text)) {
-          type = "Departed";
-        } else if (/^visited\b/i.test(text)) {
-          type = "Visited";
-        } else if (/^water\b/i.test(text)) {
-          type = "Water";
-        } else {
-          const dieselMatch = text.match(
-            /^diesel\s*([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?/i,
-          );
-          const tempMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\u00B0/);
-          const gasChangeMatch = /^gas tank change\b/i.test(text);
-          const gasRefillMatch = /^gas tank refill\b/i.test(text);
-          const bbqGasMatch = /^bbq gas change\b/i.test(text);
-          const brokenMatch = text.match(/^broken\s+(.+)/i);
-          const fixedMatch = text.match(/^fixed\s+(.+)/i);
-
-          if (dieselMatch) {
-            type = "Diesel";
-            dieselLitres = parseFloat(dieselMatch[1]);
-          } else if (tempMatch) {
-            type = "Sea Temperature";
-            seaTemp = parseFloat(tempMatch[1]);
-          } else if (gasChangeMatch) {
-            type = "Gas tank change";
-          } else if (gasRefillMatch) {
-            type = "Gas tank refill";
-          } else if (bbqGasMatch) {
-            type = "BBQ gas change";
-          } else if (brokenMatch) {
-            type = "Broken";
-            item = brokenMatch[1]
-              .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
-              .trim();
-          } else if (fixedMatch) {
-            type = "Fixed";
-            item = fixedMatch[1]
-              .replace(/timestamp:\s*([0-9T:\- ]+)/i, "")
-              .trim();
-          }
-        }
-
-        if (!type) return null;
-        const card = cards.find((c) => c.id === a.data.card.id);
-        const timestamp = extractTimestamp(text, a.date, a.data.card.id);
-        const labels = card
-          ? (card.labels || []).map((l) => ({
-              id: l.id,
-              name: l.name,
-              color: colorMap[l.color] || "#888",
-            }))
-          : [];
-        return {
-          area: card && card.idList ? listNames[card.idList] : "Unknown",
-          cardName: card ? card.name : a.data.card.name || "Unknown",
-          type,
-          timestamp,
-          labels,
-          comment: text,
-          cardId: a.data.card.id,
-          trelloUrl: card ? card.shortUrl : undefined,
-          lat: card ? getCFNumber(card, customFields, "Latitude") : null,
-          lng: card ? getCFNumber(card, customFields, "Longitude") : null,
-          rating: card
-            ? (() => {
-                const ratingText = getCFTextOrDropdown(
-                  card,
-                  customFields,
-                  "⭐️",
-                );
-                return ratingText != null ? parseInt(ratingText, 10) : null;
-              })()
-            : null,
-          navilyUrl: card
-            ? getCFTextOrDropdown(card, customFields, "Navily")
-            : null,
-          dieselLitres,
-          seaTemp,
-          item,
-        };
-      })
-      .filter(Boolean);
+    const logs = buildLogsFromComments(
+      allComments,
+      cards,
+      listNames,
+      customFields,
+    );
 
     let filteredLogs = logs;
 
@@ -427,6 +409,72 @@ router.get("/api/logs", async (req, res, next) => {
       : null;
 
     res.json({ logs: filteredLogs, mostRecentTripRange });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/logs/stream", async (req, res, next) => {
+  try {
+    const board = await fetchBoard();
+    const { cards, lists, customFields } = board;
+    const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
+
+    // Get trips from cards in the Trips list
+    const tripsList = lists.find((l) => l.name === "Trips");
+    const trips = cards
+      .filter((c) => c.idList === tripsList.id)
+      .map((c) => ({
+        name: c.name,
+        start: c.start,
+        due: c.due,
+      }))
+      .filter((t) => t.start)
+      .sort((a, b) => new Date(b.start) - new Date(a.start));
+
+    const mostRecentTrip = trips[0];
+    const mostRecentTripRange = mostRecentTrip
+      ? { start: mostRecentTrip.start, end: mostRecentTrip.due }
+      : null;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    if (res.flushHeaders) {
+      res.flushHeaders();
+    }
+
+    let before = null;
+    let keepGoing = true;
+    let clientClosed = false;
+    let sentMeta = false;
+
+    req.on("close", () => {
+      clientClosed = true;
+    });
+
+    while (keepGoing && !clientClosed) {
+      const { data, done, nextBefore } = await fetchCommentPage({ before });
+      const logs = buildLogsFromComments(
+        data,
+        cards,
+        listNames,
+        customFields,
+      );
+      const payload = { logs };
+      if (!sentMeta) {
+        payload.mostRecentTripRange = mostRecentTripRange;
+        sentMeta = true;
+      }
+      res.write(`event: batch\ndata: ${JSON.stringify(payload)}\n\n`);
+      before = nextBefore;
+      keepGoing = !done;
+    }
+
+    if (!clientClosed) {
+      res.write(`event: done\ndata: {}\n\n`);
+      res.end();
+    }
   } catch (err) {
     next(err);
   }

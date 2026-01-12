@@ -16,6 +16,7 @@ let plannedOnlyToggle = null;
 let logLayerGroup = null;
 
 let mostRecentTripRange = null;
+let logRenderScheduled = false;
 
 let canPlan = false;
 let boardLabels = [];
@@ -292,22 +293,45 @@ function showLabelEditor(targetEl, cardId, currentIds) {
 }
 
 async function preloadAllLogs() {
+  if (window.EventSource) {
+    const source = new EventSource("/api/logs/stream?trip=all");
+    source.addEventListener("batch", (event) => {
+      const payload = JSON.parse(event.data);
+      if (allLogsCache === null) {
+        allLogsCache = [];
+      }
+      if (Array.isArray(payload.logs)) {
+        allLogsCache.push(...payload.logs);
+      }
+      if (payload.mostRecentTripRange) {
+        mostRecentTripRange = payload.mostRecentTripRange;
+      }
+      scheduleLogRender();
+    });
+    source.addEventListener("done", () => {
+      if (allLogsCache === null) {
+        allLogsCache = [];
+      }
+      scheduleLogRender();
+      source.close();
+    });
+    source.onerror = (err) => {
+      console.error("Failed to stream logs:", err);
+      source.close();
+      if (allLogsCache === null) {
+        allLogsCache = [];
+      }
+      scheduleLogRender();
+    };
+    return;
+  }
   try {
     const res = await fetch("/api/logs?trip=all");
     if (!res.ok) throw new Error("Network response not ok");
     const json = await res.json();
     allLogsCache = json.logs || [];
     mostRecentTripRange = json.mostRecentTripRange || null;
-    // If log tab is visible, render now
-    if (isLogTabActive()) {
-      currentLogFilter = null;
-      if (typeof stops !== "undefined") {
-        const logBtn = document.querySelector('[data-tab="log"]');
-        if (logBtn) logBtn.click();
-      }
-    }
-    // --- Add this to update the planning map with logs ---
-    renderMapWithToggle();
+    scheduleLogRender();
   } catch (err) {
     console.error("Failed to preload logs:", err);
     allLogsCache = [];
@@ -317,6 +341,20 @@ async function preloadAllLogs() {
 function isLogTabActive() {
   const logSection = document.getElementById("log");
   return logSection && !logSection.classList.contains("hidden");
+}
+
+function scheduleLogRender() {
+  if (logRenderScheduled) return;
+  logRenderScheduled = true;
+  requestAnimationFrame(() => {
+    logRenderScheduled = false;
+    if (isLogTabActive()) {
+      renderFilteredLogs(stops);
+    }
+    if (leafletMap) {
+      renderMapWithToggle();
+    }
+  });
 }
 
 function initMap(stops, places, logs = null) {
@@ -1741,6 +1779,40 @@ function getMostRecentTripRangeFromTrips(trips) {
   return { start: mostRecent.start, end: mostRecent.due || null };
 }
 
+function renderFilteredLogs(stops = []) {
+  if (!allLogsCache) {
+    const listDiv = document.getElementById("log-list");
+    if (listDiv) listDiv.innerHTML = "<p>Loading logs…</p>";
+    return;
+  }
+  let logsToShow = allLogsCache;
+  if (currentLogFilter === "all") {
+    logsToShow = allLogsCache;
+  } else if (currentLogFilter && currentLogFilter.start) {
+    logsToShow = filterLogsByDate(
+      allLogsCache,
+      currentLogFilter.start,
+      currentLogFilter.end,
+    );
+  } else if (mostRecentTripRange && mostRecentTripRange.start) {
+    logsToShow = filterLogsByDate(
+      allLogsCache,
+      mostRecentTripRange.start,
+      mostRecentTripRange.end,
+    );
+  }
+  renderHistoricalLog(logsToShow, stops);
+  renderLogSummary(logsToShow);
+  renderDieselInfo(logsToShow);
+  renderBrokenItems(logsToShow);
+  window._lastLogMapData = logsToShow;
+
+  // --- ADD THIS: update the map if the log tab is visible ---
+  if (isLogTabActive()) {
+    renderLogMap(logsToShow, stops);
+  }
+}
+
 function setupLogTab(stops = []) {
   const tabSelector = '[data-tab="log"]';
   const btn = document.querySelector(tabSelector);
@@ -1749,56 +1821,22 @@ function setupLogTab(stops = []) {
   const showAllBtn = document.getElementById("show-all-logs-btn");
   const showLastTripBtn = document.getElementById("show-last-trip-btn");
 
-  function renderFilteredLogs() {
-    if (!allLogsCache) {
-      const listDiv = document.getElementById("log-list");
-      if (listDiv) listDiv.innerHTML = "<p>Loading logs…</p>";
-      return;
-    }
-    let logsToShow = allLogsCache;
-    if (currentLogFilter === "all") {
-      logsToShow = allLogsCache;
-    } else if (currentLogFilter && currentLogFilter.start) {
-      logsToShow = filterLogsByDate(
-        allLogsCache,
-        currentLogFilter.start,
-        currentLogFilter.end,
-      );
-    } else if (mostRecentTripRange && mostRecentTripRange.start) {
-      logsToShow = filterLogsByDate(
-        allLogsCache,
-        mostRecentTripRange.start,
-        mostRecentTripRange.end,
-      );
-    }
-    renderHistoricalLog(logsToShow, stops);
-    renderLogSummary(logsToShow);
-    renderDieselInfo(logsToShow);
-    renderBrokenItems(logsToShow);
-    window._lastLogMapData = logsToShow;
-
-    // --- ADD THIS: update the map if the log tab is visible ---
-    if (isLogTabActive()) {
-      renderLogMap(logsToShow, stops);
-    }
-  }
-
   btn.addEventListener("click", () => {
     currentLogFilter = null; // reset to most recent trip
-    renderFilteredLogs();
+    renderFilteredLogs(stops);
   });
 
   if (showAllBtn) {
     showAllBtn.addEventListener("click", () => {
       currentLogFilter = "all";
-      renderFilteredLogs();
+      renderFilteredLogs(stops);
     });
   }
 
   if (showLastTripBtn) {
     showLastTripBtn.addEventListener("click", () => {
       currentLogFilter = null; // null means "most recent trip"
-      renderFilteredLogs();
+      renderFilteredLogs(stops);
     });
   }
 }
