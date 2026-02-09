@@ -118,7 +118,17 @@ app.use((req,res) => res.status(404).send('Not found'));
 // global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).send('Something broke!');
+  const status = err.status || 500;
+  const message = err.expose ? err.message : 'Something broke!';
+
+  if (req.accepts('html')) {
+    res
+      .status(status)
+      .send(`<h1>${message}</h1><p>Please check server configuration and try again.</p>`);
+    return;
+  }
+
+  res.status(status).json({ error: message });
 });
 
 const PORT = process.env.PORT || 3000;
