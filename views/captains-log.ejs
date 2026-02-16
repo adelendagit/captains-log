@@ -69,6 +69,14 @@
           <span>Show only planned stops on map</span>
         </label>
       </div>
+      <section class="location-log-panel" id="location-log-panel">
+        <h3>Location Log</h3>
+        <p class="muted">Use your current position to log arrived/departed comments.</p>
+        <button type="button" id="detect-location-log-btn" class="plan-btn">Detect location</button>
+        <div id="location-log-status" class="location-log-status"></div>
+        <div id="location-log-suggestions" class="location-log-suggestions"></div>
+        <button type="button" id="submit-location-log-btn" class="plan-btn" disabled>Post log comment</button>
+      </section>
       <div id="planning-summary" class="summary-panel"></div>
       <table id="planning-table" class="planning-table"></table>
     </div>

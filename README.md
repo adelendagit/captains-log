@@ -70,3 +70,108 @@ SESSION_SECRET=<session secret>
 ## Authentication
 
 If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to `/auth/trello` to start the OAuth flow. After authorizing, Trello will redirect back to `/auth/trello/callback` and your session will be authenticated.
+
+## Proposed Location-Aware Log Entry Flow
+
+To support the workflow "if moving, use GPS coordinates; if at port, suggest nearby places and let the user confirm", the cleanest approach is to split this into two APIs: one for **context detection + suggestions**, and one for **comment submission**.
+
+### 1) Context API (`POST /api/log-context`)
+
+This endpoint accepts the live device position and returns:
+
+- whether the vessel is currently `underway` or `arrived` (using the same status logic as `/api/current-stop`),
+- the nearest candidate cards,
+- a ready-to-use payload template for comment submission.
+
+#### Request body
+
+```json
+{
+  "lat": 36.1408,
+  "lng": -5.3536,
+  "speedKts": 4.2,
+  "limit": 5
+}
+```
+
+- `lat` and `lng` are required.
+- `speedKts` is optional but recommended to improve underway detection.
+- `limit` defaults to `5` for UI selection lists.
+
+#### Response shape
+
+```json
+{
+  "mode": "underway",
+  "status": {
+    "current": "underway",
+    "departedAt": "2026-02-12T09:35:00.000Z"
+  },
+  "suggestions": [
+    {
+      "id": "trelloCardId",
+      "name": "Gibraltar",
+      "distanceKm": 1.8,
+      "list": "Spain"
+    }
+  ],
+  "draft": {
+    "action": "departed",
+    "cardId": null,
+    "lat": 36.1408,
+    "lng": -5.3536,
+    "timestamp": "2026-02-12T09:41:12.000Z"
+  }
+}
+```
+
+Behavior:
+
+- **Underway**: return `mode: "underway"` and a draft that preserves raw lat/lng.
+- **Arrived / in port**: return `mode: "port"` with closest-card suggestions so the user can select the correct place.
+
+### 2) Submission API (`POST /api/log-entry`)
+
+This endpoint receives the user-confirmed selection and writes a Trello comment.
+
+#### Request body
+
+```json
+{
+  "action": "arrived",
+  "cardId": "trelloCardId",
+  "lat": 36.1408,
+  "lng": -5.3536,
+  "timestamp": "2026-02-12T09:41:12.000Z",
+  "source": "mobile"
+}
+```
+
+#### Comment format recommendation
+
+Keep comments parseable and backwards-compatible with existing `arrived` / `departed` matching:
+
+```text
+arrived
+timestamp: 2026-02-12T09:41:12.000Z
+lat: 36.1408
+lng: -5.3536
+source: mobile
+```
+
+This still starts with `arrived`/`departed`, so existing regex logic continues to work while adding structured metadata for future automation.
+
+### 3) UI flow recommendation
+
+1. Capture device geolocation (+ speed when available).
+2. Call `POST /api/log-context`.
+3. If mode is `underway`, show a "Use current position" confirmation card.
+4. If mode is `port`, show top nearest suggestions (radio list) plus a "None of these" fallback.
+5. On confirm, call `POST /api/log-entry`.
+
+### 4) Edge cases
+
+- If no nearby cards are found, allow manual card search.
+- If geolocation permission is denied, allow purely manual selection.
+- If status is ambiguous, default to `port` mode and ask the user to choose action (`arrived` vs `departed`).
+- Always keep final user confirmation before posting a comment.

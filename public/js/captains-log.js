@@ -23,6 +23,8 @@ let boardLabels = [];
 let currentStatus = null;
 let underwayMarker = null;
 let underwayInterval = null;
+let locationLogDraft = null;
+let locationLogSuggestions = [];
 
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
@@ -1851,6 +1853,137 @@ function filterLogsByDate(logs, start, end) {
   });
 }
 
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is not supported on this device."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000,
+    });
+  });
+}
+
+function renderLocationSuggestions(suggestions = [], selectedId = null) {
+  const container = document.getElementById("location-log-suggestions");
+  if (!container) return;
+
+  if (!suggestions.length) {
+    container.innerHTML = `<p class="muted">No nearby locations found. Choose a card manually in Trello.</p>`;
+    return;
+  }
+
+  container.innerHTML = suggestions
+    .map((s) => {
+      const checked = selectedId === s.id ? "checked" : "";
+      const dist = Number.isFinite(s.distanceKm) ? `${s.distanceKm.toFixed(1)} km` : "";
+      return `
+        <label class="location-option">
+          <input type="radio" name="location-log-card" value="${s.id}" ${checked}>
+          <span><strong>${s.name}</strong> <small>${s.list || ""} ${dist}</small></span>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+function setupLocationLogControls() {
+  const detectBtn = document.getElementById("detect-location-log-btn");
+  const submitBtn = document.getElementById("submit-location-log-btn");
+  const statusEl = document.getElementById("location-log-status");
+
+  if (!detectBtn || !submitBtn || !statusEl) return;
+
+  detectBtn.addEventListener("click", async () => {
+    statusEl.textContent = "Detecting your location…";
+    submitBtn.disabled = true;
+
+    try {
+      const position = await getCurrentPosition();
+      const payload = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      if (Number.isFinite(position.coords.speed)) {
+        payload.speedKts = Math.max(position.coords.speed * 1.94384, 0);
+      }
+
+      const contextRes = await fetch("/api/log-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const context = await contextRes.json();
+      if (!contextRes.ok) {
+        throw new Error(context.error || "Unable to detect location context.");
+      }
+
+      locationLogDraft = context.draft;
+      locationLogSuggestions = context.suggestions || [];
+      renderLocationSuggestions(locationLogSuggestions, locationLogDraft?.cardId || null);
+
+      const modeText =
+        context.mode === "underway"
+          ? "You appear to be underway. Confirm the card and submit a departed log."
+          : "You appear to be in port. Select the closest location and submit an arrived log.";
+      statusEl.textContent = modeText;
+      submitBtn.disabled = false;
+    } catch (error) {
+      statusEl.textContent = error.message || "Unable to detect location.";
+      renderLocationSuggestions([], null);
+    }
+  });
+
+  submitBtn.addEventListener("click", async () => {
+    if (!locationLogDraft) return;
+
+    const selected = document.querySelector(
+      'input[name="location-log-card"]:checked',
+    );
+    const cardId = selected ? selected.value : locationLogDraft.cardId;
+    if (!cardId) {
+      statusEl.textContent = "Please choose a location before posting.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    statusEl.textContent = "Posting comment…";
+
+    try {
+      const res = await fetch("/api/log-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: locationLogDraft.action,
+          cardId,
+          lat: locationLogDraft.lat,
+          lng: locationLogDraft.lng,
+          timestamp: locationLogDraft.timestamp,
+          source: "web-ui",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to post log comment.");
+      }
+
+      statusEl.textContent = "Log comment posted successfully.";
+      currentStatus = await (await fetch("/api/current-stop")).json();
+      renderTable(stops, parseFloat(document.getElementById("speed-input").value) || 0);
+      submitBtn.disabled = false;
+    } catch (error) {
+      statusEl.textContent = error.message || "Failed to post log comment.";
+      submitBtn.disabled = false;
+    }
+  });
+}
+
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1954,6 +2087,7 @@ async function init() {
   renderTable(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
   setupHistoricalTripLinks(stops);
+  setupLocationLogControls();
 
   // Update on speed change:
   speedInput.addEventListener("input", () => {
