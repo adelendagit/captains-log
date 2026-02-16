@@ -78,6 +78,87 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+
+function buildStopPayload(card, listNames, customFields) {
+  if (!card) return null;
+  const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
+  const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
+  const labels = (card.labels || []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    color: colorMap[l.color] || "#888",
+  }));
+
+  return {
+    id: card.id,
+    name: card.name,
+    listName: listNames[card.idList],
+    due: card.due,
+    lat: getCFNumber(card, customFields, "Latitude"),
+    lng: getCFNumber(card, customFields, "Longitude"),
+    trelloUrl: card.shortUrl,
+    navilyUrl: getCFTextOrDropdown(card, customFields, "Navily"),
+    rating: ratingNum,
+    labels,
+  };
+}
+
+function deriveCurrentStatus(cards, lists, customFields, comments) {
+  const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
+  const tripsList = lists.find((l) => l.name === "Trips");
+  const tripsListId = tripsList ? tripsList.id : null;
+
+  const actions = comments
+    .filter((a) => a.type === "commentCard" && a.data && a.data.text)
+    .map((a) => ({
+      ...a,
+      ts: extractTimestamp(a.data.text, a.date, a.data.card.id),
+    }));
+
+  const lastArrived = actions
+    .filter((a) => /^arrived\b/i.test(a.data.text))
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+
+  const lastDeparted = actions
+    .filter((a) => /^departed\b/i.test(a.data.text))
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+
+  const upcomingStops = cards
+    .filter((c) => c.due && !c.dueComplete && c.idList !== tripsListId)
+    .sort((a, b) => new Date(a.due) - new Date(b.due));
+  const plannedDestination = buildStopPayload(
+    upcomingStops[0],
+    listNames,
+    customFields,
+  );
+
+  let result = { status: "unknown", plannedDestination };
+
+  if (
+    lastDeparted &&
+    (!lastArrived || new Date(lastDeparted.ts) > new Date(lastArrived.ts))
+  ) {
+    result.status = "underway";
+    result.from = buildStopPayload(
+      cards.find((c) => c.id === lastDeparted.data.card.id),
+      listNames,
+      customFields,
+    );
+    result.destination = plannedDestination;
+    result.departedAt = lastDeparted.ts;
+  } else if (lastArrived) {
+    result.status = "arrived";
+    result.current = buildStopPayload(
+      cards.find((c) => c.id === lastArrived.data.card.id),
+      listNames,
+      customFields,
+    );
+    result.destination = plannedDestination;
+  }
+
+  return result;
+}
+
 function buildLogsFromComments(actions, cards, listNames, customFields) {
   return actions
     .filter((a) => a.type === "commentCard" && a.data && a.data.text)
@@ -485,79 +566,176 @@ router.get("/api/current-stop", async (req, res, next) => {
   try {
     const { cards, lists, customFields } = await fetchBoard();
     const comments = await fetchRecentComments(100);
-
-    const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
-    const tripsList = lists.find((l) => l.name === "Trips");
-    const tripsListId = tripsList ? tripsList.id : null;
-
-    function buildStop(card) {
-      if (!card) return null;
-      const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
-      const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
-      const labels = (card.labels || []).map((l) => ({
-        id: l.id,
-        name: l.name,
-        color: colorMap[l.color] || "#888",
-      }));
-      return {
-        id: card.id,
-        name: card.name,
-        listName: listNames[card.idList],
-        due: card.due,
-        lat: getCFNumber(card, customFields, "Latitude"),
-        lng: getCFNumber(card, customFields, "Longitude"),
-        trelloUrl: card.shortUrl,
-        navilyUrl: getCFTextOrDropdown(card, customFields, "Navily"),
-        rating: ratingNum,
-        labels,
-      };
-    }
-
-    const actions = comments
-      .filter((a) => a.type === "commentCard" && a.data && a.data.text)
-      .map((a) => ({
-        ...a,
-        ts: extractTimestamp(a.data.text, a.date, a.data.card.id),
-      }));
-
-    const lastArrived = actions
-      .filter((a) => /^arrived\b/i.test(a.data.text))
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-
-    const lastDeparted = actions
-      .filter((a) => /^departed\b/i.test(a.data.text))
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-
-    const upcomingStops = cards
-      .filter(
-        (c) => c.due && !c.dueComplete && c.idList !== tripsListId,
-      )
-      .sort((a, b) => new Date(a.due) - new Date(b.due));
-    const plannedDestination = buildStop(upcomingStops[0]);
-
-    let result = { status: "unknown", plannedDestination };
-
-    if (
-      lastDeparted &&
-      (!lastArrived || new Date(lastDeparted.ts) > new Date(lastArrived.ts))
-    ) {
-      result.status = "underway";
-      result.from = buildStop(
-        cards.find((c) => c.id === lastDeparted.data.card.id),
-      );
-      result.destination = plannedDestination;
-      result.departedAt = lastDeparted.ts;
-    } else if (lastArrived) {
-      result.status = "arrived";
-      result.current = buildStop(
-        cards.find((c) => c.id === lastArrived.data.card.id),
-      );
-      result.destination = plannedDestination;
-    }
-
+    const result = deriveCurrentStatus(cards, lists, customFields, comments);
     res.json(result);
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/api/log-context", async (req, res, next) => {
+  try {
+    const { lat, latitude, long, lng, longitude, speedKts, limit } = req.body || {};
+
+    const latitudeValue = parseFloat(lat ?? latitude);
+    const longitudeValue = parseFloat(long ?? lng ?? longitude);
+
+    if (!Number.isFinite(latitudeValue) || !Number.isFinite(longitudeValue)) {
+      return res
+        .status(400)
+        .json({ error: "Missing or invalid latitude/longitude values" });
+    }
+
+    const parsedLimit = parseInt(limit ?? "5", 10);
+    const limitValue = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 5;
+
+    const { cards, lists, customFields } = await fetchBoard();
+    const comments = await fetchRecentComments(100);
+    const currentStop = deriveCurrentStatus(cards, lists, customFields, comments);
+    const tripsList = lists.find((l) => l.name === "Trips");
+    const tripsListId = tripsList ? tripsList.id : null;
+    const listNames = Object.fromEntries(lists.map((list) => [list.id, list.name]));
+
+    const suggestions = cards
+      .filter((card) => card.idList !== tripsListId)
+      .map((card) => {
+        const cardLat = getCFNumber(card, customFields, "Latitude");
+        const cardLng = getCFNumber(card, customFields, "Longitude");
+        if (cardLat == null || cardLng == null) return null;
+
+        return {
+          id: card.id,
+          name: card.name,
+          list: listNames[card.idList],
+          distanceKm: calculateDistanceKm(
+            latitudeValue,
+            longitudeValue,
+            cardLat,
+            cardLng,
+          ),
+          lat: cardLat,
+          lng: cardLng,
+          trelloUrl: card.shortUrl,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, limitValue);
+
+    const hasSpeed = Number.isFinite(parseFloat(speedKts));
+    const speedKnots = hasSpeed ? parseFloat(speedKts) : null;
+    const mode =
+      currentStop.status === "underway" || (speedKnots != null && speedKnots > 1.5)
+        ? "underway"
+        : "port";
+
+    const fallbackCardId =
+      mode === "underway"
+        ? currentStop.from?.id || currentStop.destination?.id || suggestions[0]?.id || null
+        : currentStop.current?.id || suggestions[0]?.id || null;
+
+    const action = mode === "underway" ? "departed" : "arrived";
+
+    res.json({
+      mode,
+      status: {
+        current: currentStop.status,
+        departedAt: currentStop.departedAt || null,
+      },
+      suggestions,
+      draft: {
+        action,
+        cardId: fallbackCardId,
+        lat: latitudeValue,
+        lng: longitudeValue,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/log-entry", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const { action, cardId, lat, latitude, long, lng, longitude, timestamp, source } =
+      req.body || {};
+
+    const normalizedAction = String(action || "").trim().toLowerCase();
+    if (!["arrived", "departed", "visited"].includes(normalizedAction)) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    if (!cardId) {
+      return res.status(400).json({ error: "Missing cardId" });
+    }
+
+    const latitudeValue = parseFloat(lat ?? latitude);
+    const longitudeValue = parseFloat(long ?? lng ?? longitude);
+    if (!Number.isFinite(latitudeValue) || !Number.isFinite(longitudeValue)) {
+      return res
+        .status(400)
+        .json({ error: "Missing or invalid latitude/longitude values" });
+    }
+
+    const ts = timestamp ? new Date(timestamp) : new Date();
+    if (Number.isNaN(ts.getTime())) {
+      return res.status(400).json({ error: "Invalid timestamp" });
+    }
+
+    const commentLines = [
+      normalizedAction,
+      `timestamp: ${ts.toISOString()}`,
+      `lat: ${latitudeValue}`,
+      `lng: ${longitudeValue}`,
+    ];
+
+    if (source) {
+      commentLines.push(`source: ${String(source).trim()}`);
+    }
+
+    const text = commentLines.join("\n");
+
+    const oauth = {
+      consumer_key: process.env.TRELLO_OAUTH_KEY,
+      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+      token: req.user.token,
+      token_secret: req.user.tokenSecret,
+    };
+
+    const oauth1a = require("oauth-1.0a");
+    const crypto = require("crypto");
+
+    const oauthClient = oauth1a({
+      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
+      signature_method: "HMAC-SHA1",
+      hash_function(base_string, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(base_string)
+          .digest("base64");
+      },
+    });
+
+    const url = `https://api.trello.com/1/cards/${cardId}/actions/comments`;
+    const request_data = { url, method: "POST", data: { text } };
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(request_data, {
+        key: oauth.token,
+        secret: oauth.token_secret,
+      }),
+    );
+
+    await axios.post(url, null, {
+      params: { text },
+      headers,
+    });
+
+    res.json({ success: true, comment: text });
+  } catch (error) {
+    next(error);
   }
 });
 
