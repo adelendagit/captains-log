@@ -166,6 +166,18 @@ body {
   cursor: not-allowed;
 }
 
+.plan-btn-secondary {
+  background: #f8fafc;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.plan-btn-secondary:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
 .popup-desc {
   margin-top: 0.3em;
   font-size: 0.9em;
@@ -1070,4 +1082,19 @@ body {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.location-log-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.location-log-controls select,
+.location-log-controls input {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.95rem;
 }

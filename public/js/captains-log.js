@@ -26,6 +26,18 @@ let underwayInterval = null;
 let locationLogDraft = null;
 let locationLogSuggestions = [];
 
+const LOCATION_LOG_ACTIONS = {
+  arrived: "Arrived",
+  departed: "Departed",
+  water: "Water",
+  diesel: "Diesel",
+  bins: "Bins",
+  "bbq-gas-change": "BBQ Gas Change",
+  "gas-tank-change": "Gas Tank Change",
+  power: "Power",
+  boom: "Boom",
+};
+
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -277,20 +289,17 @@ function showLabelEditor(targetEl, cardId, currentIds) {
   document.body.appendChild(labelEditorEl);
 
   setTimeout(() => {
-    document.addEventListener(
-      "click",
-      function handler(e) {
-        if (
-          labelEditorEl &&
-          !labelEditorEl.contains(e.target) &&
-          e.target !== targetEl
-        ) {
-          labelEditorEl.remove();
-          labelEditorEl = null;
-          document.removeEventListener("click", handler);
-        }
-      },
-    );
+    document.addEventListener("click", function handler(e) {
+      if (
+        labelEditorEl &&
+        !labelEditorEl.contains(e.target) &&
+        e.target !== targetEl
+      ) {
+        labelEditorEl.remove();
+        labelEditorEl = null;
+        document.removeEventListener("click", handler);
+      }
+    });
   }, 0);
 }
 
@@ -1880,7 +1889,9 @@ function renderLocationSuggestions(suggestions = [], selectedId = null) {
   container.innerHTML = suggestions
     .map((s) => {
       const checked = selectedId === s.id ? "checked" : "";
-      const dist = Number.isFinite(s.distanceKm) ? `${s.distanceKm.toFixed(1)} km` : "";
+      const dist = Number.isFinite(s.distanceKm)
+        ? `${s.distanceKm.toFixed(1)} km`
+        : "";
       return `
         <label class="location-option">
           <input type="radio" name="location-log-card" value="${s.id}" ${checked}>
@@ -1895,8 +1906,37 @@ function setupLocationLogControls() {
   const detectBtn = document.getElementById("detect-location-log-btn");
   const submitBtn = document.getElementById("submit-location-log-btn");
   const statusEl = document.getElementById("location-log-status");
+  const actionEl = document.getElementById("location-log-action");
+  const litresWrap = document.getElementById("location-log-litres-wrap");
+  const litresEl = document.getElementById("location-log-litres");
+  const backfillBtn = document.getElementById("location-log-backfill-btn");
+  const backfillWrap = document.getElementById("location-log-backfill-wrap");
+  const backfillTimeEl = document.getElementById("location-log-backfill-time");
 
-  if (!detectBtn || !submitBtn || !statusEl) return;
+  if (!detectBtn || !submitBtn || !statusEl || !actionEl) return;
+
+  const toggleLitres = () => {
+    const needsLitres = ["water", "diesel"].includes(actionEl.value);
+    if (litresWrap) litresWrap.hidden = !needsLitres;
+    if (!needsLitres && litresEl) litresEl.value = "";
+  };
+
+  const toggleBackfill = () => {
+    if (!backfillWrap) return;
+    backfillWrap.hidden = !backfillWrap.hidden;
+    if (!backfillWrap.hidden && backfillTimeEl && !backfillTimeEl.value) {
+      const now = new Date();
+      now.setSeconds(0, 0);
+      backfillTimeEl.value = now.toISOString().slice(0, 16);
+    }
+  };
+
+  actionEl.addEventListener("change", toggleLitres);
+  toggleLitres();
+
+  if (backfillBtn) {
+    backfillBtn.addEventListener("click", toggleBackfill);
+  }
 
   detectBtn.addEventListener("click", async () => {
     statusEl.textContent = "Detecting your location…";
@@ -1925,12 +1965,23 @@ function setupLocationLogControls() {
 
       locationLogDraft = context.draft;
       locationLogSuggestions = context.suggestions || [];
-      renderLocationSuggestions(locationLogSuggestions, locationLogDraft?.cardId || null);
+      renderLocationSuggestions(
+        locationLogSuggestions,
+        locationLogDraft?.cardId || null,
+      );
+
+      if (
+        locationLogDraft?.action &&
+        actionEl.querySelector(`option[value="${locationLogDraft.action}"]`)
+      ) {
+        actionEl.value = locationLogDraft.action;
+        toggleLitres();
+      }
 
       const modeText =
         context.mode === "underway"
-          ? "You appear to be underway. Confirm the card and submit a departed log."
-          : "You appear to be in port. Select the closest location and submit an arrived log.";
+          ? "You appear to be underway. Confirm location and action, then submit."
+          : "You appear to be in port. Select the location and action, then submit.";
       statusEl.textContent = modeText;
       submitBtn.disabled = false;
     } catch (error) {
@@ -1951,6 +2002,38 @@ function setupLocationLogControls() {
       return;
     }
 
+    const selectedAction = actionEl.value;
+    if (!LOCATION_LOG_ACTIONS[selectedAction]) {
+      statusEl.textContent = "Please choose a valid action.";
+      return;
+    }
+
+    const payload = {
+      action: selectedAction,
+      cardId,
+      lat: locationLogDraft.lat,
+      lng: locationLogDraft.lng,
+      timestamp: locationLogDraft.timestamp,
+      source: "web-ui",
+    };
+
+    if (
+      litresEl &&
+      ["water", "diesel"].includes(selectedAction) &&
+      litresEl.value !== ""
+    ) {
+      payload.litres = litresEl.value;
+    }
+
+    if (
+      backfillWrap &&
+      !backfillWrap.hidden &&
+      backfillTimeEl &&
+      backfillTimeEl.value
+    ) {
+      payload.timestamp = new Date(backfillTimeEl.value).toISOString();
+    }
+
     submitBtn.disabled = true;
     statusEl.textContent = "Posting comment…";
 
@@ -1958,14 +2041,7 @@ function setupLocationLogControls() {
       const res = await fetch("/api/log-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: locationLogDraft.action,
-          cardId,
-          lat: locationLogDraft.lat,
-          lng: locationLogDraft.lng,
-          timestamp: locationLogDraft.timestamp,
-          source: "web-ui",
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -1975,7 +2051,10 @@ function setupLocationLogControls() {
 
       statusEl.textContent = "Log comment posted successfully.";
       currentStatus = await (await fetch("/api/current-stop")).json();
-      renderTable(stops, parseFloat(document.getElementById("speed-input").value) || 0);
+      renderTable(
+        stops,
+        parseFloat(document.getElementById("speed-input").value) || 0,
+      );
       submitBtn.disabled = false;
     } catch (error) {
       statusEl.textContent = error.message || "Failed to post log comment.";
@@ -2187,7 +2266,7 @@ renderHistoricalLog = function (logs = [], stops = []) {
         : l.navilyUrl
           ? `<a href="${l.navilyUrl}" target="_blank" title="Navily"><i class="fa-solid fa-anchor"></i></a>`
           : "";
-      const trello = l.trelloUrl
+    const trello = l.trelloUrl
       ? `<a href="${l.trelloUrl}" target="_blank" title="Trello"><i class="fab fa-trello"></i></a>`
       : "";
     const labelsArr =

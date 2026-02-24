@@ -78,7 +78,6 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-
 function buildStopPayload(card, listNames, customFields) {
   if (!card) return null;
   const ratingText = getCFTextOrDropdown(card, customFields, "⭐️");
@@ -253,16 +252,8 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
 
 router.get("/api/closest-locations", async (req, res, next) => {
   try {
-    const {
-      lat,
-      latitude,
-      long,
-      lng,
-      longitude,
-      apiKey,
-      token,
-      limit,
-    } = req.query;
+    const { lat, latitude, long, lng, longitude, apiKey, token, limit } =
+      req.query;
 
     const latitudeValue = parseFloat(lat ?? latitude);
     const longitudeValue = parseFloat(long ?? lng ?? longitude);
@@ -278,13 +269,16 @@ router.get("/api/closest-locations", async (req, res, next) => {
     }
 
     const parsedLimit = parseInt(limit ?? "1", 10);
-    const limitValue = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 1;
+    const limitValue =
+      Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 1;
 
     const board = await fetchBoardWithCredentials(apiKey, token);
     const { cards, lists, customFields } = board;
 
     const hasLatitude = customFields.some((field) => field.name === "Latitude");
-    const hasLongitude = customFields.some((field) => field.name === "Longitude");
+    const hasLongitude = customFields.some(
+      (field) => field.name === "Longitude",
+    );
 
     if (!hasLatitude || !hasLongitude) {
       return res.status(500).json({
@@ -292,7 +286,9 @@ router.get("/api/closest-locations", async (req, res, next) => {
       });
     }
 
-    const listNames = Object.fromEntries(lists.map((list) => [list.id, list.name]));
+    const listNames = Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    );
 
     const closestCards = cards
       .map((card) => {
@@ -334,7 +330,13 @@ router.get("/api/closest-locations", async (req, res, next) => {
 
 router.get("/api/data", async (req, res, next) => {
   try {
-    const { cards, lists, customFields, members, labels: boardLabelsRaw } = await fetchBoard();
+    const {
+      cards,
+      lists,
+      customFields,
+      members,
+      labels: boardLabelsRaw,
+    } = await fetchBoard();
 
     console.log(
       "Custom field definitions:",
@@ -536,12 +538,7 @@ router.get("/api/logs/stream", async (req, res, next) => {
 
     while (keepGoing && !clientClosed) {
       const { data, done, nextBefore } = await fetchCommentPage({ before });
-      const logs = buildLogsFromComments(
-        data,
-        cards,
-        listNames,
-        customFields,
-      );
+      const logs = buildLogsFromComments(data, cards, listNames, customFields);
       const payload = { logs };
       if (!sentMeta) {
         payload.mostRecentTripRange = mostRecentTripRange;
@@ -575,7 +572,8 @@ router.get("/api/current-stop", async (req, res, next) => {
 
 router.post("/api/log-context", async (req, res, next) => {
   try {
-    const { lat, latitude, long, lng, longitude, speedKts, limit } = req.body || {};
+    const { lat, latitude, long, lng, longitude, speedKts, limit } =
+      req.body || {};
 
     const latitudeValue = parseFloat(lat ?? latitude);
     const longitudeValue = parseFloat(long ?? lng ?? longitude);
@@ -587,14 +585,22 @@ router.post("/api/log-context", async (req, res, next) => {
     }
 
     const parsedLimit = parseInt(limit ?? "5", 10);
-    const limitValue = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 5;
+    const limitValue =
+      Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 5;
 
     const { cards, lists, customFields } = await fetchBoard();
     const comments = await fetchRecentComments(100);
-    const currentStop = deriveCurrentStatus(cards, lists, customFields, comments);
+    const currentStop = deriveCurrentStatus(
+      cards,
+      lists,
+      customFields,
+      comments,
+    );
     const tripsList = lists.find((l) => l.name === "Trips");
     const tripsListId = tripsList ? tripsList.id : null;
-    const listNames = Object.fromEntries(lists.map((list) => [list.id, list.name]));
+    const listNames = Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    );
 
     const suggestions = cards
       .filter((card) => card.idList !== tripsListId)
@@ -625,13 +631,17 @@ router.post("/api/log-context", async (req, res, next) => {
     const hasSpeed = Number.isFinite(parseFloat(speedKts));
     const speedKnots = hasSpeed ? parseFloat(speedKts) : null;
     const mode =
-      currentStop.status === "underway" || (speedKnots != null && speedKnots > 1.5)
+      currentStop.status === "underway" ||
+      (speedKnots != null && speedKnots > 1.5)
         ? "underway"
         : "port";
 
     const fallbackCardId =
       mode === "underway"
-        ? currentStop.from?.id || currentStop.destination?.id || suggestions[0]?.id || null
+        ? currentStop.from?.id ||
+          currentStop.destination?.id ||
+          suggestions[0]?.id ||
+          null
         : currentStop.current?.id || suggestions[0]?.id || null;
 
     const action = mode === "underway" ? "departed" : "arrived";
@@ -660,11 +670,35 @@ router.post("/api/log-entry", async (req, res, next) => {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
 
-    const { action, cardId, lat, latitude, long, lng, longitude, timestamp, source } =
-      req.body || {};
+    const {
+      action,
+      cardId,
+      lat,
+      latitude,
+      long,
+      lng,
+      longitude,
+      timestamp,
+      source,
+      litres,
+    } = req.body || {};
 
-    const normalizedAction = String(action || "").trim().toLowerCase();
-    if (!["arrived", "departed", "visited"].includes(normalizedAction)) {
+    const normalizedAction = String(action || "")
+      .trim()
+      .toLowerCase();
+    const allowedActions = [
+      "arrived",
+      "departed",
+      "visited",
+      "water",
+      "diesel",
+      "bins",
+      "bbq-gas-change",
+      "gas-tank-change",
+      "power",
+      "boom",
+    ];
+    if (!allowedActions.includes(normalizedAction)) {
       return res.status(400).json({ error: "Invalid action" });
     }
 
@@ -685,8 +719,31 @@ router.post("/api/log-entry", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid timestamp" });
     }
 
+    const actionLabels = {
+      arrived: "Arrived",
+      departed: "Departed",
+      visited: "Visited",
+      water: "Water",
+      diesel: "Diesel",
+      bins: "Bins",
+      "bbq-gas-change": "BBQ Gas Change",
+      "gas-tank-change": "Gas Tank Change",
+      power: "Power",
+      boom: "Boom",
+    };
+
+    const litresValue = parseFloat(litres);
+    const hasLitres =
+      ["water", "diesel"].includes(normalizedAction) &&
+      Number.isFinite(litresValue) &&
+      litresValue >= 0;
+
+    const headline = hasLitres
+      ? `${actionLabels[normalizedAction]} ${litresValue} litres`
+      : actionLabels[normalizedAction];
+
     const commentLines = [
-      normalizedAction,
+      headline,
       `timestamp: ${ts.toISOString()}`,
       `lat: ${latitudeValue}`,
       `lng: ${longitudeValue}`,
