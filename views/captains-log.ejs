@@ -69,14 +69,39 @@
           <span>Show only planned stops on map</span>
         </label>
       </div>
-      <section class="location-log-panel" id="location-log-panel">
-        <h3>Location Log</h3>
-        <p class="muted">Use your current position to log arrived/departed comments.</p>
-        <button type="button" id="detect-location-log-btn" class="plan-btn">Detect location</button>
-        <div id="location-log-status" class="location-log-status"></div>
-        <div id="location-log-suggestions" class="location-log-suggestions"></div>
-        <button type="button" id="submit-location-log-btn" class="plan-btn" disabled>Post log comment</button>
-      </section>
+      <% if (user) { %>
+        <section class="location-log-panel" id="location-log-panel">
+          <h3>Location Action</h3>
+          <p class="muted">Use your current position and add a structured action comment.</p>
+          <button type="button" id="detect-location-log-btn" class="plan-btn">Detect location</button>
+          <div class="location-log-controls">
+            <label for="location-log-action">Action</label>
+            <select id="location-log-action">
+              <option value="arrived">Arrived</option>
+              <option value="departed">Departed</option>
+              <option value="water">Water</option>
+              <option value="diesel">Diesel</option>
+              <option value="bins">Bins</option>
+              <option value="bbq-gas-change">BBQ Gas Change</option>
+              <option value="gas-tank-change">Gas Tank Change</option>
+              <option value="power">Power</option>
+              <option value="boom">Boom</option>
+            </select>
+          </div>
+          <div class="location-log-controls" id="location-log-litres-wrap" hidden>
+            <label for="location-log-litres">Optional litres</label>
+            <input type="number" id="location-log-litres" min="0" step="1" placeholder="e.g. 30">
+          </div>
+          <button type="button" id="location-log-backfill-btn" class="plan-btn plan-btn-secondary">Backfill?</button>
+          <div class="location-log-controls" id="location-log-backfill-wrap" hidden>
+            <label for="location-log-backfill-time">Actual date/time</label>
+            <input type="datetime-local" id="location-log-backfill-time">
+          </div>
+          <div id="location-log-status" class="location-log-status"></div>
+          <div id="location-log-suggestions" class="location-log-suggestions"></div>
+          <button type="button" id="submit-location-log-btn" class="plan-btn" disabled>Post log comment</button>
+        </section>
+      <% } %>
       <div id="planning-summary" class="summary-panel"></div>
       <table id="planning-table" class="planning-table"></table>
     </div>
