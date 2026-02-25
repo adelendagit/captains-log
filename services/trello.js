@@ -9,6 +9,22 @@ const COMMON_QUERY =
   `&cards=open&card_customFieldItems=true&lists=open&fields=all` +
   `&customFields=true&members=all&labels=all`;
 
+function assertTrelloConfig({ key = KEY, token = TOKEN } = {}) {
+  const missing = [];
+  if (!BOARD_ID) missing.push("TRELLO_BOARD_ID");
+  if (!key) missing.push("TRELLO_KEY");
+  if (!token) missing.push("TRELLO_TOKEN");
+
+  if (missing.length) {
+    const error = new Error(
+      `Missing Trello configuration: ${missing.join(", ")}`,
+    );
+    error.status = 503;
+    error.expose = true;
+    throw error;
+  }
+}
+
 function filterCardsToOpenLists(board) {
   const openListIds = new Set(board.lists.map((list) => list.id));
   board.cards = board.cards.filter((card) => openListIds.has(card.idList));
@@ -19,12 +35,14 @@ function buildQuery(key, token) {
 }
 
 async function fetchBoard() {
+  assertTrelloConfig();
   const { data } = await axios.get(BASE_URL + buildQuery(KEY, TOKEN));
   filterCardsToOpenLists(data);
   return data;
 }
 
 async function fetchBoardWithCredentials(key, token) {
+  assertTrelloConfig({ key, token });
   const { data } = await axios.get(BASE_URL + buildQuery(key, token));
   filterCardsToOpenLists(data);
   return data;
@@ -32,6 +50,7 @@ async function fetchBoardWithCredentials(key, token) {
 
 // Fetch a limited number of recent comments (actions)
 async function fetchRecentComments(limit = 100) {
+  assertTrelloConfig();
   const url =
     BASE_URL +
     `/actions?filter=commentCard&limit=${limit}&key=${KEY}&token=${TOKEN}`;
@@ -40,6 +59,7 @@ async function fetchRecentComments(limit = 100) {
 }
 
 async function fetchAllComments() {
+  assertTrelloConfig();
   let allActions = [];
   let before = null;
   let keepGoing = true;
@@ -63,6 +83,7 @@ async function fetchAllComments() {
 }
 
 async function fetchCommentPage({ before = null, limit = 1000 } = {}) {
+  assertTrelloConfig();
   const url =
     BASE_URL +
     `/actions?filter=commentCard&limit=${limit}${
@@ -75,6 +96,7 @@ async function fetchCommentPage({ before = null, limit = 1000 } = {}) {
 }
 
 async function fetchBoardWithAllComments() {
+  assertTrelloConfig();
   const { data: board } = await axios.get(BASE_URL + buildQuery(KEY, TOKEN));
   filterCardsToOpenLists(board);
   board.allComments = await fetchAllComments();
