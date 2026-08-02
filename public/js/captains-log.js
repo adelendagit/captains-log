@@ -1938,8 +1938,9 @@ function setupLocationLogControls() {
     backfillBtn.addEventListener("click", toggleBackfill);
   }
 
-  detectBtn.addEventListener("click", async () => {
+  const detectLocation = async () => {
     statusEl.textContent = "Detecting your location…";
+    detectBtn.disabled = true;
     submitBtn.disabled = true;
 
     try {
@@ -1987,8 +1988,16 @@ function setupLocationLogControls() {
     } catch (error) {
       statusEl.textContent = error.message || "Unable to detect location.";
       renderLocationSuggestions([], null);
+    } finally {
+      detectBtn.disabled = false;
     }
-  });
+  };
+
+  detectBtn.addEventListener("click", detectLocation);
+
+  // Ask for the user's location as soon as the authenticated controls load.
+  // The button remains available for retrying after a denial, timeout, or move.
+  detectLocation();
 
   submitBtn.addEventListener("click", async () => {
     if (!locationLogDraft) return;

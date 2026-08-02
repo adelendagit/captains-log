@@ -1,0 +1,138 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f7f8;
+  color: #173042;
+}
+
+body {
+  margin: 0;
+}
+
+.todo-page {
+  width: min(760px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.todo-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: #557180;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3.25rem);
+}
+
+.todo-count,
+.todo-label,
+.todo-meta time {
+  border-radius: 999px;
+  background: #e5eef2;
+  padding: 0.35rem 0.7rem;
+  color: #405d6b;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.todo-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.todo-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1.15rem;
+  border: 1px solid #dce5e9;
+  border-radius: 0.9rem;
+  background: #fff;
+  box-shadow: 0 3px 14px rgb(18 52 70 / 6%);
+}
+
+.todo-card-content {
+  min-width: 0;
+}
+
+.todo-card h2 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.todo-description {
+  margin: 0.5rem 0 0;
+  color: #557180;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.done-button {
+  flex: 0 0 auto;
+  border: 1px solid #8bc6a0;
+  border-radius: 999px;
+  background: #e7f6ec;
+  color: #176634;
+  padding: 0.65rem 0.95rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.done-button:hover:not(:disabled) {
+  background: #d5efde;
+}
+
+.done-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.todo-status {
+  min-height: 1.25rem;
+  color: #557180;
+}
+
+.todo-empty {
+  padding: 3rem 1rem;
+  border: 1px dashed #b8cbd4;
+  border-radius: 0.9rem;
+  color: #557180;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .todo-page {
+    padding-top: 1.5rem;
+  }
+
+  .todo-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .done-button {
+    width: 100%;
+  }
+}

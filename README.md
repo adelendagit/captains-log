@@ -54,9 +54,9 @@ If the request is successful you will receive the nearest three cards that have 
 Set the following variables in a `.env` file or your environment:
 
 ```
-# Used for fetching read‑only board data
+# Used for board data. The token needs write access for the public to-do page.
 TRELLO_KEY=<your trello api key>
-TRELLO_TOKEN=<trello token with read access>
+TRELLO_TOKEN=<trello token with read/write access>
 TRELLO_BOARD_ID=<board id>
 
 # Used for Trello OAuth login
@@ -70,6 +70,10 @@ SESSION_SECRET=<session secret>
 ## Authentication
 
 If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to `/auth/trello` to start the OAuth flow. After authorizing, Trello will redirect back to `/auth/trello/callback` and your session will be authenticated.
+
+## Public To-do Page
+
+`/to-do` lists the open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Marking a card done archives it in Trello. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can archive cards in that list.
 
 ## Proposed Location-Aware Log Entry Flow
 
