@@ -1,0 +1,29 @@
+<article
+  class="todo-card<%= complete ? ' is-done' : '' %>"
+  data-card-id="<%= card.id %>"
+  data-card-pos="<%= card.pos %>"
+>
+  <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
+  <input
+    type="checkbox"
+    class="done-checkbox"
+    aria-label="Mark <%= card.name %> as <%= complete ? 'not done' : 'done' %>"
+    <%= complete ? 'checked' : '' %>
+  >
+  <div class="todo-card-content">
+    <h2><%= card.name %></h2>
+    <% if (card.desc) { %>
+      <p class="todo-description"><%= card.desc %></p>
+    <% } %>
+    <% if ((card.labels && card.labels.length) || card.due) { %>
+      <div class="todo-meta">
+        <% (card.labels || []).forEach(label => { %>
+          <span class="todo-label"><%= label.name || label.color %></span>
+        <% }) %>
+        <% if (card.due) { %>
+          <time datetime="<%= card.due %>">Due <%= new Date(card.due).toLocaleDateString() %></time>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</article>

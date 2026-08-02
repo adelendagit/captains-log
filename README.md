@@ -2,6 +2,11 @@
 
 This project now supports optional Trello authentication so that users can sign in with their Trello accounts. Without signing in the app continues to show read‑only board data; after authentication it will have read/write access to the user's Trello data which will enable future editing features.
 
+## Runtime
+
+The application targets Node.js 24 LTS. With `nvm`, run `nvm use` from the
+project directory to install/select the version declared in `.nvmrc`.
+
 ## Closest Locations API
 
 The application exposes an `/api/closest-locations` endpoint that returns the Trello cards nearest to a given latitude and longitude.
@@ -10,13 +15,13 @@ The application exposes an `/api/closest-locations` endpoint that returns the Tr
 
 Send a `GET` request to `/api/closest-locations` with the following query parameters:
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `lat` / `latitude` | Yes | Latitude in decimal degrees for the point you want to search from. Either name is accepted. |
-| `long` / `lng` / `longitude` | Yes | Longitude in decimal degrees for the point you want to search from. Any of the aliases are accepted. |
-| `apiKey` | Yes | Trello API key that has read access to the target board. |
-| `token` | Yes | Trello API token associated with the key. |
-| `limit` | No | Maximum number of locations to return. Must be a positive integer. Defaults to `1`. |
+| Parameter                    | Required | Description                                                                                          |
+| ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `lat` / `latitude`           | Yes      | Latitude in decimal degrees for the point you want to search from. Either name is accepted.          |
+| `long` / `lng` / `longitude` | Yes      | Longitude in decimal degrees for the point you want to search from. Any of the aliases are accepted. |
+| `apiKey`                     | Yes      | Trello API key that has read access to the target board.                                             |
+| `token`                      | Yes      | Trello API token associated with the key.                                                            |
+| `limit`                      | No       | Maximum number of locations to return. Must be a positive integer. Defaults to `1`.                  |
 
 ### Response
 
@@ -65,7 +70,20 @@ TRELLO_OAUTH_SECRET=<your trello OAuth secret>
 
 # Session/host configuration
 SESSION_SECRET=<session secret>
+
+# Optional email notifications via Resend
+RESEND_API_KEY=<your Resend API key>
+EMAIL_FROM=Captain's Log <updates@your-verified-domain.example>
+EMAIL_REPLY_TO=<address used for replies and test notifications>
+EMAIL_RECIPIENTS_JSON={"Family":"family@example.com","Crew":"crew@example.com"}
+PUBLIC_SITE_URL=https://where.is.achilleas.co.uk
+# Optional; defaults to Europe/Athens when formatting email timestamps
+EMAIL_TIME_ZONE=Europe/Athens
 ```
+
+`EMAIL_RECIPIENTS` may be used instead of `EMAIL_RECIPIENTS_JSON` as a
+comma-separated list. Email addresses remain server-side and are never sent to
+the browser.
 
 ## Authentication
 
@@ -73,7 +91,7 @@ If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to
 
 ## Public To-do Page
 
-`/to-do` lists incomplete, open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Marking a card done sets its Trello `dueComplete` value without archiving it. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can complete cards in that list.
+`/to-do` lists open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Cards can be reordered, marked done, and restored without being archived. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can update cards in that list. Authenticated users can also add items and switch between the board's open lists, in Trello order, up to and including `Today`.
 
 ## Proposed Location-Aware Log Entry Flow
 

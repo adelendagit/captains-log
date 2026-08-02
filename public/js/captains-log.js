@@ -29,6 +29,7 @@ let locationLogSuggestions = [];
 const LOCATION_LOG_ACTIONS = {
   arrived: "Arrived",
   departed: "Departed",
+  visited: "Visited",
   water: "Water",
   diesel: "Diesel",
   bins: "Bins",
@@ -1902,6 +1903,372 @@ function renderLocationSuggestions(suggestions = [], selectedId = null) {
     .join("");
 }
 
+function escapeMarkup(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function setupLogWizard() {
+  const modal = document.getElementById("log-wizard-modal");
+  const openBtn = document.getElementById("open-log-wizard-btn");
+  const closeBtn = document.getElementById("close-log-wizard-btn");
+  const backBtn = document.getElementById("wizard-back-btn");
+  const nextBtn = document.getElementById("wizard-next-btn");
+  const retryBtn = document.getElementById("wizard-retry-location-btn");
+  const clearBackfillBtn = document.getElementById("wizard-clear-backfill-btn");
+  const locationStatus = document.getElementById("wizard-location-status");
+  const locationList = document.getElementById("wizard-location-suggestions");
+  const actionGrid = document.getElementById("wizard-action-grid");
+  const litresInput = document.getElementById("wizard-litres-input");
+  const backfillInput = document.getElementById("wizard-backfill-input");
+  const submitStatus = document.getElementById("wizard-submit-status");
+  const successMessage = document.getElementById("wizard-success-message");
+
+  if (!modal || !openBtn || !nextBtn || !backBtn) return;
+
+  const wizardState = {
+    step: "location",
+    draft: null,
+    suggestions: [],
+    action: null,
+    submitting: false,
+  };
+
+  const baseSteps = [
+    "location",
+    "action",
+    "litres",
+    "backfill",
+    "notification",
+  ];
+
+  const flowSteps = () => [
+    "location",
+    "action",
+    ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
+    "backfill",
+    "notification",
+  ];
+
+  const selectedCardId = () =>
+    document.querySelector('input[name="wizard-location-card"]:checked')
+      ?.value || null;
+
+  const selectedNotification = () =>
+    document.querySelector('input[name="wizard-notification"]:checked')
+      ?.value || "none";
+
+  const setNotification = (mode) => {
+    const input = document.querySelector(
+      `input[name="wizard-notification"][value="${mode}"]`,
+    );
+    if (input) input.checked = true;
+  };
+
+  const renderProgress = (step) => {
+    const currentIndex = baseSteps.indexOf(step);
+    document.querySelectorAll("[data-wizard-progress]").forEach((item) => {
+      const itemStep = item.dataset.wizardProgress;
+      const itemIndex = baseSteps.indexOf(itemStep);
+      item.classList.toggle("active", itemStep === step);
+      item.classList.toggle(
+        "complete",
+        itemIndex < currentIndex ||
+          (itemStep === "litres" &&
+            !["water", "diesel"].includes(wizardState.action) &&
+            currentIndex > baseSteps.indexOf("litres")),
+      );
+    });
+  };
+
+  const renderStep = (step) => {
+    wizardState.step = step;
+    modal.querySelectorAll("[data-wizard-step]").forEach((section) => {
+      section.classList.toggle("hidden", section.dataset.wizardStep !== step);
+    });
+    renderProgress(step);
+
+    backBtn.classList.toggle("hidden", step === "success");
+    nextBtn.classList.toggle("hidden", step === "action");
+    backBtn.textContent = step === "location" ? "Cancel" : "Back";
+    nextBtn.disabled = wizardState.submitting;
+
+    if (step === "location") {
+      nextBtn.textContent = "Continue";
+      nextBtn.disabled = !wizardState.draft || !selectedCardId();
+    } else if (step === "litres") {
+      nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
+    } else if (step === "backfill") {
+      nextBtn.textContent = "Continue";
+    } else if (step === "notification") {
+      nextBtn.textContent = "Save log";
+    } else if (step === "success") {
+      nextBtn.classList.remove("hidden");
+      nextBtn.textContent = "Close";
+      nextBtn.disabled = false;
+    }
+  };
+
+  const renderWizardLocations = (suggestions, selectedId) => {
+    if (!suggestions.length) {
+      locationList.innerHTML =
+        '<p class="muted">No nearby locations were found.</p>';
+      return;
+    }
+
+    locationList.innerHTML = suggestions
+      .map((suggestion) => {
+        const distance = Number.isFinite(suggestion.distanceKm)
+          ? `${suggestion.distanceKm.toFixed(1)} km away`
+          : "";
+        return `
+          <label class="wizard-location-card">
+            <input type="radio" name="wizard-location-card" value="${escapeMarkup(suggestion.id)}" ${suggestion.id === selectedId ? "checked" : ""}>
+            <span>
+              <strong>${escapeMarkup(suggestion.name)}</strong>
+              <small>${escapeMarkup([suggestion.list, distance].filter(Boolean).join(" · "))}</small>
+            </span>
+          </label>`;
+      })
+      .join("");
+
+    locationList
+      .querySelectorAll('input[name="wizard-location-card"]')
+      .forEach((input) => {
+        input.addEventListener("change", () => renderStep("location"));
+      });
+  };
+
+  const detectWizardLocation = async () => {
+    locationStatus.classList.remove("error");
+    locationStatus.textContent = "Detecting your location…";
+    locationList.innerHTML = "";
+    retryBtn.classList.add("hidden");
+    wizardState.draft = null;
+    renderStep("location");
+
+    try {
+      const position = await getCurrentPosition();
+      const payload = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      if (Number.isFinite(position.coords.speed)) {
+        payload.speedKts = Math.max(position.coords.speed * 1.94384, 0);
+      }
+
+      const response = await fetch("/api/log-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const context = await response.json();
+      if (!response.ok) {
+        throw new Error(context.error || "Unable to find nearby locations.");
+      }
+
+      wizardState.draft = context.draft;
+      wizardState.suggestions = context.suggestions || [];
+      const closestId = wizardState.suggestions[0]?.id || null;
+      renderWizardLocations(wizardState.suggestions, closestId);
+      locationStatus.textContent = closestId
+        ? "Closest location selected. Choose another if needed."
+        : "No nearby locations were found.";
+      renderStep("location");
+    } catch (error) {
+      locationStatus.textContent =
+        error.message || "Unable to detect your location.";
+      locationStatus.classList.add("error");
+      retryBtn.classList.remove("hidden");
+      renderStep("location");
+    }
+  };
+
+  actionGrid.innerHTML = Object.entries(LOCATION_LOG_ACTIONS)
+    .map(
+      ([value, label]) =>
+        `<button type="button" class="wizard-action-btn" data-wizard-action="${escapeMarkup(value)}">${escapeMarkup(label)}</button>`,
+    )
+    .join("");
+
+  actionGrid.querySelectorAll("[data-wizard-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      wizardState.action = button.dataset.wizardAction;
+      actionGrid.querySelectorAll("[data-wizard-action]").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+      setNotification(
+        ["arrived", "departed", "visited"].includes(wizardState.action)
+          ? "people"
+          : "none",
+      );
+      renderStep(
+        ["water", "diesel"].includes(wizardState.action)
+          ? "litres"
+          : "backfill",
+      );
+    });
+  });
+
+  const resetWizard = () => {
+    wizardState.step = "location";
+    wizardState.draft = null;
+    wizardState.suggestions = [];
+    wizardState.action = null;
+    wizardState.submitting = false;
+    litresInput.value = "";
+    backfillInput.value = "";
+    submitStatus.textContent = "";
+    submitStatus.classList.remove("error");
+    actionGrid.querySelectorAll("[data-wizard-action]").forEach((button) => {
+      button.classList.remove("selected");
+    });
+    setNotification("none");
+  };
+
+  const openWizard = () => {
+    resetWizard();
+    modal.classList.remove("hidden");
+    document.body.classList.add("log-wizard-open");
+    renderStep("location");
+    closeBtn.focus();
+    detectWizardLocation();
+  };
+
+  const closeWizard = () => {
+    if (wizardState.submitting) return;
+    modal.classList.add("hidden");
+    document.body.classList.remove("log-wizard-open");
+    openBtn.focus();
+  };
+
+  const submitWizard = async () => {
+    const cardId = selectedCardId();
+    if (!wizardState.draft || !wizardState.action || !cardId) return;
+
+    const timestamp = backfillInput.value
+      ? new Date(backfillInput.value).toISOString()
+      : new Date().toISOString();
+    const payload = {
+      action: wizardState.action,
+      cardId,
+      lat: wizardState.draft.lat,
+      lng: wizardState.draft.lng,
+      timestamp,
+      source: "log-wizard",
+    };
+    if (
+      ["water", "diesel"].includes(wizardState.action) &&
+      litresInput.value !== ""
+    ) {
+      payload.litres = litresInput.value;
+    }
+
+    wizardState.submitting = true;
+    nextBtn.disabled = true;
+    backBtn.disabled = true;
+    submitStatus.classList.remove("error");
+    submitStatus.textContent = "Saving log entry…";
+
+    try {
+      const logResponse = await fetch("/api/log-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const logResult = await logResponse.json();
+      if (!logResponse.ok) {
+        throw new Error(logResult.error || "Failed to save the log entry.");
+      }
+
+      let notificationMessage = "No email notification was requested.";
+      const notificationMode = selectedNotification();
+      if (notificationMode !== "none") {
+        submitStatus.textContent = "Log saved. Sending notification…";
+        const requestId =
+          window.crypto && typeof window.crypto.randomUUID === "function"
+            ? window.crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const notificationResponse = await fetch("/api/log-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            mode: notificationMode,
+            requestId,
+          }),
+        });
+        const notificationResult = await notificationResponse.json();
+        if (!notificationResponse.ok) {
+          notificationMessage = `The log was saved, but the email could not be sent: ${notificationResult.error || "unknown error"}`;
+        } else {
+          notificationMessage = `Email sent to ${notificationResult.recipientCount} recipient${notificationResult.recipientCount === 1 ? "" : "s"}.`;
+        }
+      }
+
+      currentStatus = await (await fetch("/api/current-stop")).json();
+      renderTable(
+        stops,
+        parseFloat(document.getElementById("speed-input").value) || 0,
+      );
+      successMessage.textContent = notificationMessage;
+      renderStep("success");
+    } catch (error) {
+      submitStatus.textContent =
+        error.message || "Failed to save the log entry.";
+      submitStatus.classList.add("error");
+    } finally {
+      wizardState.submitting = false;
+      backBtn.disabled = false;
+      if (wizardState.step !== "success") nextBtn.disabled = false;
+    }
+  };
+
+  openBtn.addEventListener("click", openWizard);
+  closeBtn.addEventListener("click", closeWizard);
+  retryBtn.addEventListener("click", detectWizardLocation);
+  clearBackfillBtn.addEventListener("click", () => {
+    backfillInput.value = "";
+  });
+  litresInput.addEventListener("input", () => {
+    if (wizardState.step === "litres") renderStep("litres");
+  });
+
+  backBtn.addEventListener("click", () => {
+    if (wizardState.step === "location") {
+      closeWizard();
+      return;
+    }
+    const steps = flowSteps();
+    const previous = steps[steps.indexOf(wizardState.step) - 1];
+    renderStep(previous || "location");
+  });
+
+  nextBtn.addEventListener("click", () => {
+    if (wizardState.step === "success") {
+      closeWizard();
+      return;
+    }
+    if (wizardState.step === "notification") {
+      submitWizard();
+      return;
+    }
+    const steps = flowSteps();
+    const next = steps[steps.indexOf(wizardState.step) + 1];
+    if (next) renderStep(next);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeWizard();
+    }
+  });
+}
+
 function setupLocationLogControls() {
   const detectBtn = document.getElementById("detect-location-log-btn");
   const submitBtn = document.getElementById("submit-location-log-btn");
@@ -2175,6 +2542,7 @@ async function init() {
   renderTable(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
   setupHistoricalTripLinks(stops);
+  setupLogWizard();
   setupLocationLogControls();
 
   // Update on speed change:

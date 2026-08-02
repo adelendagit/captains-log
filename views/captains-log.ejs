@@ -70,6 +70,16 @@
         </label>
       </div>
       <% if (user) { %>
+        <section class="log-launch-panel">
+          <div>
+            <h3>Log</h3>
+            <p class="muted">Record a location action in a few guided steps.</p>
+          </div>
+          <button type="button" id="open-log-wizard-btn" class="log-launch-btn">
+            <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+            Start a log
+          </button>
+        </section>
         <section class="location-log-panel" id="location-log-panel">
           <h3>Location Action</h3>
           <p class="muted">Use your current position and add a structured action comment.</p>
@@ -153,6 +163,105 @@
   </div>
 </section>
 </main>
+
+<% if (user) { %>
+  <div id="log-wizard-modal" class="log-wizard-modal hidden" role="dialog" aria-modal="true" aria-labelledby="log-wizard-title">
+    <div class="log-wizard-shell">
+      <header class="log-wizard-header">
+        <div>
+          <span class="log-wizard-eyebrow">Captain's Log</span>
+          <h2 id="log-wizard-title">New log entry</h2>
+        </div>
+        <button type="button" id="close-log-wizard-btn" class="log-wizard-close" aria-label="Close log wizard">&times;</button>
+      </header>
+
+      <ol class="log-wizard-progress" aria-label="Log entry progress">
+        <li data-wizard-progress="location">Location</li>
+        <li data-wizard-progress="action">Action</li>
+        <li data-wizard-progress="litres">Litres</li>
+        <li data-wizard-progress="backfill">Backfill</li>
+        <li data-wizard-progress="notification">Notification</li>
+      </ol>
+
+      <div class="log-wizard-content">
+        <section class="log-wizard-step" data-wizard-step="location">
+          <span class="log-wizard-step-count">Step 1 of 5</span>
+          <h3>Where are you?</h3>
+          <p class="muted">We’ll use your position to find the closest places.</p>
+          <div id="wizard-location-status" class="wizard-status" role="status">Waiting to detect your location…</div>
+          <div id="wizard-location-suggestions" class="wizard-location-list"></div>
+          <button type="button" id="wizard-retry-location-btn" class="wizard-text-btn hidden">Try location again</button>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="action">
+          <span class="log-wizard-step-count">Step 2 of 5</span>
+          <h3>What happened?</h3>
+          <p class="muted">Choose an action to continue.</p>
+          <div id="wizard-action-grid" class="wizard-action-grid"></div>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="litres">
+          <span class="log-wizard-step-count">Step 3 of 5</span>
+          <h3>How many litres?</h3>
+          <p class="muted">This is optional. Leave it empty to skip.</p>
+          <label class="wizard-field" for="wizard-litres-input">
+            <span>Litres</span>
+            <div class="wizard-number-input">
+              <input type="number" id="wizard-litres-input" min="0" step="1" inputmode="decimal" placeholder="e.g. 30">
+              <span>litres</span>
+            </div>
+          </label>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="backfill">
+          <span class="log-wizard-step-count">Step 4 of 5</span>
+          <h3>Backfill the time?</h3>
+          <p class="muted">Choose a historical date and time, or leave this empty to log it now.</p>
+          <label class="wizard-field" for="wizard-backfill-input">
+            <span>Date and time</span>
+            <input type="datetime-local" id="wizard-backfill-input">
+          </label>
+          <button type="button" id="wizard-clear-backfill-btn" class="wizard-text-btn">Use current time</button>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="notification">
+          <span class="log-wizard-step-count">Step 5 of 5</span>
+          <h3>Send a notification?</h3>
+          <p class="muted">The log is always saved. Choose who should receive the email update.</p>
+          <div class="wizard-notification-options">
+            <label class="wizard-choice-card">
+              <input type="radio" name="wizard-notification" value="people">
+              <span class="wizard-choice-icon"><i class="fa-solid fa-people-group" aria-hidden="true"></i></span>
+              <span><strong>Notify people</strong><small>Email the configured notification list.</small></span>
+            </label>
+            <label class="wizard-choice-card">
+              <input type="radio" name="wizard-notification" value="test">
+              <span class="wizard-choice-icon"><i class="fa-solid fa-flask" aria-hidden="true"></i></span>
+              <span><strong>Send test to me</strong><small>Email the configured reply-to address.</small></span>
+            </label>
+            <label class="wizard-choice-card">
+              <input type="radio" name="wizard-notification" value="none">
+              <span class="wizard-choice-icon"><i class="fa-solid fa-bell-slash" aria-hidden="true"></i></span>
+              <span><strong>Don’t email</strong><small>Save the log entry only.</small></span>
+            </label>
+          </div>
+          <div id="wizard-submit-status" class="wizard-status" role="status"></div>
+        </section>
+
+        <section class="log-wizard-step log-wizard-success hidden" data-wizard-step="success">
+          <div class="wizard-success-icon"><i class="fa-solid fa-check" aria-hidden="true"></i></div>
+          <h3>Log saved</h3>
+          <p id="wizard-success-message" class="muted">Your Captain's Log has been updated.</p>
+        </section>
+      </div>
+
+      <footer class="log-wizard-footer">
+        <button type="button" id="wizard-back-btn" class="wizard-secondary-btn">Back</button>
+        <button type="button" id="wizard-next-btn" class="wizard-primary-btn">Continue</button>
+      </footer>
+    </div>
+  </div>
+<% } %>
 
 <!-– Leaflet core ––>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>

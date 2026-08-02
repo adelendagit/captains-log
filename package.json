@@ -12,7 +12,7 @@
     "test": "echo \"No tests specified\" && exit 0"
   },
   "engines": {
-    "node": ">=18"
+    "node": "24.x"
   },
   "dependencies": {
     "axios": "^1.5.0",
@@ -26,6 +26,7 @@
     "oauth-1.0a": "^2.2.6",
     "passport": "^0.7.0",
     "passport-trello": "^1.1.0",
+    "resend": "^6.18.1",
     "session-file-store": "^1.5.0"
   },
   "devDependencies": {

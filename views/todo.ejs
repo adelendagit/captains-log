@@ -3,48 +3,67 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>To-do</title>
+    <title><%= selectedList.name %> · To-do</title>
     <link rel="icon" type="image/svg+xml" href="/icons/logo.svg">
     <link rel="stylesheet" href="/css/todo.css">
+    <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js" defer></script>
     <script src="/js/todo.js" defer></script>
   </head>
   <body>
-    <main class="todo-page">
+    <main class="todo-page" data-list-id="<%= selectedList.id %>">
       <header class="todo-header">
         <div>
           <p class="eyebrow">Captain's Log</p>
-          <h1>To-do</h1>
+          <h1><%= selectedList.name %></h1>
         </div>
-        <span id="todo-count" class="todo-count"><%= cards.length %> open</span>
+        <span id="todo-count" class="todo-count"><%= openCards.length %> open</span>
       </header>
+
+      <% if (showListSwitcher) { %>
+        <nav class="list-switcher" aria-label="To-do lists">
+          <% lists.forEach(list => { %>
+            <a
+              href="/to-do?list=<%= encodeURIComponent(list.id) %>"
+              class="list-button<%= list.id === selectedList.id ? ' active' : '' %>"
+              <%= list.id === selectedList.id ? 'aria-current="page"' : '' %>
+            ><%= list.name %></a>
+          <% }) %>
+        </nav>
+
+        <form id="add-item-form" class="add-item-form">
+          <label for="add-item-name" class="visually-hidden">New item</label>
+          <input
+            id="add-item-name"
+            name="name"
+            type="text"
+            maxlength="512"
+            placeholder="Add an item to <%= selectedList.name %>"
+            autocomplete="off"
+            required
+          >
+          <button type="submit">Add</button>
+        </form>
+      <% } %>
 
       <p id="todo-status" class="todo-status" role="status" aria-live="polite"></p>
 
       <section id="todo-list" class="todo-list" aria-label="Open to-do cards">
-        <% cards.forEach(card => { %>
-          <article class="todo-card" data-card-id="<%= card.id %>">
-            <div class="todo-card-content">
-              <h2><%= card.name %></h2>
-              <% if (card.desc) { %>
-                <p class="todo-description"><%= card.desc %></p>
-              <% } %>
-              <% if ((card.labels && card.labels.length) || card.due) { %>
-                <div class="todo-meta">
-                  <% (card.labels || []).forEach(label => { %>
-                    <span class="todo-label"><%= label.name || label.color %></span>
-                  <% }) %>
-                  <% if (card.due) { %>
-                    <time datetime="<%= card.due %>">Due <%= new Date(card.due).toLocaleDateString() %></time>
-                  <% } %>
-                </div>
-              <% } %>
-            </div>
-            <button type="button" class="done-button">Mark done</button>
-          </article>
+        <% openCards.forEach(card => { %>
+          <%- include("partials/todo-card", { card, complete: false }) %>
         <% }) %>
       </section>
 
-      <p id="todo-empty" class="todo-empty" <%= cards.length ? "hidden" : "" %>>Everything is done.</p>
+      <p id="todo-empty" class="todo-empty" <%= openCards.length ? "hidden" : "" %>>Everything is done.</p>
+
+      <details class="done-section" <%= doneCards.length ? "open" : "" %>>
+        <summary>Done <span id="done-count"><%= doneCards.length %></span></summary>
+        <div id="done-list" class="todo-list done-list" aria-label="Done cards">
+          <% doneCards.forEach(card => { %>
+            <%- include("partials/todo-card", { card, complete: true }) %>
+          <% }) %>
+        </div>
+        <p id="done-empty" class="done-empty" <%= doneCards.length ? "hidden" : "" %>>No completed items yet.</p>
+      </details>
     </main>
   </body>
 </html>

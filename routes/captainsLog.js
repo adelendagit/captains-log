@@ -8,6 +8,7 @@ const {
   fetchRecentComments,
   fetchBoardWithCredentials,
 } = require("../services/trello");
+const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 
 function extractTimestamp(text, fallback, cardId) {
   const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
@@ -792,6 +793,105 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     res.json({ success: true, comment: text });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/log-notification", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const { mode, requestId, action, cardId, lat, lng, timestamp, litres } =
+      req.body || {};
+
+    if (!["people", "test"].includes(mode)) {
+      return res.status(400).json({ error: "Invalid notification option" });
+    }
+    if (!ACTION_LABELS[action]) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+    if (!cardId) {
+      return res.status(400).json({ error: "Missing cardId" });
+    }
+    if (
+      typeof requestId !== "string" ||
+      requestId.length < 8 ||
+      requestId.length > 120 ||
+      !/^[a-zA-Z0-9_-]+$/.test(requestId)
+    ) {
+      return res.status(400).json({ error: "Invalid notification request ID" });
+    }
+
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const recentNotifications = Array.isArray(
+      req.session.logNotificationTimestamps,
+    )
+      ? req.session.logNotificationTimestamps.filter(
+          (sentAt) => Number(sentAt) > oneHourAgo,
+        )
+      : [];
+    if (recentNotifications.length >= 10) {
+      return res
+        .status(429)
+        .json({ error: "Too many email notifications. Try again later." });
+    }
+    req.session.logNotificationTimestamps = [
+      ...recentNotifications,
+      Date.now(),
+    ];
+
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return res.status(400).json({ error: "Invalid notification position" });
+    }
+
+    const loggedAt = new Date(timestamp);
+    if (Number.isNaN(loggedAt.getTime())) {
+      return res.status(400).json({ error: "Invalid notification timestamp" });
+    }
+
+    const { cards, members } = await fetchBoard();
+    const userId =
+      req.user.id ||
+      req.user.idMember ||
+      (req.user.profile && req.user.profile.id);
+    const canNotify = (members || []).some(
+      (member) =>
+        member.id === userId &&
+        (member.memberType === "admin" || member.memberType === "normal"),
+    );
+    if (!canNotify) {
+      return res
+        .status(403)
+        .json({ error: "Not authorized to send notifications" });
+    }
+
+    const card = cards.find((candidate) => candidate.id === cardId);
+    if (!card) {
+      return res.status(404).json({ error: "Location not found" });
+    }
+
+    const litresValue = Number(litres);
+    const result = await sendLogNotification({
+      mode,
+      idempotencyKey: `log-notification/${requestId}`,
+      action,
+      location: card.name,
+      lat: latitude,
+      lng: longitude,
+      timestamp: loggedAt.toISOString(),
+      litres:
+        ["water", "diesel"].includes(action) && Number.isFinite(litresValue)
+          ? litresValue
+          : null,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     next(error);
   }
 });
