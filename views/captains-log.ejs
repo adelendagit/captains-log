@@ -26,6 +26,7 @@
   <div class="site-title"><a href="https://where.is.achilleas.co.uk" class="site-title-link">Where is ...</a></div>
   <div class="site-user">
    <% if (user) { %>
+    <a href="/to-do" class="user-btn header-todo-link">To Do</a>
     <div class="user-menu">
       <button class="user-btn logged-in" id="user-menu-btn" type="button">
         <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
@@ -169,7 +170,7 @@
     <div class="log-wizard-shell">
       <header class="log-wizard-header">
         <div>
-          <span class="log-wizard-eyebrow">Captain's Log</span>
+          <span class="log-wizard-eyebrow">Skibidi</span>
           <h2 id="log-wizard-title">New log entry</h2>
         </div>
         <button type="button" id="close-log-wizard-btn" class="log-wizard-close" aria-label="Close log wizard">&times;</button>
@@ -251,7 +252,7 @@
         <section class="log-wizard-step log-wizard-success hidden" data-wizard-step="success">
           <div class="wizard-success-icon"><i class="fa-solid fa-check" aria-hidden="true"></i></div>
           <h3>Log saved</h3>
-          <p id="wizard-success-message" class="muted">Your Captain's Log has been updated.</p>
+          <p id="wizard-success-message" class="muted">Skibidi has been updated.</p>
         </section>
       </div>
 

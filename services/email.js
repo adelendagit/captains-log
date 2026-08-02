@@ -1,4 +1,12 @@
 const { Resend } = require("resend");
+const fs = require("fs");
+const path = require("path");
+
+const BRAND_NAME = "Skibidi";
+const LOGO_CONTENT_ID = "skibidi-logo";
+const LOGO_CONTENT = fs
+  .readFileSync(path.join(__dirname, "../public/icons/icon-192.png"))
+  .toString("base64");
 
 const ACTION_LABELS = {
   arrived: "Arrived",
@@ -65,6 +73,12 @@ function getNotificationRecipients(mode) {
   return [];
 }
 
+function brandedFromAddress(value) {
+  const match = String(value || "").match(/<([^>]+)>/);
+  const address = (match ? match[1] : value || "").trim();
+  return `${BRAND_NAME} <${address}>`;
+}
+
 function formatDate(timestamp) {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "full",
@@ -81,7 +95,6 @@ function buildNotification({ action, location, lat, lng, timestamp, litres }) {
     process.env.PUBLIC_SITE_URL || "https://where.is.achilleas.co.uk"
   ).replace(/\/$/, "");
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
-  const logoUrl = `${siteUrl}/icons/icon-192.png`;
   const hasLitres = Number.isFinite(litres);
   const headline = `${actionLabel}${action === "arrived" || action === "visited" ? " at" : action === "departed" ? " from" : " at"} ${location}`;
   const details = hasLitres ? `${litres} litres` : null;
@@ -98,15 +111,15 @@ function buildNotification({ action, location, lat, lng, timestamp, litres }) {
             <td style="background:#0a2540;padding:24px 30px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td width="54"><img src="${escapeHtml(logoUrl)}" width="44" height="44" alt="" style="display:block;border-radius:12px;background:#ffffff;"></td>
-                  <td style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:.02em;">Where is …</td>
+                  <td width="54"><img src="cid:${LOGO_CONTENT_ID}" width="44" height="44" alt="Skibidi" style="display:block;border-radius:12px;background:#ffffff;"></td>
+                  <td style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:.02em;">Skibidi</td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
             <td style="padding:34px 30px 12px;">
-              <div style="color:#0077cc;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;">Captain's Log</div>
+              <div style="color:#0077cc;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;">Skibidi</div>
               <h1 style="margin:10px 0 14px;color:#0a2540;font-size:30px;line-height:1.2;">${safeAction} ${action === "departed" ? "from" : "at"} “${safeLocation}”</h1>
               <p style="margin:0;color:#526577;font-size:16px;line-height:1.6;">${escapeHtml(when)}</p>
               ${details ? `<p style="margin:8px 0 0;color:#526577;font-size:16px;line-height:1.6;">${escapeHtml(details)}</p>` : ""}
@@ -127,7 +140,7 @@ function buildNotification({ action, location, lat, lng, timestamp, litres }) {
             </td>
           </tr>
           <tr>
-            <td style="background:#eef6fa;padding:18px 30px;color:#64748b;font-size:12px;line-height:1.5;">Sent automatically from the Captain's Log.</td>
+            <td style="background:#eef6fa;padding:18px 30px;color:#64748b;font-size:12px;line-height:1.5;">Sent automatically from Skibidi.</td>
           </tr>
         </table>
       </td></tr>
@@ -147,9 +160,17 @@ function buildNotification({ action, location, lat, lng, timestamp, litres }) {
     .join("\n\n");
 
   return {
-    subject: `Captain's Log — ${headline}`,
+    subject: `Skibidi — ${headline}`,
     html,
     text,
+    attachments: [
+      {
+        content: LOGO_CONTENT,
+        contentType: "image/png",
+        filename: "skibidi.png",
+        contentId: LOGO_CONTENT_ID,
+      },
+    ],
   };
 }
 
@@ -175,7 +196,7 @@ async function sendLogNotification({ mode, idempotencyKey, ...details }) {
   const email = buildNotification(details);
   const { data, error } = await resend.emails.send(
     {
-      from: process.env.EMAIL_FROM,
+      from: brandedFromAddress(process.env.EMAIL_FROM),
       to,
       replyTo: process.env.EMAIL_REPLY_TO || undefined,
       ...email,
@@ -194,6 +215,8 @@ async function sendLogNotification({ mode, idempotencyKey, ...details }) {
 
 module.exports = {
   ACTION_LABELS,
+  BRAND_NAME,
+  brandedFromAddress,
   buildNotification,
   getNotificationRecipients,
   sendLogNotification,

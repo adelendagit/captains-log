@@ -38,6 +38,7 @@ router.get("/", async (req, res, next) => {
       lists,
       selectedList,
       showListSwitcher: Boolean(req.user),
+      user: req.user,
     });
   } catch (error) {
     next(error);

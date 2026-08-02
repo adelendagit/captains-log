@@ -8,6 +8,24 @@ const doneEmpty = document.getElementById("done-empty");
 const status = document.getElementById("todo-status");
 const doneSection = document.querySelector(".done-section");
 const addItemForm = document.getElementById("add-item-form");
+const userMenuButton = document.getElementById("user-menu-btn");
+const userDropdown = document.getElementById("user-dropdown");
+
+if (userMenuButton && userDropdown) {
+  userMenuButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    userDropdown.style.display =
+      userDropdown.style.display === "block" ? "none" : "block";
+  });
+  document.addEventListener("click", (event) => {
+    if (
+      !userMenuButton.contains(event.target) &&
+      !userDropdown.contains(event.target)
+    ) {
+      userDropdown.style.display = "none";
+    }
+  });
+}
 
 function updateCounts() {
   const open = openList.querySelectorAll(".todo-card").length;

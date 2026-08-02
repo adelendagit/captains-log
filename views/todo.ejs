@@ -5,15 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= selectedList.name %> · To-do</title>
     <link rel="icon" type="image/svg+xml" href="/icons/logo.svg">
+    <link rel="stylesheet" href="/css/captains-log.css">
     <link rel="stylesheet" href="/css/todo.css">
     <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js" defer></script>
     <script src="/js/todo.js" defer></script>
   </head>
   <body>
+    <div class="page">
+      <header class="site-header">
+        <div class="site-title">
+          <a href="https://where.is.achilleas.co.uk" class="site-title-link">Where is ...</a>
+        </div>
+        <div class="site-user">
+          <% if (user) { %>
+            <a href="/to-do" class="user-btn header-todo-link" aria-current="page">To Do</a>
+            <div class="user-menu">
+              <button class="user-btn logged-in" id="user-menu-btn" type="button">
+                <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
+              </button>
+              <div class="user-dropdown" id="user-dropdown" style="display:none;">
+                <form action="/auth/logout" method="get">
+                  <button type="submit" class="logout-btn">Log out</button>
+                </form>
+              </div>
+            </div>
+          <% } else { %>
+            <a href="/auth/trello" class="user-btn">viewing</a>
+          <% } %>
+        </div>
+      </header>
+
     <main class="todo-page" data-list-id="<%= selectedList.id %>">
       <header class="todo-header">
         <div>
-          <p class="eyebrow">Captain's Log</p>
+          <p class="eyebrow">Skibidi</p>
           <h1><%= selectedList.name %></h1>
         </div>
         <span id="todo-count" class="todo-count"><%= openCards.length %> open</span>
@@ -65,5 +90,6 @@
         <p id="done-empty" class="done-empty" <%= doneCards.length ? "hidden" : "" %>>No completed items yet.</p>
       </details>
     </main>
+    </div>
   </body>
 </html>

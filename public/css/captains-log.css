@@ -47,6 +47,7 @@ body {
 .site-user {
   display: flex;
   align-items: center;
+  gap: 0.6em;
 }
 
 .sortable-stop-row {

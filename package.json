@@ -1,7 +1,7 @@
 {
   "name": "captains-log",
   "version": "1.0.0",
-  "description": "Standalone Captain’s Log web app for planning and logging boat trips via Trello",
+  "description": "Standalone Skibidi web app for planning and logging boat trips via Trello",
   "main": "app.js",
   "scripts": {
     "dev": "nodemon app.js",

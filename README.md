@@ -1,4 +1,4 @@
-# Captain's Log
+# Skibidi
 
 This project now supports optional Trello authentication so that users can sign in with their Trello accounts. Without signing in the app continues to show read‑only board data; after authentication it will have read/write access to the user's Trello data which will enable future editing features.
 
@@ -73,7 +73,7 @@ SESSION_SECRET=<session secret>
 
 # Optional email notifications via Resend
 RESEND_API_KEY=<your Resend API key>
-EMAIL_FROM=Captain's Log <updates@your-verified-domain.example>
+EMAIL_FROM=updates@your-verified-domain.example
 EMAIL_REPLY_TO=<address used for replies and test notifications>
 EMAIL_RECIPIENTS_JSON={"Family":"family@example.com","Crew":"crew@example.com"}
 PUBLIC_SITE_URL=https://where.is.achilleas.co.uk
