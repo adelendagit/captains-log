@@ -18,18 +18,18 @@ async function fetchOpenTodoCards() {
     params: {
       ...credentials(),
       filter: "open",
-      fields: "id,name,desc,due,labels,pos,shortUrl",
+      fields: "id,name,desc,due,dueComplete,labels,pos,shortUrl",
     },
   });
 
-  return data.sort((a, b) => a.pos - b.pos);
+  return data.filter((card) => !card.dueComplete).sort((a, b) => a.pos - b.pos);
 }
 
 async function markTodoCardDone(cardId) {
   const { data: card } = await axios.get(`${API_BASE}/cards/${cardId}`, {
     params: {
       ...credentials(),
-      fields: "id,idList,closed",
+      fields: "id,idList,closed,dueComplete",
     },
   });
 
@@ -41,9 +41,9 @@ async function markTodoCardDone(cardId) {
     throw error;
   }
 
-  if (!card.closed) {
+  if (!card.closed && !card.dueComplete) {
     await axios.put(`${API_BASE}/cards/${cardId}`, null, {
-      params: { ...credentials(), closed: true },
+      params: { ...credentials(), dueComplete: true },
     });
   }
 }

@@ -1995,8 +1995,8 @@ function setupLocationLogControls() {
 
   detectBtn.addEventListener("click", detectLocation);
 
-  // Ask for the user's location as soon as the authenticated controls load.
-  // The button remains available for retrying after a denial, timeout, or move.
+  // These controls are only rendered for authenticated users. Ask for their
+  // location as soon as they load, while keeping the button available to retry.
   detectLocation();
 
   submitBtn.addEventListener("click", async () => {

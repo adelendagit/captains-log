@@ -73,7 +73,7 @@ If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to
 
 ## Public To-do Page
 
-`/to-do` lists the open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Marking a card done archives it in Trello. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can archive cards in that list.
+`/to-do` lists incomplete, open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Marking a card done sets its Trello `dueComplete` value without archiving it. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can complete cards in that list.
 
 ## Proposed Location-Aware Log Entry Flow
 
