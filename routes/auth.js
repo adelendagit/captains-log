@@ -11,10 +11,12 @@ const router = express.Router();
 router.get('/trello', (req, res, next) => {
   const strat = passport._strategy('trello');
   if (!strat) return res.status(503).send('Trello login not configured');
-  req.session.loginClient = req.query.client === 'ios' ? 'ios' : 'web';
+  const loginClient = req.query.client === 'ios' ? 'ios' : 'web';
+  req.session.loginClient = loginClient;
   const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const callbackURL = `${baseUrl}/auth/trello/callback${loginClient === 'ios' ? '?client=ios' : ''}`;
   passport.authenticate('trello', {
-    callbackURL: `${baseUrl}/auth/trello/callback`
+    callbackURL
   })(req, res, next);
 });
 
@@ -25,7 +27,7 @@ router.get('/trello/callback', (req, res, next) => {
   passport.authenticate('trello', { failureRedirect: '/login?error=trello' })(req, res, next);
 },
   (req, res) => {
-    if (req.session.loginClient === 'ios') {
+    if (req.query.client === 'ios' || req.session.loginClient === 'ios') {
       req.session.loginClient = null;
       return res.redirect('/auth/ios/complete');
     }
