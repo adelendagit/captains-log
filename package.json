@@ -9,7 +9,7 @@
     "lint": "eslint . --ext .js",
     "format": "prettier --write \"**/*.js\" \"**/*.ejs\"",
     "icons": "node scripts/generate-icons.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "node --test"
   },
   "engines": {
     "node": "24.x"

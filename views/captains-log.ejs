@@ -23,7 +23,12 @@
 <main class="page">
 
 <header class="site-header">
-  <div class="site-title"><a href="https://where.is.achilleas.co.uk" class="site-title-link">Where is ...</a></div>
+  <div class="site-title">
+    <a href="https://where.is.achilleas.co.uk" class="site-title-link">
+      <img src="/icons/logo.svg" alt="" class="site-logo">
+      <span><small>Where is</small>Skibidi</span>
+    </a>
+  </div>
   <div class="site-user">
    <% if (user) { %>
     <a href="/to-do" class="user-btn header-todo-link">To Do</a>
@@ -44,12 +49,27 @@
 </header>
 
 <div class="tab-nav">
-  <button data-tab="planning" class="active">Planning</button>
-  <button data-tab="historical">Trips</button>
-  <button data-tab="log">Log</button>
+  <button data-tab="planning" class="active">Chart</button>
+  <button data-tab="historical">Voyages</button>
+  <button data-tab="log">Logbook</button>
 </div>
 
 <section id="planning" class="tab-content">
+  <section id="live-journey" class="live-journey" aria-live="polite">
+    <div class="live-journey-copy">
+      <p class="chartroom-eyebrow">Current position</p>
+      <div class="live-journey-heading">
+        <span id="live-journey-indicator" class="live-indicator" aria-hidden="true"></span>
+        <h1 id="live-journey-title">Checking Skibidi’s position…</h1>
+      </div>
+      <p id="live-journey-message" class="live-journey-message">Connecting to the ship’s log.</p>
+    </div>
+    <dl class="live-journey-readings">
+      <div><dt>Last report</dt><dd id="live-journey-updated">—</dd></div>
+      <div><dt>Speed</dt><dd id="live-journey-speed">—</dd></div>
+      <div><dt>Course</dt><dd id="live-journey-course">—</dd></div>
+    </dl>
+  </section>
   <div class="planning-flex">
     <div id="map"></div>
     <div class="table-col">

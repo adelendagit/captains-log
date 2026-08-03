@@ -63,6 +63,7 @@ Set the following variables in a `.env` file or your environment:
 TRELLO_KEY=<your trello api key>
 TRELLO_TOKEN=<trello token with read/write access>
 TRELLO_BOARD_ID=<board id>
+TRELLO_JOURNEYS_LIST_ID=6a704f2decc154fd0a4b8550
 
 # Used for Trello OAuth login
 TRELLO_OAUTH_KEY=<your trello OAuth key>
@@ -88,6 +89,30 @@ the browser.
 ## Authentication
 
 If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to `/auth/trello` to start the OAuth flow. After authorizing, Trello will redirect back to `/auth/trello/callback` and your session will be authenticated.
+
+## Live Journeys
+
+Live tracking uses Trello as its only persistence layer. Starting a journey creates
+a card in the `Journeys` list. The card description stores the journey state and
+each accepted GPS sample is stored as a structured `position` comment.
+
+Authenticated Trello board members can use:
+
+- `POST /api/journeys/start` with an optional `{ "name": "..." }`
+- `POST /api/journeys/:cardId/positions` with latitude, longitude, timestamp,
+  accuracy, speed in knots, course, altitude and a unique sample ID
+- `POST /api/journeys/:cardId/end`
+
+`GET /api/journeys/current` is public and returns the active journey, its latest
+position and up to 100 recent track points. The chartroom polls this endpoint every
+30 seconds.
+
+The native SwiftUI project is at `ios/CaptainsLog.xcodeproj`. It signs in through
+the existing Trello OAuth flow, stores its encrypted app credential in the iOS
+Keychain, uploads at most one GPS position per minute, and queues up to 200 samples
+when offline. Open the project in Xcode, select a development team for the
+`CaptainsLog` target, and run it on an iPhone. Background GPS should be verified on
+a physical device before relying on it for a voyage.
 
 ## Public To-do Page
 

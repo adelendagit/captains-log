@@ -11,6 +11,7 @@ const TrelloStrategy = require('passport-trello').Strategy;
 const captainsLog = require('./routes/captainsLog');
 const auth      = require('./routes/auth');
 const todo      = require('./routes/todo');
+const journeys  = require('./routes/journeys');
 
 const app = express();
 //app.use(helmet());
@@ -106,6 +107,7 @@ if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
 app.set('trust proxy', true);
 app.use('/auth', auth);
 app.use('/to-do', todo);
+app.use('/api/journeys', journeys);
 app.use('/', captainsLog);
 
 // **AFTER** the static middleware, **before** your 404 handler

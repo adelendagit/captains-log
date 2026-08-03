@@ -21,6 +21,9 @@ let logRenderScheduled = false;
 let canPlan = false;
 let boardLabels = [];
 let currentStatus = null;
+let currentJourney = null;
+let journeyLayerGroup = null;
+let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
 let locationLogDraft = null;
@@ -38,6 +41,103 @@ const LOCATION_LOG_ACTIONS = {
   power: "Power",
   boom: "Boom",
 };
+
+function formatPositionAge(timestamp) {
+  if (!timestamp) return "No position yet";
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(timestamp)) / 1000));
+  if (seconds < 10) return "Just now";
+  if (seconds < 60) return `${seconds} seconds ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+}
+
+function renderJourneyStatus() {
+  const panel = document.getElementById("live-journey");
+  if (!panel) return;
+
+  const indicator = document.getElementById("live-journey-indicator");
+  const title = document.getElementById("live-journey-title");
+  const message = document.getElementById("live-journey-message");
+  const updated = document.getElementById("live-journey-updated");
+  const speed = document.getElementById("live-journey-speed");
+  const course = document.getElementById("live-journey-course");
+
+  panel.classList.toggle("is-live", Boolean(currentJourney?.active));
+  indicator.classList.toggle("is-live", Boolean(currentJourney?.active));
+
+  if (!currentJourney?.active) {
+    title.textContent = "Skibidi is not sharing a live journey";
+    message.textContent = "The chart will continue to show the latest logged voyage and planned stops.";
+    updated.textContent = "Offline";
+    speed.textContent = "—";
+    course.textContent = "—";
+    return;
+  }
+
+  title.textContent = currentJourney.journey.name;
+  if (!currentJourney.position) {
+    message.textContent = "The journey has started. Waiting for the first GPS report.";
+    updated.textContent = "Waiting";
+    speed.textContent = "—";
+    course.textContent = "—";
+    return;
+  }
+
+  const point = currentJourney.position;
+  message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
+  updated.textContent = formatPositionAge(point.timestamp);
+  speed.textContent = point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
+  course.textContent = point.course == null ? "—" : `${Math.round(point.course)}°`;
+}
+
+function renderJourneyOnMap() {
+  if (!leafletMap) return;
+  if (!journeyLayerGroup) {
+    journeyLayerGroup = L.layerGroup().addTo(leafletMap);
+  }
+  journeyLayerGroup.clearLayers();
+
+  if (!currentJourney?.active || !currentJourney.position) return;
+  const track = Array.isArray(currentJourney.track) ? currentJourney.track : [];
+  const coordinates = track.map((point) => [point.lat, point.lng]);
+  if (coordinates.length > 1) {
+    L.polyline(coordinates, {
+      color: "#e9784a",
+      weight: 4,
+      opacity: 0.85,
+    }).addTo(journeyLayerGroup);
+  }
+
+  const point = currentJourney.position;
+  L.marker([point.lat, point.lng], {
+    icon: L.divIcon({
+      className: "live-boat-marker",
+      html: '<span aria-hidden="true">⛵</span>',
+      iconSize: [42, 42],
+      iconAnchor: [21, 21],
+    }),
+  })
+    .addTo(journeyLayerGroup)
+    .bindPopup(
+      `<strong>${escapeMarkup(currentJourney.journey.name)}</strong><br>${escapeMarkup(formatPositionAge(point.timestamp))}`,
+    );
+}
+
+async function refreshCurrentJourney() {
+  try {
+    const response = await fetch("/api/journeys/current", {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error("Unable to load live journey");
+    currentJourney = await response.json();
+    renderJourneyStatus();
+    renderJourneyOnMap();
+  } catch (error) {
+    console.warn(error.message);
+  }
+}
 
 // Haversine → meters
 function haversine(lat1, lon1, lat2, lon2) {
@@ -547,6 +647,8 @@ function initMap(stops, places, logs = null) {
     logLayerGroup = L.layerGroup().addTo(map);
   }
 
+  renderJourneyOnMap();
+
   if (logs && Array.isArray(logs)) {
     // Find all arrived/visited logs, unique by cardId
     const arrived = logs
@@ -636,6 +738,7 @@ function initMap(stops, places, logs = null) {
       underwayMarker = null;
     }
     if (
+      !currentJourney?.position &&
       currentStatus &&
       currentStatus.status === "underway" &&
       currentStatus.from &&
@@ -2524,6 +2627,7 @@ function setupHistoricalTripLinks(stops = []) {
 async function init() {
   preloadAllLogs(); // Start loading logs in the background
 
+  await refreshCurrentJourney();
   const data = await fetchData();
   stops = data.stops;
   places = data.places;
@@ -2555,6 +2659,8 @@ async function init() {
   plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
 
   initTabs();
+
+  journeyRefreshInterval = setInterval(refreshCurrentJourney, 30000);
 }
 
 document.addEventListener("DOMContentLoaded", init);
