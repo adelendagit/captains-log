@@ -9,6 +9,7 @@
     "lint": "eslint . --ext .js",
     "format": "prettier --write \"**/*.js\" \"**/*.ejs\"",
     "icons": "node scripts/generate-icons.js",
+    "icons:ios": "node scripts/generate-ios-app-icon.js",
     "test": "node --test"
   },
   "engines": {
