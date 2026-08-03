@@ -53,43 +53,114 @@ function formatPositionAge(timestamp) {
   return `${hours} hour${hours === 1 ? "" : "s"} ago`;
 }
 
+function formatStatusDate(timestamp) {
+  if (!timestamp) return "Not recorded";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function placeSummary(place) {
+  const description = String(place?.desc || "")
+    .replace(/^#+\s*/gm, "")
+    .replace(/\[(.*?)\]\([^)]*\)/g, "$1")
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .find(Boolean);
+  if (description) return description.length > 180 ? `${description.slice(0, 177)}…` : description;
+  return place?.listName
+    ? `Skibidi’s last logged position in ${place.listName}.`
+    : "Skibidi’s last logged position.";
+}
+
+function isAnchorage(place) {
+  const words = [place?.listName, ...(place?.labels || []).map((label) => label.name)]
+    .filter(Boolean)
+    .join(" ");
+  return /anchor|anchorage|bay|harbour|harbor|marina|port/i.test(words);
+}
+
 function renderJourneyStatus() {
   const panel = document.getElementById("live-journey");
   if (!panel) return;
 
   const indicator = document.getElementById("live-journey-indicator");
+  const eyebrow = document.getElementById("live-journey-eyebrow");
   const title = document.getElementById("live-journey-title");
   const message = document.getElementById("live-journey-message");
   const updated = document.getElementById("live-journey-updated");
   const speed = document.getElementById("live-journey-speed");
   const course = document.getElementById("live-journey-course");
+  const updatedLabel = document.getElementById("live-journey-updated-label");
+  const speedLabel = document.getElementById("live-journey-speed-label");
+  const courseLabel = document.getElementById("live-journey-course-label");
 
   panel.classList.toggle("is-live", Boolean(currentJourney?.active));
+  panel.classList.toggle("is-anchored", !currentJourney?.active && currentStatus?.status === "arrived");
   indicator.classList.toggle("is-live", Boolean(currentJourney?.active));
+  indicator.classList.toggle("is-anchored", !currentJourney?.active && currentStatus?.status === "arrived");
 
-  if (!currentJourney?.active) {
-    title.textContent = "Skibidi is not sharing a live journey";
-    message.textContent = "The chart will continue to show the latest logged voyage and planned stops.";
-    updated.textContent = "Offline";
-    speed.textContent = "—";
-    course.textContent = "—";
+  if (currentJourney?.active) {
+    eyebrow.textContent = "Underway · Live position";
+    updatedLabel.textContent = "Last report";
+    speedLabel.textContent = "Speed";
+    courseLabel.textContent = "Course";
+    title.textContent = currentJourney.journey.name;
+    if (!currentJourney.position) {
+      message.textContent = "The journey has started. Waiting for the first GPS report.";
+      updated.textContent = "Waiting";
+      speed.textContent = "—";
+      course.textContent = "—";
+      return;
+    }
+
+    const point = currentJourney.position;
+    message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
+    updated.textContent = formatPositionAge(point.timestamp);
+    speed.textContent = point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
+    course.textContent = point.course == null ? "—" : `${Math.round(point.course)}°`;
     return;
   }
 
-  title.textContent = currentJourney.journey.name;
-  if (!currentJourney.position) {
-    message.textContent = "The journey has started. Waiting for the first GPS report.";
-    updated.textContent = "Waiting";
-    speed.textContent = "—";
-    course.textContent = "—";
+  if (currentStatus?.status === "arrived" && currentStatus.current) {
+    const place = currentStatus.current;
+    eyebrow.textContent = isAnchorage(place) ? "At anchor" : "Current stop";
+    title.textContent = place.name;
+    message.textContent = placeSummary(place);
+    updatedLabel.textContent = "Arrived";
+    speedLabel.textContent = "Visits";
+    courseLabel.textContent = "Area";
+    updated.textContent = formatStatusDate(currentStatus.arrivedAt);
+    const count = Math.max(1, Number(currentStatus.visitCount) || 1);
+    speed.textContent = `${count} ${count === 1 ? "visit" : "visits"}`;
+    course.textContent = place.listName || "—";
     return;
   }
 
-  const point = currentJourney.position;
-  message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
-  updated.textContent = formatPositionAge(point.timestamp);
-  speed.textContent = point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
-  course.textContent = point.course == null ? "—" : `${Math.round(point.course)}°`;
+  if (currentStatus?.status === "underway") {
+    const from = currentStatus.from?.name;
+    const destination = currentStatus.destination?.name || currentStatus.plannedDestination?.name;
+    eyebrow.textContent = "Underway · Last report";
+    title.textContent = from && destination ? `${from} → ${destination}` : destination || "Underway";
+    message.textContent = "Live GPS is not available; the chart shows the estimated passage.";
+    updatedLabel.textContent = "Departed";
+    speedLabel.textContent = "Destination";
+    courseLabel.textContent = "Position";
+    updated.textContent = formatStatusDate(currentStatus.departedAt);
+    speed.textContent = destination || "Not set";
+    course.textContent = "Estimated";
+    return;
+  }
+
+  eyebrow.textContent = "Last known position";
+  title.textContent = "Position not yet logged";
+  message.textContent = "The chart still shows planned stops and previous voyages.";
+  updatedLabel.textContent = "Last report";
+  speedLabel.textContent = "Status";
+  courseLabel.textContent = "Chart";
+  updated.textContent = "Not recorded";
+  speed.textContent = "Standing by";
+  course.textContent = "Available";
 }
 
 function renderJourneyOnMap() {
@@ -2633,6 +2704,7 @@ async function init() {
   places = data.places;
   currentStatus = data.currentStatus;
   boardLabels = data.boardLabels || boardLabels;
+  renderJourneyStatus();
 
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");

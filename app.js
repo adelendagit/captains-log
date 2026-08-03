@@ -12,6 +12,7 @@ const captainsLog = require('./routes/captainsLog');
 const auth      = require('./routes/auth');
 const todo      = require('./routes/todo');
 const journeys  = require('./routes/journeys');
+const { mobileBearerAuthentication } = require('./services/mobileAuth');
 
 const app = express();
 //app.use(helmet());
@@ -81,6 +82,7 @@ app.use(
 );
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(mobileBearerAuthentication);
 
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));

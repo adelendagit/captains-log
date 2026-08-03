@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published private(set) var currentJourney: CurrentJourneyResponse?
+    @Published private(set) var currentStatus: CurrentStatusResponse?
     @Published private(set) var isTracking = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
@@ -26,7 +27,10 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
 
     func refresh() async {
         do {
-            currentJourney = try await authentication.api.currentJourney(token: authentication.token)
+            async let journey = authentication.api.currentJourney(token: authentication.token)
+            async let status = authentication.api.currentStatus(token: authentication.token)
+            currentJourney = try await journey
+            currentStatus = try await status
             if currentJourney?.active == false { stopLocationUpdates() }
         } catch {
             errorMessage = error.localizedDescription

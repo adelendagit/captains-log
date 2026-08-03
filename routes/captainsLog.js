@@ -10,6 +10,10 @@ const {
 } = require("../services/trello");
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 
+let currentStopCache = null;
+let currentStopCacheExpiresAt = 0;
+let currentStopRequest = null;
+
 function extractTimestamp(text, fallback, cardId) {
   const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
   if (match) {
@@ -99,6 +103,7 @@ function buildStopPayload(card, listNames, customFields) {
     trelloUrl: card.shortUrl,
     navilyUrl: getCFTextOrDropdown(card, customFields, "Navily"),
     rating: ratingNum,
+    desc: card.desc || "",
     labels,
   };
 }
@@ -154,9 +159,42 @@ function deriveCurrentStatus(cards, lists, customFields, comments) {
       customFields,
     );
     result.destination = plannedDestination;
+    result.arrivedAt = lastArrived.ts;
+    const currentCardId = lastArrived.data.card.id;
+    result.visitCount = actions.filter(
+      (action) =>
+        action.data.card.id === currentCardId &&
+        /^(arrived|visited)\b/i.test(action.data.text),
+    ).length;
   }
 
   return result;
+}
+
+async function getCurrentStatus() {
+  if (currentStopCache && Date.now() < currentStopCacheExpiresAt) {
+    return currentStopCache;
+  }
+  if (currentStopRequest) return currentStopRequest;
+
+  currentStopRequest = (async () => {
+    const { cards, lists, customFields, allComments } =
+      await fetchBoardWithAllComments();
+    currentStopCache = deriveCurrentStatus(
+      cards,
+      lists,
+      customFields,
+      allComments,
+    );
+    currentStopCacheExpiresAt = Date.now() + 30_000;
+    return currentStopCache;
+  })();
+
+  try {
+    return await currentStopRequest;
+  } finally {
+    currentStopRequest = null;
+  }
 }
 
 function buildLogsFromComments(actions, cards, listNames, customFields) {
@@ -562,12 +600,38 @@ router.get("/api/logs/stream", async (req, res, next) => {
 // Determine current status and stop based on recent comments
 router.get("/api/current-stop", async (req, res, next) => {
   try {
-    const { cards, lists, customFields } = await fetchBoard();
-    const comments = await fetchRecentComments(100);
-    const result = deriveCurrentStatus(cards, lists, customFields, comments);
+    const result = await getCurrentStatus();
+    res.set("Cache-Control", "public, max-age=30");
     res.json(result);
   } catch (err) {
     next(err);
+  }
+});
+
+router.get("/api/voyages", async (req, res, next) => {
+  try {
+    const { cards, lists } = await fetchBoard();
+    const tripsList = lists.find((list) => list.name === "Trips");
+    const voyages = tripsList
+      ? cards
+          .filter((card) => card.idList === tripsList.id)
+          .map((card) => ({
+            id: card.id,
+            name: card.name,
+            start: card.start,
+            end: card.due,
+            desc: card.desc || "",
+          }))
+          .filter((voyage) => voyage.start || voyage.end)
+          .sort(
+            (a, b) =>
+              new Date(b.start || b.end) - new Date(a.start || a.end),
+          )
+      : [];
+    res.set("Cache-Control", "public, max-age=60");
+    res.json({ voyages });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -790,6 +854,9 @@ router.post("/api/log-entry", async (req, res, next) => {
       params: { text },
       headers,
     });
+
+    currentStopCache = null;
+    currentStopCacheExpiresAt = 0;
 
     res.json({ success: true, comment: text });
   } catch (error) {

@@ -14,6 +14,7 @@
 		A20000000000000000000005 /* JourneyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* JourneyTracker.swift */; };
 		A20000000000000000000006 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* ContentView.swift */; };
 		A20000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* Assets.xcassets */; };
+		A20000000000000000000008 /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* FeatureViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		A10000000000000000000008 /* CaptainsLog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CaptainsLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000010 /* CaptainsLog.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CaptainsLog.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000011 /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +59,7 @@
 				A10000000000000000000004 /* Authentication.swift */,
 				A10000000000000000000005 /* JourneyTracker.swift */,
 				A10000000000000000000006 /* ContentView.swift */,
+				A10000000000000000000011 /* FeatureViews.swift */,
 				A10000000000000000000007 /* Info.plist */,
 				A10000000000000000000009 /* Assets.xcassets */,
 				A10000000000000000000010 /* CaptainsLog.entitlements */,
@@ -147,6 +150,7 @@
 				A20000000000000000000004 /* Authentication.swift in Sources */,
 				A20000000000000000000005 /* JourneyTracker.swift in Sources */,
 				A20000000000000000000006 /* ContentView.swift in Sources */,
+				A20000000000000000000008 /* FeatureViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1619,6 +1619,17 @@ body {
   box-shadow: 0 0 0 6px rgba(233, 120, 74, 0.17);
 }
 
+.live-indicator.is-anchored {
+  background: #61c6b9;
+  box-shadow: 0 0 0 6px rgba(97, 198, 185, 0.16);
+}
+
+.live-journey.is-anchored {
+  background:
+    radial-gradient(circle at 88% 20%, rgba(97, 198, 185, 0.16), transparent 15rem),
+    linear-gradient(115deg, rgba(11, 41, 54, 0.98), rgba(25, 91, 100, 0.94));
+}
+
 .live-journey-message {
   margin: 0.65rem 0 0 1.55rem;
   color: #c1d6d5;

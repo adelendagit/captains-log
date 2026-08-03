@@ -45,6 +45,25 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+router.get("/api/data", async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const lists = await getAvailableLists(req.user);
+    const payload = await Promise.all(
+      lists.map(async (list) => ({
+        ...list,
+        cards: await fetchTodoCards(list.id),
+      })),
+    );
+    res.set("Cache-Control", "no-store");
+    res.json({ lists: payload });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/items", async (req, res, next) => {
   try {
     if (!req.user) {

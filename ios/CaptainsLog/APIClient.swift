@@ -40,6 +40,88 @@ final class APIClient: Sendable {
         try await send(path: "api/journeys/current", token: token)
     }
 
+    func currentStatus(token: String?) async throws -> CurrentStatusResponse {
+        try await send(path: "api/current-stop", token: token)
+    }
+
+    func planning(token: String) async throws -> PlanningResponse {
+        try await send(path: "api/data", token: token)
+    }
+
+    func voyages(token: String) async throws -> VoyagesResponse {
+        try await send(path: "api/voyages", token: token)
+    }
+
+    func logs(token: String) async throws -> LogsResponse {
+        try await send(
+            path: "api/logs",
+            queryItems: [URLQueryItem(name: "trip", value: "all")],
+            token: token
+        )
+    }
+
+    func todoData(token: String) async throws -> TodoDataResponse {
+        try await send(path: "to-do/api/data", token: token)
+    }
+
+    func planStop(cardID: String, due: Date, token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "api/plan-stop",
+            method: "POST",
+            encodableBody: PlanStopBody(cardId: cardID, due: due),
+            token: token
+        )
+    }
+
+    func removeStop(cardID: String, token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "api/remove-stop",
+            method: "POST",
+            body: ["cardId": cardID],
+            token: token
+        )
+    }
+
+    func addTodo(name: String, listID: String, token: String) async throws {
+        let _: CreateTodoResponse = try await send(
+            path: "to-do/items",
+            method: "POST",
+            body: ["name": name, "listId": listID],
+            token: token
+        )
+    }
+
+    func setTodoCompletion(cardID: String, complete: Bool, token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "to-do/\(cardID)/completion",
+            method: "POST",
+            encodableBody: TodoCompletionBody(complete: complete),
+            token: token
+        )
+    }
+
+    func addLogEntry(
+        action: String,
+        cardID: String,
+        latitude: Double,
+        longitude: Double,
+        token: String
+    ) async throws {
+        let _: SuccessResponse = try await send(
+            path: "api/log-entry",
+            method: "POST",
+            encodableBody: LogEntryBody(
+                action: action,
+                cardId: cardID,
+                lat: latitude,
+                lng: longitude,
+                timestamp: Date(),
+                source: "ios"
+            ),
+            token: token
+        )
+    }
+
     func startJourney(name: String, token: String) async throws -> StartJourneyResponse {
         try await send(
             path: "api/journeys/start",
@@ -71,10 +153,11 @@ final class APIClient: Sendable {
         path: String,
         method: String = "GET",
         body: [String: String]? = nil,
+        queryItems: [URLQueryItem] = [],
         token: String?
     ) async throws -> Response {
         let data = body.map { try? JSONEncoder.captainsLog.encode($0) } ?? nil
-        return try await request(path: path, method: method, data: data, token: token)
+        return try await request(path: path, method: method, data: data, queryItems: queryItems, token: token)
     }
 
     private func send<Response: Decodable, Body: Encodable>(
@@ -87,6 +170,7 @@ final class APIClient: Sendable {
             path: path,
             method: method,
             data: JSONEncoder.captainsLog.encode(encodableBody),
+            queryItems: [],
             token: token
         )
     }
@@ -95,9 +179,11 @@ final class APIClient: Sendable {
         path: String,
         method: String,
         data: Data?,
+        queryItems: [URLQueryItem],
         token: String?
     ) async throws -> Response {
-        var request = URLRequest(url: baseURL.appending(path: path))
+        let url = baseURL.appending(path: path).appending(queryItems: queryItems)
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = data
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -118,4 +204,27 @@ final class APIClient: Sendable {
 
 private struct PositionAcceptedResponse: Codable {
     let success: Bool
+}
+
+private struct PlanStopBody: Codable {
+    let cardId: String
+    let due: Date
+}
+
+private struct TodoCompletionBody: Codable {
+    let complete: Bool
+}
+
+private struct CreateTodoResponse: Codable {
+    let success: Bool
+    let cardId: String
+}
+
+private struct LogEntryBody: Codable {
+    let action: String
+    let cardId: String
+    let lat: Double
+    let lng: Double
+    let timestamp: Date
+    let source: String
 }
