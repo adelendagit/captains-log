@@ -5,7 +5,6 @@ const morgan    = require('morgan');
 const compression = require('compression');
 const path      = require('path');
 const session   = require('express-session');
-const FileStore = require('session-file-store')(session);
 const passport  = require('passport');
 const TrelloStrategy = require('passport-trello').Strategy;
 const captainsLog = require('./routes/captainsLog');
@@ -13,6 +12,7 @@ const auth      = require('./routes/auth');
 const todo      = require('./routes/todo');
 const journeys  = require('./routes/journeys');
 const { mobileBearerAuthentication } = require('./services/mobileAuth');
+const { SESSION_TTL_MS, createSessionStore } = require('./services/sessionStore');
 
 const app = express();
 //app.use(helmet());
@@ -69,15 +69,21 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 
-const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+const sessionStore = createSessionStore(session);
 
 app.use(
   session({
-    store: new FileStore({}),
+    store: sessionStore.store,
     secret: process.env.SESSION_SECRET || 'trellosession',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: thirtyDays }
+    rolling: true,
+    cookie: {
+      maxAge: SESSION_TTL_MS,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production'
+    }
   })
 );
 app.use(passport.initialize());
@@ -93,7 +99,7 @@ if (process.env.TRELLO_OAUTH_KEY && process.env.TRELLO_OAUTH_SECRET) {
       {
         consumerKey: process.env.TRELLO_OAUTH_KEY,
         consumerSecret: process.env.TRELLO_OAUTH_SECRET,
-        trelloParams: { scope: 'read,write', expiration: '30days' }
+        trelloParams: { scope: 'read,write', expiration: 'never' }
       },
       (token, tokenSecret, profile, done) => {
         profile.token = token;
@@ -128,4 +134,15 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));
+sessionStore.ready
+  .then(() => {
+    app.listen(PORT, () =>
+      console.log(
+        `Listening on http://localhost:${PORT} with ${sessionStore.kind} sessions`,
+      ),
+    );
+  })
+  .catch((error) => {
+    console.error("Unable to initialize the session store:", error.message);
+    process.exitCode = 1;
+  });

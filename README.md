@@ -71,6 +71,10 @@ TRELLO_OAUTH_SECRET=<your trello OAuth secret>
 
 # Session/host configuration
 SESSION_SECRET=<session secret>
+# Preferred production session store. Railway's private REDIS_URL is supported.
+REDIS_URL=redis://default:password@redis.railway.internal:6379
+# Optional file-store fallback when REDIS_URL is absent.
+SESSION_DIR=/var/lib/captains-log/sessions
 
 # Optional email notifications via Resend
 RESEND_API_KEY=<your Resend API key>
@@ -89,6 +93,20 @@ the browser.
 ## Authentication
 
 If `TRELLO_OAUTH_KEY` and `TRELLO_OAUTH_SECRET` are provided you can navigate to `/auth/trello` to start the OAuth flow. After authorizing, Trello will redirect back to `/auth/trello/callback` and your session will be authenticated.
+
+New Trello authorizations request `expiration=never`, so the Trello token does
+not expire on a timer. A token can still stop working if the member revokes the
+application in Trello or if Trello invalidates it. Authorizations created before
+this setting was deployed retain their original expiry and must be renewed once.
+
+Login cookies use the browser-supported 400-day maximum and are renewed on
+every visit, making active logins effectively indefinite. When `REDIS_URL` is
+set, Express sessions are stored in Redis and the server waits for Redis before
+accepting requests. Keep `SESSION_SECRET` and the Redis data unchanged between
+releases. Redis must have persistence configured if sessions should survive a
+restart of the Redis service itself. Without `REDIS_URL`, development falls back
+to `SESSION_DIR`. A user who does not visit for more than 400 days or clears
+browser data will need to sign in again.
 
 ## Live Journeys
 
