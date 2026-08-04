@@ -17,7 +17,9 @@ let logLayerGroup = null;
 
 let mostRecentTripRange = null;
 let logRenderScheduled = false;
+let logPlanningMapUpdateScheduled = false;
 let logsLoadStarted = false;
+let receivedFreshLogBatch = false;
 
 let canPlan = false;
 let boardLabels = [];
@@ -29,6 +31,8 @@ let underwayMarker = null;
 let underwayInterval = null;
 const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const LOGBOOK_CACHE_KEY = "captains-log:logbook-snapshot:v1";
+const LOGBOOK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOCATION_LOG_ACTIONS = {
   arrived: "Arrived",
   departed: "Departed",
@@ -534,13 +538,18 @@ function showLabelEditor(targetEl, cardId, currentIds) {
 async function preloadAllLogs() {
   if (logsLoadStarted) return;
   logsLoadStarted = true;
+  setLogLoadingStatus(
+    allLogsCache ? "Updating logbook in the background…" : "Loading recent logbook entries…",
+  );
 
   if (window.EventSource) {
     const source = new EventSource("/api/logs/stream?trip=all");
     source.addEventListener("batch", (event) => {
       const payload = JSON.parse(event.data);
-      if (allLogsCache === null) {
+      const isFirstFreshBatch = !receivedFreshLogBatch;
+      if (isFirstFreshBatch) {
         allLogsCache = [];
+        receivedFreshLogBatch = true;
       }
       if (Array.isArray(payload.logs)) {
         allLogsCache.push(...payload.logs);
@@ -548,13 +557,17 @@ async function preloadAllLogs() {
       if (payload.mostRecentTripRange) {
         mostRecentTripRange = payload.mostRecentTripRange;
       }
+      if (isFirstFreshBatch) writeLogbookSnapshot();
+      setLogLoadingStatus(`Loaded ${allLogsCache.length} entries; loading older entries…`);
       scheduleLogRender();
     });
     source.addEventListener("done", () => {
       if (allLogsCache === null) {
         allLogsCache = [];
       }
-      scheduleLogRender();
+      writeLogbookSnapshot();
+      setLogLoadingStatus("");
+      scheduleLogRender({ updatePlanningMap: true });
       source.close();
     });
     source.onerror = (err) => {
@@ -563,7 +576,8 @@ async function preloadAllLogs() {
       if (allLogsCache === null) {
         allLogsCache = [];
       }
-      scheduleLogRender();
+      setLogLoadingStatus("Logbook refresh failed; showing saved entries.");
+      scheduleLogRender({ updatePlanningMap: true });
     };
     return;
   }
@@ -573,11 +587,65 @@ async function preloadAllLogs() {
     const json = await res.json();
     allLogsCache = json.logs || [];
     mostRecentTripRange = json.mostRecentTripRange || null;
-    scheduleLogRender();
+    writeLogbookSnapshot();
+    setLogLoadingStatus("");
+    scheduleLogRender({ updatePlanningMap: true });
   } catch (err) {
     console.error("Failed to preload logs:", err);
-    allLogsCache = [];
+    if (allLogsCache === null) allLogsCache = [];
+    setLogLoadingStatus("Logbook refresh failed; showing saved entries.");
   }
+}
+
+function readLogbookSnapshot() {
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(LOGBOOK_CACHE_KEY));
+    if (
+      !snapshot ||
+      !Array.isArray(snapshot.logs) ||
+      !Number.isFinite(snapshot.savedAt) ||
+      Date.now() - snapshot.savedAt > LOGBOOK_CACHE_MAX_AGE_MS
+    ) {
+      return null;
+    }
+    return snapshot;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeLogbookSnapshot() {
+  try {
+    localStorage.setItem(
+      LOGBOOK_CACHE_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        logs: allLogsCache || [],
+        mostRecentTripRange,
+      }),
+    );
+  } catch (_error) {
+    // A full history may exceed the browser quota. Keep a useful recent slice.
+    try {
+      localStorage.setItem(
+        LOGBOOK_CACHE_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          logs: (allLogsCache || []).slice(0, 500),
+          mostRecentTripRange,
+        }),
+      );
+    } catch (_fallbackError) {
+      // Logbook loading remains available without persistent storage.
+    }
+  }
+}
+
+function setLogLoadingStatus(message) {
+  const status = document.getElementById("log-loading-status");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("hidden", !message);
 }
 
 function isLogTabActive() {
@@ -585,7 +653,8 @@ function isLogTabActive() {
   return logSection && !logSection.classList.contains("hidden");
 }
 
-function scheduleLogRender() {
+function scheduleLogRender({ updatePlanningMap = false } = {}) {
+  logPlanningMapUpdateScheduled ||= updatePlanningMap;
   if (logRenderScheduled) return;
   logRenderScheduled = true;
   requestAnimationFrame(() => {
@@ -593,9 +662,10 @@ function scheduleLogRender() {
     if (isLogTabActive()) {
       renderFilteredLogs(stops);
     }
-    if (leafletMap) {
+    if (logPlanningMapUpdateScheduled && leafletMap) {
       renderMapWithToggle();
     }
+    logPlanningMapUpdateScheduled = false;
   });
 }
 
@@ -2629,6 +2699,12 @@ async function init() {
     renderTable(stops, parseFloat(speedInput.value));
   }
 
+  const logbookSnapshot = readLogbookSnapshot();
+  if (logbookSnapshot) {
+    allLogsCache = logbookSnapshot.logs;
+    mostRecentTripRange = logbookSnapshot.mostRecentTripRange || null;
+  }
+
   setupLogTab();
   setupLogWizard();
   initTabs();
@@ -2655,6 +2731,13 @@ async function init() {
     renderTable(stops, parseFloat(speedInput.value));
   } catch (error) {
     console.warn(error.message);
+  }
+
+  const warmLogbook = () => preloadAllLogs();
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(warmLogbook, { timeout: 1500 });
+  } else {
+    setTimeout(warmLogbook, 250);
   }
 
   // Update on speed change:

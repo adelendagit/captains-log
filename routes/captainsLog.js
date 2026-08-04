@@ -572,7 +572,12 @@ router.get("/api/logs/stream", async (req, res, next) => {
     });
 
     while (keepGoing && !clientClosed) {
-      const { data, done, nextBefore } = await fetchCommentPage({ before });
+      // Return a small recent batch quickly, then continue loading the older
+      // history in larger pages while the user can already use the Logbook.
+      const { data, done, nextBefore } = await fetchCommentPage({
+        before,
+        limit: sentMeta ? 1000 : 100,
+      });
       const logs = buildLogsFromComments(data, cards, listNames, customFields);
       const payload = { logs };
       if (!sentMeta) {
