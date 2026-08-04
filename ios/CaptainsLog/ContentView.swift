@@ -79,6 +79,7 @@ private struct CurrentPositionView: View {
     @State private var journeyName = ""
     @State private var camera: MapCameraPosition = .automatic
     @State private var mapViewportSource: String?
+    @State private var hasPlannedStops: Bool?
 
     private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -114,10 +115,10 @@ private struct CurrentPositionView: View {
                 }
             }
             .task {
-                await tracker.refresh()
+                await refreshMapData()
                 tracker.resumeTracking()
             }
-            .refreshable { await tracker.refresh() }
+            .refreshable { await refreshMapData() }
         }
     }
 
@@ -185,11 +186,14 @@ private struct CurrentPositionView: View {
     }
 
     private var mapFocusKey: String {
+        if hasPlannedStops == true { return "planned-stops" }
+        if hasPlannedStops == nil { return "loading-plan" }
         guard let focus = mapFocus else { return "none" }
         return "\(focus.source):\(focus.coordinate.latitude):\(focus.coordinate.longitude)"
     }
 
     private var mapFocus: (coordinate: CLLocationCoordinate2D, source: String)? {
+        guard hasPlannedStops == false else { return nil }
         if let point = tracker.currentJourney?.position {
             return (point.coordinate, "live")
         }
@@ -200,6 +204,12 @@ private struct CurrentPositionView: View {
     }
 
     private func focusMapOnCurrentPosition() {
+        if hasPlannedStops == true {
+            camera = .automatic
+            mapViewportSource = nil
+            return
+        }
+
         guard let focus = mapFocus else { return }
         guard mapViewportSource != "live", mapViewportSource != focus.source else { return }
 
@@ -211,6 +221,22 @@ private struct CurrentPositionView: View {
             )
         )
         mapViewportSource = focus.source
+    }
+
+    @MainActor private func refreshMapData() async {
+        async let trackerRefresh: Void = tracker.refresh()
+        async let planningRefresh: Void = refreshPlanningStatus()
+        _ = await (trackerRefresh, planningRefresh)
+    }
+
+    @MainActor private func refreshPlanningStatus() async {
+        guard let token = authentication.token else { return }
+        do {
+            hasPlannedStops = try await authentication.api.planning(token: token).stops.isEmpty == false
+        } catch {
+            // Keep automatic map framing when planning data is unavailable.
+            hasPlannedStops = nil
+        }
     }
 
     @ViewBuilder

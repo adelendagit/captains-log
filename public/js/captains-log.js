@@ -12,6 +12,7 @@ let allLogsCache = null; // Store all logs here
 let stops = [];
 let places = [];
 let plannedOnlyToggle = null;
+let planningDataLoaded = false;
 
 let logLayerGroup = null;
 
@@ -205,6 +206,8 @@ function renderJourneyOnMap() {
 }
 
 function getPlanningMapFocus() {
+  if (!planningDataLoaded || stops.length > 0) return null;
+
   const livePosition = currentJourney?.active && currentJourney.position;
   if (
     livePosition &&
@@ -2744,6 +2747,7 @@ async function init() {
   if (snapshot) {
     stops = snapshot.stops;
     places = snapshot.places;
+    planningDataLoaded = true;
     currentStatus = snapshot.currentStatus || null;
     if (stops.length === 0) plannedOnlyToggle.checked = false;
     renderJourneyStatus();
@@ -2772,6 +2776,7 @@ async function init() {
     const data = await dataPromise;
     stops = data.stops;
     places = data.places;
+    planningDataLoaded = true;
     boardLabels = data.boardLabels || boardLabels;
 
     // When there are no planned stops, show all places so users can plan the first one
