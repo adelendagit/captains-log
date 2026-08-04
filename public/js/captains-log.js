@@ -27,6 +27,8 @@ let journeyLayerGroup = null;
 let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
+const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
+const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOCATION_LOG_ACTIONS = {
   arrived: "Arrived",
   departed: "Departed",
@@ -330,13 +332,61 @@ async function fetchData() {
   return data;
 }
 
+function readChartSnapshot() {
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(CHART_CACHE_KEY));
+    if (
+      !snapshot ||
+      !Array.isArray(snapshot.stops) ||
+      !Array.isArray(snapshot.places) ||
+      !Number.isFinite(snapshot.savedAt) ||
+      Date.now() - snapshot.savedAt > CHART_CACHE_MAX_AGE_MS
+    ) {
+      return null;
+    }
+    return snapshot;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeChartSnapshot() {
+  try {
+    localStorage.setItem(
+      CHART_CACHE_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        stops,
+        places,
+        currentStatus,
+      }),
+    );
+  } catch (_error) {
+    // Storage can be unavailable in private browsing; fresh data still works.
+  }
+}
+
+function resetPlanningMap() {
+  if (underwayInterval) {
+    clearInterval(underwayInterval);
+    underwayInterval = null;
+  }
+  if (leafletMap) leafletMap.remove();
+  leafletMap = null;
+  journeyLayerGroup = null;
+  logLayerGroup = null;
+  underwayMarker = null;
+}
+
 async function refreshCurrentStatus() {
   try {
     const response = await fetch("/api/current-stop");
     if (!response.ok) throw new Error("Unable to load current stop");
     currentStatus = await response.json();
+    writeChartSnapshot();
     renderJourneyStatus();
     if (plannedOnlyToggle) {
+      resetPlanningMap();
       renderMapWithToggle();
       const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
       renderTable(stops, speed);
@@ -2008,7 +2058,7 @@ function renderFilteredLogs(stops = []) {
   }
 }
 
-function setupLogTab(stops = []) {
+function setupLogTab() {
   const tabSelector = '[data-tab="log"]';
   const btn = document.querySelector(tabSelector);
   if (!btn) return;
@@ -2565,24 +2615,47 @@ async function loadVoyages() {
 }
 
 async function init() {
-  const data = await fetchData();
-  stops = data.stops;
-  places = data.places;
-  boardLabels = data.boardLabels || boardLabels;
-  renderJourneyStatus();
-
   const speedInput = document.getElementById("speed-input");
   plannedOnlyToggle = document.getElementById("planned-only-toggle");
 
-  // When there are no planned stops, show all places so users can plan the first one
-  if (stops.length === 0) {
-    plannedOnlyToggle.checked = false;
+  const snapshot = readChartSnapshot();
+  if (snapshot) {
+    stops = snapshot.stops;
+    places = snapshot.places;
+    currentStatus = snapshot.currentStatus || null;
+    if (stops.length === 0) plannedOnlyToggle.checked = false;
+    renderJourneyStatus();
+    renderMapWithToggle();
+    renderTable(stops, parseFloat(speedInput.value));
   }
 
-  renderMapWithToggle();
-  renderTable(stops, parseFloat(speedInput.value));
-  setupLogTab(stops);
+  setupLogTab();
   setupLogWizard();
+  initTabs();
+
+  // Start independent requests together. None of these need to hold up the
+  // cached chart or the navigation becoming interactive.
+  const dataPromise = fetchData();
+  refreshCurrentJourney();
+  refreshCurrentStatus();
+  loadVoyages();
+
+  try {
+    const data = await dataPromise;
+    stops = data.stops;
+    places = data.places;
+    boardLabels = data.boardLabels || boardLabels;
+
+    // When there are no planned stops, show all places so users can plan the first one
+    if (stops.length === 0) plannedOnlyToggle.checked = false;
+
+    writeChartSnapshot();
+    resetPlanningMap();
+    renderMapWithToggle();
+    renderTable(stops, parseFloat(speedInput.value));
+  } catch (error) {
+    console.warn(error.message);
+  }
 
   // Update on speed change:
   speedInput.addEventListener("input", () => {
@@ -2593,13 +2666,6 @@ async function init() {
 
   plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
 
-  initTabs();
-
-  // Current position and live journey data improve the initial chart once they
-  // arrive, but no longer block the chart and planning data from rendering.
-  refreshCurrentJourney();
-  refreshCurrentStatus();
-  loadVoyages();
   journeyRefreshInterval = setInterval(refreshCurrentJourney, 30000);
 }
 

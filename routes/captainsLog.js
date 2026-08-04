@@ -14,6 +14,7 @@ const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
 let currentStopRequest = null;
+const CURRENT_STATUS_COMMENT_LIMIT = 200;
 
 function extractTimestamp(text, fallback, cardId) {
   const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
@@ -181,7 +182,7 @@ async function getCurrentStatus() {
   currentStopRequest = (async () => {
     const [{ cards, lists, customFields }, recentComments] = await Promise.all([
       fetchBoard(),
-      fetchRecentComments(1000),
+      fetchRecentComments(CURRENT_STATUS_COMMENT_LIMIT),
     ]);
     currentStopCache = deriveCurrentStatus(
       cards,
@@ -380,13 +381,7 @@ router.get("/api/data", async (req, res, next) => {
       labels: boardLabelsRaw,
     } = await fetchBoard();
 
-    console.log(
-      "Custom field definitions:",
-      customFields.map((f) => f.name),
-    );
-
     const tripsListId = lists.find((l) => l.name === "Trips").id;
-    console.log("Trips list ID:", tripsListId);
 
     // map of list IDs → names
     const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
@@ -396,8 +391,6 @@ router.get("/api/data", async (req, res, next) => {
       .map((c) => {
         const ratingText = getCFTextOrDropdown(c, customFields, "⭐️");
         const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
-        console.log(`Card "${c.name}" → dropdown text:`, ratingText);
-
         const labels = (c.labels || []).map((l) => ({
           id: l.id,
           name: l.name,

@@ -6,10 +6,11 @@ const TOKEN = process.env.TRELLO_TOKEN;
 
 const BASE_URL = `https://api.trello.com/1/boards/${BOARD_ID}`;
 const COMMON_QUERY =
-  `&cards=open&card_customFieldItems=true&lists=open&fields=all` +
-  `&customFields=true&members=all&labels=all`;
+  `&cards=open&card_fields=id,name,desc,idList,due,dueComplete,start,labels,shortUrl,closed` +
+  `&card_customFieldItems=true&lists=open&list_fields=id,name,closed&fields=id` +
+  `&customFields=true&members=all&labels=all&label_fields=id,name,color`;
 
-const BOARD_CACHE_TTL_MS = 5_000;
+const BOARD_CACHE_TTL_MS = 60_000;
 let boardCache = null;
 let boardCacheExpiresAt = 0;
 let boardRequest = null;
