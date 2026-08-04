@@ -240,9 +240,9 @@ function focusPlanningMapOnCurrentPosition() {
     return true;
   }
 
-  const bounds = L.circle([focus.lat, focus.lng], {
-    radius: INITIAL_MAP_RADIUS_METERS,
-  }).getBounds();
+  const bounds = L.latLng(focus.lat, focus.lng).toBounds(
+    INITIAL_MAP_RADIUS_METERS * 2,
+  );
   leafletMap.fitBounds(bounds, { animate: false });
   planningMapViewportSource = focus.source;
   return true;
