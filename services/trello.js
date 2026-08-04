@@ -9,6 +9,11 @@ const COMMON_QUERY =
   `&cards=open&card_customFieldItems=true&lists=open&fields=all` +
   `&customFields=true&members=all&labels=all`;
 
+const BOARD_CACHE_TTL_MS = 5_000;
+let boardCache = null;
+let boardCacheExpiresAt = 0;
+let boardRequest = null;
+
 function filterCardsToOpenLists(board) {
   const openListIds = new Set(board.lists.map((list) => list.id));
   board.cards = board.cards.filter((card) => openListIds.has(card.idList));
@@ -19,9 +24,27 @@ function buildQuery(key, token) {
 }
 
 async function fetchBoard() {
-  const { data } = await axios.get(BASE_URL + buildQuery(KEY, TOKEN));
-  filterCardsToOpenLists(data);
-  return data;
+  if (boardCache && Date.now() < boardCacheExpiresAt) return boardCache;
+  if (boardRequest) return boardRequest;
+
+  boardRequest = axios
+    .get(BASE_URL + buildQuery(KEY, TOKEN))
+    .then(({ data }) => {
+      filterCardsToOpenLists(data);
+      boardCache = data;
+      boardCacheExpiresAt = Date.now() + BOARD_CACHE_TTL_MS;
+      return data;
+    })
+    .finally(() => {
+      boardRequest = null;
+    });
+
+  return boardRequest;
+}
+
+function invalidateBoardCache() {
+  boardCache = null;
+  boardCacheExpiresAt = 0;
 }
 
 async function fetchBoardWithCredentials(key, token) {
@@ -88,4 +111,5 @@ module.exports = {
   fetchBoardWithCredentials,
   fetchCommentPage,
   fetchRecentComments,
+  invalidateBoardCache,
 };

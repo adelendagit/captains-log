@@ -7,6 +7,7 @@ const {
   fetchCommentPage,
   fetchRecentComments,
   fetchBoardWithCredentials,
+  invalidateBoardCache,
 } = require("../services/trello");
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 
@@ -178,13 +179,15 @@ async function getCurrentStatus() {
   if (currentStopRequest) return currentStopRequest;
 
   currentStopRequest = (async () => {
-    const { cards, lists, customFields, allComments } =
-      await fetchBoardWithAllComments();
+    const [{ cards, lists, customFields }, recentComments] = await Promise.all([
+      fetchBoard(),
+      fetchRecentComments(1000),
+    ]);
     currentStopCache = deriveCurrentStatus(
       cards,
       lists,
       customFields,
-      allComments,
+      recentComments,
     );
     currentStopCacheExpiresAt = Date.now() + 30_000;
     return currentStopCache;
@@ -963,45 +966,10 @@ router.post("/api/log-notification", async (req, res, next) => {
   }
 });
 
-// existing render route
-router.get("/captains-log", async (req, res, next) => {
-  try {
-    const board = await fetchBoard();
-    const { cards, lists, customFields } = board;
-
-    // compute planningStops & historical exactly as before
-    const planningStops = cards
-      .filter((c) => c.due)
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        due: c.due,
-        lat: getCFNumber(c, customFields, "Latitude"),
-        lng: getCFNumber(c, customFields, "Longitude"),
-      }))
-      .sort((a, b) => new Date(a.due) - new Date(b.due));
-
-    const tripsList = lists.find((l) => l.name === "Trips");
-    const trips = cards
-      .filter((c) => c.idList === tripsList.id)
-      .map((c) => ({
-        name: c.name,
-        start: c.start,
-        due: c.due,
-      }));
-    const byYear = trips.reduce((acc, t) => {
-      const year = (t.start || t.due || "").slice(0, 4) || "No Date";
-      (acc[year] = acc[year] || []).push(t);
-      return acc;
-    }, {});
-    const historical = Object.entries(byYear)
-      .map(([year, arr]) => ({ year, trips: arr }))
-      .sort((a, b) => b.year.localeCompare(a.year));
-
-    res.render("captains-log", { planningStops, historical, user: req.user });
-  } catch (err) {
-    next(err);
-  }
+router.get("/captains-log", (req, res) => {
+  // Keep the initial HTML independent of Trello so the page shell can render
+  // immediately. Chart and voyage data are filled in asynchronously.
+  res.render("captains-log", { historical: [], user: req.user });
 });
 
 router.post("/api/plan-stop", async (req, res, next) => {
@@ -1053,6 +1021,7 @@ router.post("/api/plan-stop", async (req, res, next) => {
       params: { value: due },
       headers,
     });
+    invalidateBoardCache();
     res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/plan-stop:", err);
@@ -1109,6 +1078,7 @@ router.post("/api/remove-stop", async (req, res, next) => {
       params: { value: null },
       headers,
     });
+    invalidateBoardCache();
     res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/remove-stop:", err);
@@ -1160,6 +1130,7 @@ router.post("/api/reorder-stops", async (req, res, next) => {
       });
       console.log("Trello API response:", response.data);
     }
+    invalidateBoardCache();
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -1237,6 +1208,7 @@ router.post("/api/rate-place", async (req, res, next) => {
     );
 
     await axios.put(url, payload, { headers });
+    invalidateBoardCache();
     res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/rate-place:", err);
@@ -1325,6 +1297,7 @@ router.post("/api/update-labels", async (req, res, next) => {
       await axios.delete(url, { headers });
     }
 
+    invalidateBoardCache();
     res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/update-labels:", err);

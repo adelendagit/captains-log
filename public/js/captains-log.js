@@ -17,6 +17,7 @@ let logLayerGroup = null;
 
 let mostRecentTripRange = null;
 let logRenderScheduled = false;
+let logsLoadStarted = false;
 
 let canPlan = false;
 let boardLabels = [];
@@ -26,9 +27,6 @@ let journeyLayerGroup = null;
 let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
-let locationLogDraft = null;
-let locationLogSuggestions = [];
-
 const LOCATION_LOG_ACTIONS = {
   arrived: "Arrived",
   departed: "Departed",
@@ -324,20 +322,28 @@ function updateSummary(stops, speed) {
 }
 
 async function fetchData() {
-  const [dataRes, statusRes] = await Promise.all([
-    fetch("/api/data"),
-    fetch("/api/current-stop"),
-  ]);
+  const dataRes = await fetch("/api/data");
+  if (!dataRes.ok) throw new Error("Unable to load chart data");
   const data = await dataRes.json();
   canPlan = data.canPlan;
   boardLabels = data.boardLabels || [];
-  let statusJson = null;
+  return data;
+}
+
+async function refreshCurrentStatus() {
   try {
-    statusJson = await statusRes.json();
-  } catch (e) {
-    statusJson = { status: "unknown" };
+    const response = await fetch("/api/current-stop");
+    if (!response.ok) throw new Error("Unable to load current stop");
+    currentStatus = await response.json();
+    renderJourneyStatus();
+    if (plannedOnlyToggle) {
+      renderMapWithToggle();
+      const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
+      renderTable(stops, speed);
+    }
+  } catch (error) {
+    console.warn(error.message);
   }
-  return { ...data, currentStatus: statusJson };
 }
 
 // map rating/labels → color
@@ -476,6 +482,9 @@ function showLabelEditor(targetEl, cardId, currentIds) {
 }
 
 async function preloadAllLogs() {
+  if (logsLoadStarted) return;
+  logsLoadStarted = true;
+
   if (window.EventSource) {
     const source = new EventSource("/api/logs/stream?trip=all");
     source.addEventListener("batch", (event) => {
@@ -2009,6 +2018,7 @@ function setupLogTab(stops = []) {
 
   btn.addEventListener("click", () => {
     currentLogFilter = null; // reset to most recent trip
+    preloadAllLogs();
     renderFilteredLogs(stops);
   });
 
@@ -2050,31 +2060,6 @@ function getCurrentPosition() {
       maximumAge: 30000,
     });
   });
-}
-
-function renderLocationSuggestions(suggestions = [], selectedId = null) {
-  const container = document.getElementById("location-log-suggestions");
-  if (!container) return;
-
-  if (!suggestions.length) {
-    container.innerHTML = `<p class="muted">No nearby locations found. Choose a card manually in Trello.</p>`;
-    return;
-  }
-
-  container.innerHTML = suggestions
-    .map((s) => {
-      const checked = selectedId === s.id ? "checked" : "";
-      const dist = Number.isFinite(s.distanceKm)
-        ? `${s.distanceKm.toFixed(1)} km`
-        : "";
-      return `
-        <label class="location-option">
-          <input type="radio" name="location-log-card" value="${s.id}" ${checked}>
-          <span><strong>${s.name}</strong> <small>${s.list || ""} ${dist}</small></span>
-        </label>
-      `;
-    })
-    .join("");
 }
 
 function escapeMarkup(value) {
@@ -2443,176 +2428,6 @@ function setupLogWizard() {
   });
 }
 
-function setupLocationLogControls() {
-  const detectBtn = document.getElementById("detect-location-log-btn");
-  const submitBtn = document.getElementById("submit-location-log-btn");
-  const statusEl = document.getElementById("location-log-status");
-  const actionEl = document.getElementById("location-log-action");
-  const litresWrap = document.getElementById("location-log-litres-wrap");
-  const litresEl = document.getElementById("location-log-litres");
-  const backfillBtn = document.getElementById("location-log-backfill-btn");
-  const backfillWrap = document.getElementById("location-log-backfill-wrap");
-  const backfillTimeEl = document.getElementById("location-log-backfill-time");
-
-  if (!detectBtn || !submitBtn || !statusEl || !actionEl) return;
-
-  const toggleLitres = () => {
-    const needsLitres = ["water", "diesel"].includes(actionEl.value);
-    if (litresWrap) litresWrap.hidden = !needsLitres;
-    if (!needsLitres && litresEl) litresEl.value = "";
-  };
-
-  const toggleBackfill = () => {
-    if (!backfillWrap) return;
-    backfillWrap.hidden = !backfillWrap.hidden;
-    if (!backfillWrap.hidden && backfillTimeEl && !backfillTimeEl.value) {
-      const now = new Date();
-      now.setSeconds(0, 0);
-      backfillTimeEl.value = now.toISOString().slice(0, 16);
-    }
-  };
-
-  actionEl.addEventListener("change", toggleLitres);
-  toggleLitres();
-
-  if (backfillBtn) {
-    backfillBtn.addEventListener("click", toggleBackfill);
-  }
-
-  const detectLocation = async () => {
-    statusEl.textContent = "Detecting your location…";
-    detectBtn.disabled = true;
-    submitBtn.disabled = true;
-
-    try {
-      const position = await getCurrentPosition();
-      const payload = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      };
-      if (Number.isFinite(position.coords.speed)) {
-        payload.speedKts = Math.max(position.coords.speed * 1.94384, 0);
-      }
-
-      const contextRes = await fetch("/api/log-context", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const context = await contextRes.json();
-      if (!contextRes.ok) {
-        throw new Error(context.error || "Unable to detect location context.");
-      }
-
-      locationLogDraft = context.draft;
-      locationLogSuggestions = context.suggestions || [];
-      renderLocationSuggestions(
-        locationLogSuggestions,
-        locationLogDraft?.cardId || null,
-      );
-
-      if (
-        locationLogDraft?.action &&
-        actionEl.querySelector(`option[value="${locationLogDraft.action}"]`)
-      ) {
-        actionEl.value = locationLogDraft.action;
-        toggleLitres();
-      }
-
-      const modeText =
-        context.mode === "underway"
-          ? "You appear to be underway. Confirm location and action, then submit."
-          : "You appear to be in port. Select the location and action, then submit.";
-      statusEl.textContent = modeText;
-      submitBtn.disabled = false;
-    } catch (error) {
-      statusEl.textContent = error.message || "Unable to detect location.";
-      renderLocationSuggestions([], null);
-    } finally {
-      detectBtn.disabled = false;
-    }
-  };
-
-  detectBtn.addEventListener("click", detectLocation);
-
-  // These controls are only rendered for authenticated users. Ask for their
-  // location as soon as they load, while keeping the button available to retry.
-  detectLocation();
-
-  submitBtn.addEventListener("click", async () => {
-    if (!locationLogDraft) return;
-
-    const selected = document.querySelector(
-      'input[name="location-log-card"]:checked',
-    );
-    const cardId = selected ? selected.value : locationLogDraft.cardId;
-    if (!cardId) {
-      statusEl.textContent = "Please choose a location before posting.";
-      return;
-    }
-
-    const selectedAction = actionEl.value;
-    if (!LOCATION_LOG_ACTIONS[selectedAction]) {
-      statusEl.textContent = "Please choose a valid action.";
-      return;
-    }
-
-    const payload = {
-      action: selectedAction,
-      cardId,
-      lat: locationLogDraft.lat,
-      lng: locationLogDraft.lng,
-      timestamp: locationLogDraft.timestamp,
-      source: "web-ui",
-    };
-
-    if (
-      litresEl &&
-      ["water", "diesel"].includes(selectedAction) &&
-      litresEl.value !== ""
-    ) {
-      payload.litres = litresEl.value;
-    }
-
-    if (
-      backfillWrap &&
-      !backfillWrap.hidden &&
-      backfillTimeEl &&
-      backfillTimeEl.value
-    ) {
-      payload.timestamp = new Date(backfillTimeEl.value).toISOString();
-    }
-
-    submitBtn.disabled = true;
-    statusEl.textContent = "Posting comment…";
-
-    try {
-      const res = await fetch("/api/log-entry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to post log comment.");
-      }
-
-      statusEl.textContent = "Log comment posted successfully.";
-      currentStatus = await (await fetch("/api/current-stop")).json();
-      renderTable(
-        stops,
-        parseFloat(document.getElementById("speed-input").value) || 0,
-      );
-      submitBtn.disabled = false;
-    } catch (error) {
-      statusEl.textContent = error.message || "Failed to post log comment.";
-      submitBtn.disabled = false;
-    }
-  });
-}
-
 function initTabs() {
   document.querySelectorAll(".tab-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2685,24 +2500,74 @@ function setupHistoricalTripLinks(stops = []) {
       const start = li.getAttribute("data-trip-start");
       const end = li.getAttribute("data-trip-end");
       currentLogFilter = { start, end };
-      const filtered = filterLogsByDate(allLogsCache, start, end);
-      renderHistoricalLog(filtered, stops);
-      renderLogSummary(filtered);
-      renderDieselInfo(filtered);
-      renderBrokenItems(filtered);
-      renderLogMap(filtered, stops);
+      if (allLogsCache) {
+        renderFilteredLogs(stops);
+      } else {
+        preloadAllLogs();
+        renderFilteredLogs(stops);
+      }
     });
   });
 }
 
-async function init() {
-  preloadAllLogs(); // Start loading logs in the background
+async function loadVoyages() {
+  try {
+    const response = await fetch("/api/voyages");
+    if (!response.ok) throw new Error("Unable to load voyages");
+    const { voyages = [] } = await response.json();
+    const container = document.getElementById("historical");
+    if (!container) return;
 
-  await refreshCurrentJourney();
+    const byYear = voyages.reduce((groups, voyage) => {
+      const date = voyage.start || voyage.end || "";
+      const year = date.slice(0, 4) || "No Date";
+      (groups[year] ??= []).push(voyage);
+      return groups;
+    }, {});
+
+    container.replaceChildren();
+    Object.entries(byYear)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .forEach(([year, trips]) => {
+        const heading = document.createElement("h3");
+        heading.textContent = year;
+        const list = document.createElement("ul");
+        list.className = "historical-trip-list";
+
+        trips
+          .sort((a, b) => new Date(b.start || b.end) - new Date(a.start || a.end))
+          .forEach((trip) => {
+            const item = document.createElement("li");
+            item.className = "historical-trip-link";
+            item.dataset.tripName = trip.name;
+            item.dataset.tripStart = trip.start || "";
+            item.dataset.tripEnd = trip.end || "";
+
+            const name = document.createElement("strong");
+            name.textContent = trip.name;
+            item.appendChild(name);
+            if (trip.start || trip.end) {
+              const range = document.createTextNode(
+                ` (${trip.start ? new Date(trip.start).toLocaleDateString() : "?"} – ${trip.end ? new Date(trip.end).toLocaleDateString() : "?"})`,
+              );
+              item.appendChild(range);
+            }
+            list.appendChild(item);
+          });
+
+        container.append(heading, list);
+      });
+
+    setupHistoricalTripLinks(stops);
+  } catch (error) {
+    console.warn(error.message);
+  }
+}
+
+async function init() {
   const data = await fetchData();
   stops = data.stops;
   places = data.places;
-  currentStatus = data.currentStatus;
   boardLabels = data.boardLabels || boardLabels;
   renderJourneyStatus();
 
@@ -2717,9 +2582,7 @@ async function init() {
   renderMapWithToggle();
   renderTable(stops, parseFloat(speedInput.value));
   setupLogTab(stops);
-  setupHistoricalTripLinks(stops);
   setupLogWizard();
-  setupLocationLogControls();
 
   // Update on speed change:
   speedInput.addEventListener("input", () => {
@@ -2732,6 +2595,11 @@ async function init() {
 
   initTabs();
 
+  // Current position and live journey data improve the initial chart once they
+  // arrive, but no longer block the chart and planning data from rendering.
+  refreshCurrentJourney();
+  refreshCurrentStatus();
+  loadVoyages();
   journeyRefreshInterval = setInterval(refreshCurrentJourney, 30000);
 }
 
