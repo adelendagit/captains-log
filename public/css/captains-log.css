@@ -217,7 +217,8 @@ body {
   border-bottom: 1px solid #ddd;
 }
 
-.tab-nav button {
+.tab-nav button,
+.tab-nav a {
   flex: 1;
   padding: 0.75rem 0;
   background: none;
@@ -226,6 +227,8 @@ body {
   font-weight: 600;
   color: #555;
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
 }
 
 .tab-nav button.active {
@@ -1456,6 +1459,9 @@ body {
 }
 
 .site-header {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto minmax(3.5rem, 1fr);
+  gap: 1rem;
   top: 0.75rem;
   padding: 0.8rem 1rem;
   margin-bottom: 0.8rem;
@@ -1464,6 +1470,10 @@ body {
   border-radius: 1rem;
   box-shadow: 0 12px 40px rgba(11, 41, 54, 0.08);
   backdrop-filter: blur(14px);
+}
+
+.site-user {
+  justify-self: end;
 }
 
 .site-title-link {
@@ -1497,10 +1507,12 @@ body {
 }
 
 .tab-nav {
-  top: 5.6rem;
+  position: static;
+  z-index: auto;
+  align-self: center;
   gap: 0.35rem;
   width: fit-content;
-  margin: 0 auto 1.1rem;
+  margin: 0;
   padding: 0.3rem;
   background: rgba(255, 253, 248, 0.9);
   border: 1px solid var(--chart-line);
@@ -1508,18 +1520,31 @@ body {
   backdrop-filter: blur(12px);
 }
 
-.tab-nav button {
+.tab-nav button,
+.tab-nav a {
+  display: block;
   flex: none;
-  min-width: 7rem;
+  min-width: 6rem;
   padding: 0.62rem 1rem;
   color: var(--chart-muted);
   border-radius: 999px;
+  box-sizing: border-box;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: normal;
 }
 
-.tab-nav button.active {
+.tab-nav button.active,
+.tab-nav a[aria-current="page"] {
   color: #fff;
   background: var(--chart-ink);
   border-bottom: 0;
+}
+
+.tab-nav button:hover:not(.active),
+.tab-nav a:hover {
+  color: var(--chart-ink);
+  background: rgba(31, 112, 133, 0.09);
 }
 
 .live-journey {
@@ -1662,18 +1687,27 @@ body {
   }
 
   .site-header {
+    grid-template-columns: 1fr auto;
     top: 0.4rem;
   }
 
   .tab-nav {
-    top: 5.2rem;
+    grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
     box-sizing: border-box;
   }
 
-  .tab-nav button {
+  .site-user {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .tab-nav button,
+  .tab-nav a {
     flex: 1;
     min-width: 0;
+    padding-inline: 0.55rem;
   }
 
   .live-journey {

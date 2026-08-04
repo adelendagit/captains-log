@@ -29,9 +29,16 @@
       <span><small>Where is</small>Skibidi</span>
     </a>
   </div>
+  <nav class="tab-nav" aria-label="Primary navigation">
+    <button data-tab="planning" class="active">Chart</button>
+    <button data-tab="historical">Voyages</button>
+    <button data-tab="log">Logbook</button>
+    <% if (user) { %>
+      <a href="/to-do" class="tab-nav-link">To Do</a>
+    <% } %>
+  </nav>
   <div class="site-user">
    <% if (user) { %>
-    <a href="/to-do" class="user-btn header-todo-link">To Do</a>
     <div class="user-menu">
       <button class="user-btn logged-in" id="user-menu-btn" type="button">
         <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
@@ -47,12 +54,6 @@
   <% } %>
   </div>
 </header>
-
-<div class="tab-nav">
-  <button data-tab="planning" class="active">Chart</button>
-  <button data-tab="historical">Voyages</button>
-  <button data-tab="log">Logbook</button>
-</div>
 
 <section id="planning" class="tab-content">
   <section id="live-journey" class="live-journey" aria-live="polite">

@@ -5,7 +5,7 @@ const openCount = document.getElementById("todo-count");
 const doneCount = document.getElementById("done-count");
 const openEmpty = document.getElementById("todo-empty");
 const doneEmpty = document.getElementById("done-empty");
-const status = document.getElementById("todo-status");
+const statusMessage = document.getElementById("todo-status");
 const doneSection = document.querySelector(".done-section");
 const addItemForm = document.getElementById("add-item-form");
 const userMenuButton = document.getElementById("user-menu-btn");
@@ -47,7 +47,9 @@ function insertByTrelloPosition(container, card) {
 async function setCompletion(card, complete) {
   const checkbox = card.querySelector(".done-checkbox");
   checkbox.disabled = true;
-  status.textContent = complete ? "Marking item as done…" : "Restoring item…";
+  statusMessage.textContent = complete
+    ? "Marking item as done…"
+    : "Restoring item…";
 
   try {
     const response = await fetch(
@@ -72,11 +74,13 @@ async function setCompletion(card, complete) {
     if (complete) doneSection.open = true;
     checkbox.disabled = false;
     updateCounts();
-    status.textContent = complete ? "Item marked as done." : "Item restored.";
+    statusMessage.textContent = complete
+      ? "Item marked as done."
+      : "Item restored.";
   } catch (error) {
     checkbox.checked = !complete;
     checkbox.disabled = false;
-    status.textContent = error.message;
+    statusMessage.textContent = error.message;
   }
 }
 
@@ -96,7 +100,7 @@ if (addItemForm) {
 
     input.disabled = true;
     button.disabled = true;
-    status.textContent = "Adding item…";
+    statusMessage.textContent = "Adding item…";
 
     try {
       const response = await fetch("/to-do/items", {
@@ -113,7 +117,7 @@ if (addItemForm) {
       input.disabled = false;
       button.disabled = false;
       input.focus();
-      status.textContent = error.message;
+      statusMessage.textContent = error.message;
     }
   });
 }
@@ -139,7 +143,7 @@ if (window.Sortable) {
       );
       if (cardIds.join() === previousOrder.join()) return;
 
-      status.textContent = "Saving order…";
+      statusMessage.textContent = "Saving order…";
       try {
         const response = await fetch("/to-do/reorder", {
           method: "POST",
@@ -155,7 +159,7 @@ if (window.Sortable) {
             card.dataset.cardPos = String((index + 1) * 16384);
           },
         );
-        status.textContent = "Order saved.";
+        statusMessage.textContent = "Order saved.";
       } catch (error) {
         const cardsById = new Map(
           Array.from(openList.querySelectorAll(".todo-card"), (card) => [
@@ -167,7 +171,7 @@ if (window.Sortable) {
           const card = cardsById.get(cardId);
           if (card) openList.appendChild(card);
         });
-        status.textContent = error.message;
+        statusMessage.textContent = error.message;
       }
     },
   });
