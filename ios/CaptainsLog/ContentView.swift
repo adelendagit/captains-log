@@ -78,6 +78,9 @@ private struct CurrentPositionView: View {
     @EnvironmentObject private var tracker: JourneyTracker
     @State private var journeyName = ""
     @State private var camera: MapCameraPosition = .automatic
+    @State private var mapViewportSource: String?
+
+    private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
     var body: some View {
         NavigationStack {
@@ -176,6 +179,38 @@ private struct CurrentPositionView: View {
         .mapStyle(.standard(elevation: .realistic))
         .frame(height: 330)
         .clipShape(RoundedRectangle(cornerRadius: 24))
+        .onChange(of: mapFocusKey, initial: true) {
+            focusMapOnCurrentPosition()
+        }
+    }
+
+    private var mapFocusKey: String {
+        guard let focus = mapFocus else { return "none" }
+        return "\(focus.source):\(focus.coordinate.latitude):\(focus.coordinate.longitude)"
+    }
+
+    private var mapFocus: (coordinate: CLLocationCoordinate2D, source: String)? {
+        if let point = tracker.currentJourney?.position {
+            return (point.coordinate, "live")
+        }
+        if let coordinate = tracker.currentStatus?.current?.coordinate {
+            return (coordinate, "status")
+        }
+        return nil
+    }
+
+    private func focusMapOnCurrentPosition() {
+        guard let focus = mapFocus else { return }
+        guard mapViewportSource != "live", mapViewportSource != focus.source else { return }
+
+        camera = .region(
+            MKCoordinateRegion(
+                center: focus.coordinate,
+                latitudinalMeters: initialMapRadiusMeters * 2,
+                longitudinalMeters: initialMapRadiusMeters * 2
+            )
+        )
+        mapViewportSource = focus.source
     }
 
     @ViewBuilder

@@ -29,6 +29,8 @@ let journeyLayerGroup = null;
 let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
+let planningMapViewportSource = null;
+const INITIAL_MAP_RADIUS_METERS = 1000;
 const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOGBOOK_CACHE_KEY = "captains-log:logbook-snapshot:v1";
@@ -198,6 +200,50 @@ function renderJourneyOnMap() {
     .bindPopup(
       `<strong>${escapeMarkup(currentJourney.journey.name)}</strong><br>${escapeMarkup(formatPositionAge(point.timestamp))}`,
     );
+
+  focusPlanningMapOnCurrentPosition();
+}
+
+function getPlanningMapFocus() {
+  const livePosition = currentJourney?.active && currentJourney.position;
+  if (
+    livePosition &&
+    Number.isFinite(livePosition.lat) &&
+    Number.isFinite(livePosition.lng)
+  ) {
+    return { lat: livePosition.lat, lng: livePosition.lng, source: "live" };
+  }
+
+  const currentPlace = currentStatus?.current;
+  if (
+    currentPlace &&
+    Number.isFinite(currentPlace.lat) &&
+    Number.isFinite(currentPlace.lng)
+  ) {
+    return { lat: currentPlace.lat, lng: currentPlace.lng, source: "status" };
+  }
+
+  return null;
+}
+
+function focusPlanningMapOnCurrentPosition() {
+  if (!leafletMap) return false;
+
+  const focus = getPlanningMapFocus();
+  if (!focus) return false;
+  if (
+    planningMapViewportSource === "live" ||
+    planningMapViewportSource === focus.source
+  ) {
+    return true;
+  }
+
+  const bounds = L.circle([focus.lat, focus.lng], {
+    radius: INITIAL_MAP_RADIUS_METERS,
+  }).getBounds();
+  leafletMap.fitBounds(bounds, { animate: false });
+  planningMapViewportSource = focus.source;
+  return true;
 }
 
 async function refreshCurrentJourney() {
@@ -380,6 +426,7 @@ function resetPlanningMap() {
   journeyLayerGroup = null;
   logLayerGroup = null;
   underwayMarker = null;
+  planningMapViewportSource = null;
 }
 
 async function refreshCurrentStatus() {
@@ -672,6 +719,7 @@ function scheduleLogRender({ updatePlanningMap = false } = {}) {
 function initMap(stops, places, logs = null) {
   // Only create the map if it doesn't exist
   let map;
+  let mapWasCreated = false;
   if (leafletMap) {
     map = leafletMap;
   } else {
@@ -680,6 +728,7 @@ function initMap(stops, places, logs = null) {
       map,
     );
     leafletMap = map;
+    mapWasCreated = true;
   }
 
   const mapStops = [...stops];
@@ -788,7 +837,10 @@ function initMap(stops, places, logs = null) {
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
     map.invalidateSize();
-    if (stopCoords.length) {
+    if (focusPlanningMapOnCurrentPosition()) {
+      return;
+    }
+    if (mapWasCreated && stopCoords.length) {
       map.fitBounds(stopCoords, { padding: [40, 40] });
     }
   }, 0);
