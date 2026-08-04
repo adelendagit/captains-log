@@ -187,13 +187,12 @@ private struct CurrentPositionView: View {
 
     private var mapFocusKey: String {
         if hasPlannedStops == true { return "planned-stops" }
-        if hasPlannedStops == nil { return "loading-plan" }
         guard let focus = mapFocus else { return "none" }
         return "\(focus.source):\(focus.coordinate.latitude):\(focus.coordinate.longitude)"
     }
 
     private var mapFocus: (coordinate: CLLocationCoordinate2D, source: String)? {
-        guard hasPlannedStops == false else { return nil }
+        guard hasPlannedStops != true else { return nil }
         if let point = tracker.currentJourney?.position {
             return (point.coordinate, "live")
         }
