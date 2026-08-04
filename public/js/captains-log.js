@@ -30,6 +30,11 @@ let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
 let planningMapViewportSource = null;
+const historicalSeaRouteCache = new Map();
+let planningHistoricalRouteKey = null;
+let logbookHistoricalRouteKey = null;
+let planningHistoricalRouteVersion = 0;
+let logbookHistoricalRouteVersion = 0;
 const INITIAL_MAP_RADIUS_METERS = 1000;
 const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -275,6 +280,74 @@ function haversine(lat1, lon1, lat2, lon2) {
 }
 function toNM(m) {
   return m / 1852;
+}
+
+function historicalRouteKey(markers) {
+  return markers
+    .map((marker) => `${marker.lat.toFixed(5)},${marker.lng.toFixed(5)}`)
+    .join(";");
+}
+
+async function loadHistoricalSeaRoute(markers) {
+  if (markers.length < 2) return { key: "", segments: [] };
+  const key = historicalRouteKey(markers);
+  if (!historicalSeaRouteCache.has(key)) {
+    const request = fetch("/sea-route", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        points: markers.map(({ lat, lng }) => ({ lat, lng })),
+      }),
+    })
+      .then((response) => {
+        if (!response.ok)
+          throw new Error("Unable to calculate historical sea route");
+        return response.json();
+      })
+      .then((payload) =>
+        (Array.isArray(payload.segments) ? payload.segments : []).map(
+          (segment) => segment.map(([lng, lat]) => [lat, lng]),
+        ),
+      )
+      .catch((error) => {
+        console.warn(error.message);
+        historicalSeaRouteCache.delete(key);
+        return [];
+      });
+    historicalSeaRouteCache.set(key, request);
+  }
+  return { key, segments: await historicalSeaRouteCache.get(key) };
+}
+
+function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
+  if (markers.length < 2) return;
+  const key = historicalRouteKey(markers);
+  let version;
+  if (routeContext === "planning") {
+    planningHistoricalRouteKey = key;
+    version = ++planningHistoricalRouteVersion;
+  }
+  if (routeContext === "logbook") {
+    logbookHistoricalRouteKey = key;
+    version = ++logbookHistoricalRouteVersion;
+  }
+
+  loadHistoricalSeaRoute(markers).then((route) => {
+    const isCurrent =
+      route.key === key &&
+      ((routeContext === "planning" &&
+        planningHistoricalRouteKey === key &&
+        planningHistoricalRouteVersion === version) ||
+        (routeContext === "logbook" &&
+          logbookHistoricalRouteKey === key &&
+          logbookHistoricalRouteVersion === version &&
+          window.histMap === target));
+    if (!isCurrent || route.segments.length === 0) return;
+    L.polyline(route.segments, pathOptions).addTo(target);
+  });
 }
 
 function getExpectedPosition(from, to, departedAt, speed) {
@@ -944,15 +1017,17 @@ function initMap(stops, places, logs = null) {
       }))
       .filter((m) => typeof m.lat === "number" && typeof m.lng === "number");
 
-    const logCoords = logMarkers.map((m) => [m.lat, m.lng]);
-    if (logCoords.length > 1) {
-      L.polyline(logCoords, {
-        color: "#888", // lighter gray
+    renderHistoricalSeaRoute(
+      logMarkers,
+      logLayerGroup,
+      {
+        color: "#888",
         weight: 2,
-        opacity: 0.5, // more faint
-        dashArray: "4 6", // dashed line
-      }).addTo(logLayerGroup);
-    }
+        opacity: 0.5,
+        dashArray: "4 6",
+      },
+      "planning",
+    );
     logMarkers.forEach((m) => {
       const color = getMarkerColor(m.rating);
       L.circleMarker([m.lat, m.lng], {
@@ -2061,10 +2136,13 @@ function renderLogMap(logs = [], stops = []) {
     bounds.push([m.lat, m.lng]);
   });
 
-  const logCoords = markers.map((m) => [m.lat, m.lng]);
-  if (logCoords.length > 1) {
-    L.polyline(logCoords, { color: "#555", weight: 2 }).addTo(window.histMap);
-  }
+  const historicalMap = window.histMap;
+  renderHistoricalSeaRoute(
+    markers,
+    historicalMap,
+    { color: "#555", weight: 2 },
+    "logbook",
+  );
 
   // if (plannedCoords.length > 1) {
   //   L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);

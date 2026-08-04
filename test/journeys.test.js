@@ -11,6 +11,7 @@ const {
   decodeMobileToken,
   exchangePairingCode,
 } = require("../services/mobileAuth");
+const { buildSeaRoute, isValidPoint } = require("../services/seaRoute");
 
 test("parses journey metadata stored in a card description", () => {
   assert.deepEqual(
@@ -66,4 +67,25 @@ test("exchanges a pairing code once for an encrypted mobile token", () => {
   assert.equal(decodeMobileToken(token).id, "member-1");
   assert.equal(exchangePairingCode(code), null);
   assert.equal(decodeMobileToken(`${token}tampered`), null);
+});
+
+test("builds display-only maritime segments for historical stops", () => {
+  const segments = buildSeaRoute([
+    { lat: 37.9383, lng: 23.6238 },
+    { lat: 37.4467, lng: 25.3289 },
+  ]);
+  assert.ok(segments.length > 0);
+  assert.ok(segments[0].length > 1);
+  assert.ok(segments[0].every(([lng, lat]) => isValidPoint({ lat, lng })));
+});
+
+test("rejects invalid historical route points", () => {
+  assert.throws(
+    () =>
+      buildSeaRoute([
+        { lat: 37.9, lng: 23.6 },
+        { lat: 91, lng: 25.3 },
+      ]),
+    /Invalid sea-route points/,
+  );
 });

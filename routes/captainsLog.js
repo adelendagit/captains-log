@@ -10,6 +10,7 @@ const {
   invalidateBoardCache,
 } = require("../services/trello");
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
+const { buildSeaRoute } = require("../services/seaRoute");
 
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
@@ -597,6 +598,21 @@ router.get("/api/logs/stream", async (req, res, next) => {
     next(err);
   }
 });
+
+function handleSeaRoute(req, res, next) {
+  try {
+    const segments = buildSeaRoute(req.body?.points);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.json({ segments });
+  } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ error: error.message });
+    }
+    return next(error);
+  }
+}
+
+router.post(["/sea-route", "/api/sea-route"], handleSeaRoute);
 
 // Determine current status and stop based on recent comments
 router.get("/api/current-stop", async (req, res, next) => {
