@@ -12,6 +12,7 @@ const {
   exchangePairingCode,
 } = require("../services/mobileAuth");
 const { buildSeaRoute, isValidPoint } = require("../services/seaRoute");
+const { buildPlanningRoute } = require("../services/planningRoute");
 
 test("parses journey metadata stored in a card description", () => {
   assert.deepEqual(
@@ -87,5 +88,28 @@ test("rejects invalid historical route points", () => {
         { lat: 91, lng: 25.3 },
       ]),
     /Invalid sea-route points/,
+  );
+});
+
+test("calculates coastline-aware planning distance between nearby stops", () => {
+  const route = buildPlanningRoute([
+    { lat: 37.52283333333333, lng: 23.426166666666667 },
+    { lat: 37.504666666666665, lng: 23.4505 },
+  ]);
+  assert.equal(route.legs.length, 1);
+  assert.equal(route.legs[0].method, "coastline");
+  assert.ok(route.legs[0].coordinates.length > 2);
+  assert.ok(route.legs[0].distanceNm > 1.5);
+  assert.ok(route.legs[0].distanceNm < 4);
+});
+
+test("rejects invalid planning route coordinates", () => {
+  assert.throws(
+    () =>
+      buildPlanningRoute([
+        { lat: 37.9, lng: 23.6 },
+        { lat: 37.9, lng: 181 },
+      ]),
+    /Invalid planning-route points/,
   );
 });

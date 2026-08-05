@@ -14,6 +14,7 @@ let places = [];
 let plannedOnlyToggle = null;
 
 let logLayerGroup = null;
+let planningRouteLayerGroup = null;
 
 let mostRecentTripRange = null;
 let logRenderScheduled = false;
@@ -35,6 +36,11 @@ let planningHistoricalRouteKey = null;
 let logbookHistoricalRouteKey = null;
 let planningHistoricalRouteVersion = 0;
 let logbookHistoricalRouteVersion = 0;
+const planningRouteCache = new Map();
+let activePlanningRoute = null;
+let requestedPlanningRouteKey = null;
+let planningRouteDrawVersion = 0;
+let planningTableRequestKey = null;
 const INITIAL_MAP_RADIUS_METERS = 1000;
 const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -350,16 +356,168 @@ function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
   });
 }
 
+function planningStartStop(plannedStops) {
+  if (currentStatus?.status === "arrived" && currentStatus.current) {
+    return (
+      plannedStops.find((stop) => stop.id === currentStatus.current.id) ||
+      currentStatus.current
+    );
+  }
+  if (currentStatus?.status === "underway" && currentStatus.from) {
+    return (
+      plannedStops.find((stop) => stop.id === currentStatus.from.id) ||
+      currentStatus.from
+    );
+  }
+  return plannedStops.find((stop) => stop.dueComplete) || null;
+}
+
+function planningRouteSequence(plannedStops) {
+  const future = plannedStops
+    .filter(
+      (stop) =>
+        !stop.dueComplete &&
+        stop.due &&
+        Number.isFinite(stop.lat) &&
+        Number.isFinite(stop.lng),
+    )
+    .sort((left, right) => new Date(left.due) - new Date(right.due));
+  const start = planningStartStop(plannedStops);
+  const sequence =
+    start && Number.isFinite(start.lat) && Number.isFinite(start.lng)
+      ? [start, ...future]
+      : future;
+  return sequence.filter(
+    (stop, index) =>
+      index === 0 ||
+      stop.lat !== sequence[index - 1].lat ||
+      stop.lng !== sequence[index - 1].lng,
+  );
+}
+
+function planningRouteKey(sequence) {
+  return sequence
+    .map((stop) => `${stop.lat.toFixed(5)},${stop.lng.toFixed(5)}`)
+    .join(";");
+}
+
+function planningLegKey(from, to) {
+  return `${from.lat.toFixed(5)},${from.lng.toFixed(5)};${to.lat.toFixed(5)},${to.lng.toFixed(5)}`;
+}
+
+async function loadPlanningRoute(sequence) {
+  if (sequence.length < 2) {
+    return { key: planningRouteKey(sequence), legs: [], legMap: new Map() };
+  }
+  const key = planningRouteKey(sequence);
+  if (!planningRouteCache.has(key)) {
+    const request = fetch("/planning-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        points: sequence.map(({ lat, lng }) => ({ lat, lng })),
+      }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unable to calculate planned sea route");
+        return response.json();
+      })
+      .then((payload) => {
+        const legs = Array.isArray(payload.legs) ? payload.legs : [];
+        const legMap = new Map();
+        legs.forEach((leg, index) => {
+          const from = sequence[index];
+          const to = sequence[index + 1];
+          if (!from || !to) return;
+          legMap.set(planningLegKey(from, to), {
+            ...leg,
+            coordinates: Array.isArray(leg.coordinates)
+              ? leg.coordinates.map(([lng, lat]) => [lat, lng])
+              : [],
+          });
+        });
+        return { key, legs, legMap };
+      })
+      .catch((error) => {
+        console.warn(error.message);
+        planningRouteCache.delete(key);
+        return { key, legs: [], legMap: new Map(), failed: true };
+      });
+    planningRouteCache.set(key, request);
+  }
+  return planningRouteCache.get(key);
+}
+
+function requestPlanningRoute(plannedStops) {
+  const sequence = planningRouteSequence(plannedStops);
+  const key = planningRouteKey(sequence);
+  requestedPlanningRouteKey = key;
+  return loadPlanningRoute(sequence).then((route) => {
+    if (requestedPlanningRouteKey === key && !route.failed) {
+      activePlanningRoute = route;
+    }
+    return { route, sequence };
+  });
+}
+
+function planningRouteIsReady(plannedStops) {
+  return (
+    activePlanningRoute?.key ===
+    planningRouteKey(planningRouteSequence(plannedStops))
+  );
+}
+
+function getPlanningLeg(from, to) {
+  if (!from || !to || !activePlanningRoute) return null;
+  return activePlanningRoute.legMap.get(planningLegKey(from, to)) || null;
+}
+
+function pointAlongRoute(coordinates, fraction) {
+  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+  const lengths = [];
+  let totalMeters = 0;
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const length = haversine(
+      coordinates[index - 1][0],
+      coordinates[index - 1][1],
+      coordinates[index][0],
+      coordinates[index][1],
+    );
+    lengths.push(length);
+    totalMeters += length;
+  }
+  let target = totalMeters * fraction;
+  for (let index = 0; index < lengths.length; index += 1) {
+    if (target > lengths[index]) {
+      target -= lengths[index];
+      continue;
+    }
+    const segmentFraction = lengths[index] > 0 ? target / lengths[index] : 0;
+    const from = coordinates[index];
+    const to = coordinates[index + 1];
+    return {
+      lat: from[0] + (to[0] - from[0]) * segmentFraction,
+      lng: from[1] + (to[1] - from[1]) * segmentFraction,
+    };
+  }
+  const last = coordinates[coordinates.length - 1];
+  return { lat: last[0], lng: last[1] };
+}
+
 function getExpectedPosition(from, to, departedAt, speed) {
-  const totalMeters = haversine(from.lat, from.lng, to.lat, to.lng);
-  const totalNm = toNM(totalMeters);
+  const planningLeg = getPlanningLeg(from, to);
+  const totalNm =
+    planningLeg?.distanceNm ??
+    toNM(haversine(from.lat, from.lng, to.lat, to.lng));
   const hours = (Date.now() - new Date(departedAt)) / 36e5;
   const traveledNm = hours * speed;
   const frac = totalNm > 0 ? Math.min(traveledNm / totalNm, 1) : 0;
+  const routedPosition = pointAlongRoute(planningLeg?.coordinates, frac);
   return {
-    lat: from.lat + (to.lat - from.lat) * frac,
-    lng: from.lng + (to.lng - from.lng) * frac,
+    lat: routedPosition?.lat ?? from.lat + (to.lat - from.lat) * frac,
+    lng: routedPosition?.lng ?? from.lng + (to.lng - from.lng) * frac,
     fraction: frac,
+    totalNm,
   };
 }
 function formatDuration(h) {
@@ -420,11 +578,17 @@ function updateSummary(stops, speed) {
     prev = stops.find((s) => s.dueComplete) || null;
   }
 
+  const routeReady = future.length === 0 || planningRouteIsReady(stops);
+  let routeResolved = routeReady;
   let totalNM = 0;
   future.forEach((s) => {
     if (prev) {
-      const meters = haversine(prev.lat, prev.lng, s.lat, s.lng);
-      totalNM += toNM(meters);
+      const leg = routeReady ? getPlanningLeg(prev, s) : null;
+      if (Number.isFinite(leg?.distanceNm)) {
+        totalNM += leg.distanceNm;
+      } else {
+        routeResolved = false;
+      }
     }
     prev = s;
   });
@@ -438,13 +602,19 @@ function updateSummary(stops, speed) {
     totalDays = Math.round((last - first) / 86400000) + 1;
   }
 
-  const totalH = totalNM / speed;
+  const totalH = routeResolved && speed > 0 ? totalNM / speed : null;
+  const distanceText = routeResolved
+    ? `${totalNM.toFixed(1)} NM`
+    : routeReady
+      ? "Route unavailable"
+      : "Calculating route…";
+  const durationText = totalH == null ? "—" : formatDurationRounded(totalH);
 
   summaryEl.innerHTML = `
     <div class="summary-item"><i class="fa-solid fa-location-dot"></i><span>${totalStops} stops</span></div>
     <div class="summary-item"><i class="fa-solid fa-calendar-days"></i><span>${totalDays} days away</span></div>
-    <div class="summary-item"><i class="fa-solid fa-route"></i><span>${totalNM.toFixed(1)} NM</span></div>
-    <div class="summary-item"><i class="fa-solid fa-clock"></i><span>${formatDurationRounded(totalH)}</span></div>
+    <div class="summary-item"><i class="fa-solid fa-route"></i><span>${distanceText}</span></div>
+    <div class="summary-item"><i class="fa-solid fa-clock"></i><span>${durationText}</span></div>
   `;
 }
 
@@ -500,6 +670,7 @@ function resetPlanningMap() {
   leafletMap = null;
   journeyLayerGroup = null;
   logLayerGroup = null;
+  planningRouteLayerGroup = null;
   underwayMarker = null;
   planningMapViewportSource = null;
 }
@@ -791,6 +962,53 @@ function scheduleLogRender({ updatePlanningMap = false } = {}) {
   });
 }
 
+function addPlanningDirectionArrows(polyline, target) {
+  const arrowHeadFn =
+    (L.Symbol && L.Symbol.arrowHead) || (L.Symbols && L.Symbols.arrowHead);
+  if (!arrowHeadFn) return;
+  L.polylineDecorator(polyline, {
+    patterns: [
+      {
+        offset: "5%",
+        repeat: "20%",
+        symbol: arrowHeadFn({
+          pixelSize: 12,
+          polygon: false,
+          pathOptions: { stroke: true, color: "#0077cc", weight: 2 },
+        }),
+      },
+    ],
+  }).addTo(target);
+}
+
+function renderPlanningRouteOnMap(plannedStops, target, map) {
+  const sequence = planningRouteSequence(plannedStops);
+  if (sequence.length < 2) return;
+  const key = planningRouteKey(sequence);
+  const version = ++planningRouteDrawVersion;
+  requestPlanningRoute(plannedStops).then(({ route }) => {
+    if (
+      route.failed ||
+      route.key !== key ||
+      version !== planningRouteDrawVersion ||
+      map !== leafletMap
+    ) {
+      return;
+    }
+    route.legs.forEach((_leg, index) => {
+      const mappedLeg = route.legMap.get(
+        planningLegKey(sequence[index], sequence[index + 1]),
+      );
+      if (!mappedLeg || mappedLeg.coordinates.length < 2) return;
+      const polyline = L.polyline(mappedLeg.coordinates, {
+        color: "#555",
+        weight: 2,
+      }).addTo(target);
+      addPlanningDirectionArrows(polyline, target);
+    });
+  });
+}
+
 function initMap(stops, places, logs = null) {
   // Only create the map if it doesn't exist
   let map;
@@ -881,33 +1099,12 @@ function initMap(stops, places, logs = null) {
       });
   });
 
-  if (stopCoords.length > 1) {
-    const polyline = L.polyline(stopCoords, { color: "#555", weight: 2 }).addTo(
-      map,
-    );
-
-    // Add direction arrows
-    const arrowHeadFn =
-      (L.Symbol && L.Symbol.arrowHead) || (L.Symbols && L.Symbols.arrowHead);
-
-    if (arrowHeadFn) {
-      L.polylineDecorator(polyline, {
-        patterns: [
-          {
-            offset: "5%",
-            repeat: "20%",
-            symbol: arrowHeadFn({
-              pixelSize: 12,
-              polygon: false,
-              pathOptions: { stroke: true, color: "#0077cc", weight: 2 },
-            }),
-          },
-        ],
-      }).addTo(map);
-    } else {
-      console.warn("Leaflet PolylineDecorator arrowHead not found.");
-    }
+  if (planningRouteLayerGroup) {
+    planningRouteLayerGroup.clearLayers();
+  } else {
+    planningRouteLayerGroup = L.layerGroup().addTo(map);
   }
+  renderPlanningRouteOnMap(stops, planningRouteLayerGroup, map);
 
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
@@ -1288,6 +1485,30 @@ function handleRemoveButtonClicks() {
 }
 
 function renderTable(stops, speed) {
+  const routeSequence = planningRouteSequence(stops);
+  const routeKey = planningRouteKey(routeSequence);
+  if (
+    routeSequence.length > 1 &&
+    !planningRouteIsReady(stops) &&
+    planningTableRequestKey !== routeKey
+  ) {
+    planningTableRequestKey = routeKey;
+    requestPlanningRoute(stops).then(({ route }) => {
+      if (route.failed && planningTableRequestKey === routeKey) {
+        planningTableRequestKey = null;
+      }
+      if (
+        !route.failed &&
+        planningTableRequestKey === routeKey &&
+        planningRouteKey(planningRouteSequence(stops)) === routeKey
+      ) {
+        renderTable(
+          stops,
+          parseFloat(document.getElementById("speed-input")?.value) || speed,
+        );
+      }
+    });
+  }
   updateSummary(stops, speed);
   const tableEl = document.getElementById("planning-table");
   tableEl.innerHTML = `
@@ -1305,6 +1526,8 @@ function renderTable(stops, speed) {
   `;
   const tbody = tableEl.querySelector("tbody");
   tbody.classList.add("sortable-table-body");
+  const plannedRouteReady =
+    routeSequence.length < 2 || planningRouteIsReady(stops);
 
   function getLatLng(stop) {
     return typeof stop.lat === "number" && typeof stop.lng === "number"
@@ -1388,13 +1611,7 @@ function renderTable(stops, speed) {
       );
       posHtml = `${pos.lat.toFixed(2)}, ${pos.lng.toFixed(2)}`;
 
-      const totalMeters = haversine(
-        currentStatus.from.lat,
-        currentStatus.from.lng,
-        nextStop.lat,
-        nextStop.lng,
-      );
-      const totalNm = toNM(totalMeters);
+      const totalNm = pos.totalNm;
       const traveledNm = pos.fraction * totalNm;
       const remainingNm = totalNm - traveledNm;
       const etaDate = new Date(Date.now() + (remainingNm / speed) * 36e5);
@@ -1454,6 +1671,7 @@ function renderTable(stops, speed) {
       // Day header row (calculate totals)
       let dayTotalNM = 0,
         dayTotalH = 0;
+      let dayRouteResolved = plannedRouteReady;
       let dayPrev = prevStop;
       const dayRows = [];
       stopsForDay.forEach((s) => {
@@ -1466,19 +1684,30 @@ function renderTable(stops, speed) {
             typeof lat2 === "number" &&
             typeof lng2 === "number"
           ) {
-            const meters = haversine(lat1, lng1, lat2, lng2);
-            const nm = toNM(meters);
-            dayTotalNM += nm;
-            dayTotalH += nm / speed;
+            const leg = plannedRouteReady ? getPlanningLeg(dayPrev, s) : null;
+            if (Number.isFinite(leg?.distanceNm)) {
+              dayTotalNM += leg.distanceNm;
+              if (speed > 0) dayTotalH += leg.distanceNm / speed;
+            } else {
+              dayRouteResolved = false;
+            }
           }
         }
         dayPrev = s;
       });
 
-      let dayTotalNMValue =
-        dayTotalNM >= 1
-          ? Math.round(dayTotalNM).toString()
-          : dayTotalNM.toFixed(1);
+      let dayTotalNMValue;
+      if (!dayRouteResolved) {
+        dayTotalNMValue = plannedRouteReady
+          ? "Route unavailable"
+          : "Calculating route…";
+      } else {
+        dayTotalNMValue =
+          dayTotalNM >= 1
+            ? Math.round(dayTotalNM).toString()
+            : dayTotalNM.toFixed(1);
+        dayTotalNMValue += " NM";
+      }
 
       const dayRow = document.createElement("tr");
       dayRow.className = "day-header-row";
@@ -1486,8 +1715,8 @@ function renderTable(stops, speed) {
       dayRow.innerHTML = `<td colspan="6" class="day-header-table">
         ${formatDayLabel(dayKey)}
         <span class="day-totals">
-          &nbsp;•&nbsp;${dayTotalNMValue} NM
-          ${dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
+          &nbsp;•&nbsp;${dayTotalNMValue}
+          ${dayRouteResolved && dayTotalH ? `&nbsp;•&nbsp;${formatDurationRounded(dayTotalH)}` : ""}
         </span>
       </td>`;
       tbody.appendChild(dayRow);
@@ -1509,13 +1738,18 @@ function renderTable(stops, speed) {
             typeof lat2 === "number" &&
             typeof lng2 === "number"
           ) {
-            const meters = haversine(lat1, lng1, lat2, lng2);
-            let nmValue = toNM(meters);
-            nm =
-              nmValue >= 1
-                ? Math.round(nmValue).toString()
-                : nmValue.toFixed(1);
-            eta = formatDurationRounded(nm / speed);
+            const leg = plannedRouteReady ? getPlanningLeg(prevStop, s) : null;
+            if (Number.isFinite(leg?.distanceNm)) {
+              const nmValue = leg.distanceNm;
+              nm =
+                nmValue >= 1
+                  ? Math.round(nmValue).toString()
+                  : nmValue.toFixed(1);
+              eta = speed > 0 ? formatDurationRounded(nmValue / speed) : "—";
+            } else {
+              nm = plannedRouteReady ? "—" : "…";
+              eta = plannedRouteReady ? "Route unavailable" : "Calculating…";
+            }
           }
         }
         const stars = canPlan
@@ -1561,7 +1795,8 @@ function renderTable(stops, speed) {
           <td>${s.name}</td>
           <td>${labels}</td>
           <td>${stars}</td>
-          <td>${nm} NM&nbsp;•&nbsp;${eta}</td>
+          <td>${nm === "—" || nm === "…" ? nm : `${nm} NM`}</td>
+          <td>${eta}</td>
           <td>${links}</td>
         `;
         tbody.appendChild(tr);
