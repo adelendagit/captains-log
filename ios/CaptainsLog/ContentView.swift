@@ -90,7 +90,8 @@ private struct CurrentPositionView: View {
     @State private var mapViewportSource: String?
     @State private var hasPlannedStops: Bool?
 
-    private let initialMapRadiusMeters: CLLocationDistance = 1_000
+    // MapKit frames the same nominal span more tightly than the web's Leaflet map.
+    private let emptyPlanMapRadiusMeters: CLLocationDistance = 2_000
 
     var body: some View {
         NavigationStack {
@@ -224,8 +225,8 @@ private struct CurrentPositionView: View {
         camera = .region(
             MKCoordinateRegion(
                 center: focus.coordinate,
-                latitudinalMeters: initialMapRadiusMeters * 2,
-                longitudinalMeters: initialMapRadiusMeters * 2
+                latitudinalMeters: emptyPlanMapRadiusMeters * 2,
+                longitudinalMeters: emptyPlanMapRadiusMeters * 2
             )
         )
         mapViewportSource = focus.source
