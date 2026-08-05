@@ -88,10 +88,9 @@ private struct CurrentPositionView: View {
     @State private var journeyName = ""
     @State private var camera: MapCameraPosition = .automatic
     @State private var mapViewportSource: String?
-    @State private var hasPlannedStops: Bool?
+    @State private var plannedStops: [PlaceSummary]?
 
-    // MapKit frames the same nominal span more tightly than the web's Leaflet map.
-    private let emptyPlanMapRadiusMeters: CLLocationDistance = 2_000
+    private let emptyPlanMapRadiusMeters: CLLocationDistance = 1_000
 
     var body: some View {
         NavigationStack {
@@ -186,6 +185,16 @@ private struct CurrentPositionView: View {
                         .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
                 }
             }
+            ForEach(plannedStops ?? []) { stop in
+                if let coordinate = stop.coordinate {
+                    Annotation(stop.name, coordinate: coordinate) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .padding(8)
+                            .foregroundStyle(.white)
+                            .background(Chartroom.signal, in: Circle())
+                    }
+                }
+            }
         }
         .mapStyle(.standard(elevation: .realistic))
         .frame(height: 330)
@@ -196,13 +205,15 @@ private struct CurrentPositionView: View {
     }
 
     private var mapFocusKey: String {
-        if hasPlannedStops == true { return "planned-stops" }
+        if let plannedStops, !plannedStops.isEmpty {
+            return "planned-stops:\(plannedStops.map(\.id).joined(separator: ","))"
+        }
         guard let focus = mapFocus else { return "none" }
         return "\(focus.source):\(focus.coordinate.latitude):\(focus.coordinate.longitude)"
     }
 
     private var mapFocus: (coordinate: CLLocationCoordinate2D, source: String)? {
-        guard hasPlannedStops != true else { return nil }
+        guard plannedStops?.isEmpty != false else { return nil }
         if let point = tracker.currentJourney?.position {
             return (point.coordinate, "live")
         }
@@ -213,7 +224,7 @@ private struct CurrentPositionView: View {
     }
 
     private func focusMapOnCurrentPosition() {
-        if hasPlannedStops == true {
+        if plannedStops?.isEmpty == false {
             camera = .automatic
             mapViewportSource = nil
             return
@@ -241,16 +252,16 @@ private struct CurrentPositionView: View {
     @MainActor private func refreshPlanningStatus() async {
 #if DEBUG
         if ProcessInfo.processInfo.environment["CAPTAINS_LOG_FORCE_EMPTY_PLAN"] == "1" {
-            hasPlannedStops = false
+            plannedStops = []
             return
         }
 #endif
         guard let token = authentication.token else { return }
         do {
-            hasPlannedStops = try await authentication.api.planning(token: token).stops.isEmpty == false
+            plannedStops = try await authentication.api.planning(token: token).stops
         } catch {
             // Keep automatic map framing when planning data is unavailable.
-            hasPlannedStops = nil
+            plannedStops = nil
         }
     }
 
