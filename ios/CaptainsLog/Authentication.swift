@@ -77,6 +77,9 @@ extension AuthenticationManager: ASWebAuthenticationPresentationContextProviding
 private enum KeychainStore {
     static let service = "co.uk.achilleas.captains-log"
     static let account = "mobile-api-token"
+#if targetEnvironment(simulator)
+    static let simulatorTokenKey = "simulator-mobile-api-token"
+#endif
 
     static func save(_ token: String) throws {
         delete()
@@ -87,6 +90,12 @@ private enum KeychainStore {
             kSecValueData: Data(token.utf8),
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ] as CFDictionary, nil)
+#if targetEnvironment(simulator)
+        if status == errSecMissingEntitlement {
+            UserDefaults.standard.set(token, forKey: simulatorTokenKey)
+            return
+        }
+#endif
         guard status == errSecSuccess else {
             throw APIClientError.server("Unable to store the login securely.")
         }
@@ -101,8 +110,14 @@ private enum KeychainStore {
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
         ] as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        if status == errSecSuccess, let data = result as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+#if targetEnvironment(simulator)
+        return UserDefaults.standard.string(forKey: simulatorTokenKey)
+#else
+        return nil
+#endif
     }
 
     static func delete() {
@@ -111,5 +126,8 @@ private enum KeychainStore {
             kSecAttrService: service,
             kSecAttrAccount: account,
         ] as CFDictionary)
+#if targetEnvironment(simulator)
+        UserDefaults.standard.removeObject(forKey: simulatorTokenKey)
+#endif
     }
 }
