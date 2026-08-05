@@ -103,6 +103,17 @@ test("calculates coastline-aware planning distance between nearby stops", () => 
   assert.ok(route.legs[0].distanceNm < 4);
 });
 
+test("routes Channel Rock Bay to Wasp Bay around the headland", () => {
+  const route = buildPlanningRoute([
+    { lat: 37.52283333333333, lng: 23.426166666666667 },
+    { lat: 37.5205, lng: 23.41133333333333 },
+  ]);
+  assert.equal(route.legs.length, 1);
+  assert.equal(route.legs[0].method, "coastline");
+  assert.ok(route.legs[0].coordinates.length > 2);
+  assert.ok(route.legs[0].distanceNm > 0.72);
+});
+
 test("rejects invalid planning route coordinates", () => {
   assert.throws(
     () =>

@@ -6,13 +6,22 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if authentication.token == nil {
-                SignInView()
-            } else {
+            if shouldShowMainInterface {
                 ChartroomView()
+            } else {
+                SignInView()
             }
         }
         .background(Chartroom.paper.ignoresSafeArea())
+    }
+
+    private var shouldShowMainInterface: Bool {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["CAPTAINS_LOG_FORCE_EMPTY_PLAN"] == "1" {
+            return true
+        }
+#endif
+        return authentication.token != nil
     }
 }
 
@@ -229,6 +238,12 @@ private struct CurrentPositionView: View {
     }
 
     @MainActor private func refreshPlanningStatus() async {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["CAPTAINS_LOG_FORCE_EMPTY_PLAN"] == "1" {
+            hasPlannedStops = false
+            return
+        }
+#endif
         guard let token = authentication.token else { return }
         do {
             hasPlannedStops = try await authentication.api.planning(token: token).stops.isEmpty == false

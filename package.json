@@ -16,7 +16,7 @@
     "node": "24.x"
   },
   "dependencies": {
-    "@geo-maps/countries-land-1km": "^0.6.0",
+    "@geo-maps/countries-land-500m": "^0.6.0",
     "@ssroute/typescript": "^0.2.0",
     "@turf/bbox-clip": "^7.4.0",
     "@turf/boolean-disjoint": "^7.4.0",

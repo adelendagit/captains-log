@@ -37,7 +37,7 @@ function coordinateBounds(
 
 function getIndexedLandPolygons() {
   if (indexedLandPolygons) return indexedLandPolygons;
-  const land = require("@geo-maps/countries-land-1km")();
+  const land = require("@geo-maps/countries-land-500m")();
   indexedLandPolygons = [];
   for (const feature of land.features) {
     const polygons =
