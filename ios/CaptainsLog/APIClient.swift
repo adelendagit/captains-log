@@ -48,6 +48,15 @@ final class APIClient: Sendable {
         try await send(path: "api/data", token: token)
     }
 
+    func planningRoute(points: [PlanningRoutePoint], token: String) async throws -> PlanningRouteResponse {
+        try await send(
+            path: "api/planning-route",
+            method: "POST",
+            encodableBody: PlanningRouteBody(points: points),
+            token: token
+        )
+    }
+
     func voyages(token: String) async throws -> VoyagesResponse {
         try await send(path: "api/voyages", token: token)
     }
@@ -209,6 +218,10 @@ private struct PositionAcceptedResponse: Codable {
 private struct PlanStopBody: Codable {
     let cardId: String
     let due: Date
+}
+
+private struct PlanningRouteBody: Codable, Sendable {
+    let points: [PlanningRoutePoint]
 }
 
 private struct TodoCompletionBody: Codable {

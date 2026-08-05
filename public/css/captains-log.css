@@ -182,10 +182,19 @@ body {
 .popup-desc {
   margin-top: 0.3em;
   font-size: 0.9em;
-  line-height: 1.3;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  max-height: min(42vh, 18rem);
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 .popup-desc.collapsed {
-  max-height: 4.5em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  max-height: 5.6em;
   overflow: hidden;
 }
 .desc-toggle {
@@ -197,6 +206,16 @@ body {
   padding: 0;
   font-size: 0.85em;
   margin-top: 0.2em;
+}
+
+.leaflet-popup-content-wrapper {
+  max-width: calc(100vw - 48px);
+}
+
+.leaflet-popup-content {
+  width: min(22rem, calc(100vw - 88px)) !important;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .user-avatar {

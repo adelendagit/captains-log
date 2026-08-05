@@ -1,8 +1,15 @@
+import MapKit
 import SwiftUI
 
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @State private var data: PlanningResponse?
+    @State private var currentStatus: CurrentStatusResponse?
+    @State private var route: PlanningRouteResponse?
+    @State private var legByDestinationID: [String: PlanningRouteLeg] = [:]
+    @State private var routeLoading = false
+    @State private var speedKnots = 6.0
+    @State private var camera: MapCameraPosition = .automatic
     @State private var errorMessage: String?
     @State private var searchText = ""
     @State private var workingCardID: String?
@@ -12,11 +19,24 @@ struct PlanView: View {
             Group {
                 if let data {
                     List {
+                        if !plannedStops.isEmpty {
+                            Section {
+                                planningMap
+                                routeSummary
+                            }
+                        }
+                        if let errorMessage {
+                            Section {
+                                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            }
+                        }
                         Section("Planned stops") {
-                            if data.stops.isEmpty {
+                            if plannedStops.isEmpty {
                                 ContentUnavailableView("No stops planned", systemImage: "map", description: Text("Choose a place below to add the next stop."))
                             }
-                            ForEach(data.stops) { stop in
+                            ForEach(plannedStops) { stop in
                                 placeRow(stop, isPlanned: true)
                             }
                         }
@@ -37,6 +57,102 @@ struct PlanView: View {
             .task { await load() }
             .refreshable { await load() }
         }
+    }
+
+    private var plannedStops: [PlaceSummary] {
+        (data?.stops ?? [])
+            .filter { $0.dueComplete != true }
+            .sorted {
+                switch ($0.due, $1.due) {
+                case let (left?, right?): left < right
+                case (_?, nil): true
+                case (nil, _?): false
+                case (nil, nil): $0.name < $1.name
+                }
+            }
+    }
+
+    private var routeStops: [PlaceSummary] {
+        var stops = plannedStops.filter { $0.coordinate != nil }
+        let start: PlaceSummary?
+        if currentStatus?.status == "underway" {
+            start = currentStatus?.from
+        } else {
+            start = currentStatus?.current
+        }
+        if let start, start.coordinate != nil, stops.first?.id != start.id {
+            stops.insert(start, at: 0)
+        }
+        return stops
+    }
+
+    private var planningMap: some View {
+        Map(position: $camera) {
+            if let route {
+                ForEach(Array(route.legs.enumerated()), id: \.offset) { _, leg in
+                    if leg.mapCoordinates.count > 1 {
+                        MapPolyline(coordinates: leg.mapCoordinates)
+                            .stroke(Chartroom.signal, lineWidth: 4)
+                    }
+                }
+            }
+            ForEach(Array(routeStops.enumerated()), id: \.element.id) { index, stop in
+                if let coordinate = stop.coordinate {
+                    Annotation(stop.name, coordinate: coordinate) {
+                        ZStack {
+                            Circle()
+                                .fill(index == 0 ? Chartroom.sea : Chartroom.signal)
+                                .frame(width: 30, height: 30)
+                            Text(index == 0 ? "●" : "\(index)")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+            }
+        }
+        .mapStyle(.standard(elevation: .realistic))
+        .frame(height: 260)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .listRowInsets(EdgeInsets())
+        .accessibilityLabel("Planned sea route")
+    }
+
+    private var routeSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(distanceText(totalDistance), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                Spacer()
+                Label(durationText(for: totalDistance), systemImage: "clock")
+            }
+            .font(.headline)
+            HStack {
+                Text("Passage speed")
+                Spacer()
+                Stepper(value: $speedKnots, in: 1...15, step: 0.5) {
+                    Text("\(speedKnots, specifier: "%.1f") kn")
+                        .monospacedDigit()
+                }
+                .fixedSize()
+            }
+            .font(.subheadline)
+            if routeLoading {
+                ProgressView("Calculating coastline-aware route…")
+                    .font(.caption)
+            } else if route?.legs.contains(where: { $0.distanceNm == nil }) == true {
+                Label("One or more legs could not be routed safely.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var totalDistance: Double? {
+        guard let legs = route?.legs, !legs.isEmpty else { return nil }
+        let distances = legs.compactMap(\.distanceNm)
+        guard distances.count == legs.count else { return nil }
+        return distances.reduce(0, +)
     }
 
     private var filteredPlaces: [PlaceSummary] {
@@ -61,6 +177,14 @@ struct PlanView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if isPlanned, let leg = legByDestinationID[place.id] {
+                    HStack(spacing: 8) {
+                        Label(distanceText(leg.distanceNm), systemImage: "ruler")
+                        Label(durationText(for: leg.distanceNm), systemImage: "clock")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Chartroom.sea)
+                }
             }
             Spacer()
             if workingCardID == place.id {
@@ -84,11 +208,56 @@ struct PlanView: View {
     @MainActor private func load() async {
         guard let token = authentication.token else { return }
         do {
-            data = try await authentication.api.planning(token: token)
+            async let planningRequest = authentication.api.planning(token: token)
+            async let statusRequest = authentication.api.currentStatus(token: token)
+            let (planning, status) = try await (planningRequest, statusRequest)
+            data = planning
+            currentStatus = status
             errorMessage = nil
+            await loadRoute(token: token)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    @MainActor private func loadRoute(token: String) async {
+        let sequence = routeStops
+        guard sequence.count > 1 else {
+            route = nil
+            legByDestinationID = [:]
+            return
+        }
+        let points = sequence.compactMap { stop -> PlanningRoutePoint? in
+            guard let lat = stop.lat, let lng = stop.lng else { return nil }
+            return PlanningRoutePoint(lat: lat, lng: lng)
+        }
+        routeLoading = true
+        defer { routeLoading = false }
+        do {
+            let response = try await authentication.api.planningRoute(points: points, token: token)
+            route = response
+            legByDestinationID = Dictionary(
+                uniqueKeysWithValues: zip(sequence.dropFirst(), response.legs).map { ($0.id, $1) }
+            )
+            camera = .automatic
+        } catch {
+            route = nil
+            legByDestinationID = [:]
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func distanceText(_ distance: Double?) -> String {
+        guard let distance else { return "Route unavailable" }
+        return String(format: "%.1f NM", distance)
+    }
+
+    private func durationText(for distance: Double?) -> String {
+        guard let distance, speedKnots > 0 else { return "—" }
+        let minutes = Int((distance / speedKnots * 60).rounded())
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        return hours > 0 ? "\(hours)h \(remainingMinutes)m" : "\(remainingMinutes)m"
     }
 
     @MainActor private func plan(_ place: PlaceSummary) async {
@@ -96,7 +265,7 @@ struct PlanView: View {
         workingCardID = place.id
         defer { workingCardID = nil }
         do {
-            let lastDate = data?.stops.compactMap(\.due).max() ?? Date()
+            let lastDate = plannedStops.compactMap(\.due).max() ?? Date()
             let due = Calendar.current.date(byAdding: .day, value: 1, to: max(lastDate, Date())) ?? Date()
             try await authentication.api.planStop(cardID: place.id, due: due, token: token)
             await load()

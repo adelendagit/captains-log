@@ -76,6 +76,28 @@ struct PlanningResponse: Codable {
     let places: [PlaceSummary]
 }
 
+struct PlanningRoutePoint: Codable, Sendable {
+    let lat: Double
+    let lng: Double
+}
+
+struct PlanningRouteLeg: Codable, Sendable {
+    let coordinates: [[Double]]
+    let distanceNm: Double?
+    let method: String
+
+    var mapCoordinates: [CLLocationCoordinate2D] {
+        coordinates.compactMap { coordinate in
+            guard coordinate.count >= 2 else { return nil }
+            return CLLocationCoordinate2D(latitude: coordinate[1], longitude: coordinate[0])
+        }
+    }
+}
+
+struct PlanningRouteResponse: Codable, Sendable {
+    let legs: [PlanningRouteLeg]
+}
+
 struct VoyageSummary: Codable, Identifiable {
     let id: String
     let name: String
