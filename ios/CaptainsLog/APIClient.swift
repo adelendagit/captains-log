@@ -14,6 +14,7 @@ enum APIClientError: LocalizedError {
 
 final class APIClient: Sendable {
     let baseURL: URL
+    private let responseCache = ResponseCache()
 
     init() {
         let configured = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
@@ -37,15 +38,15 @@ final class APIClient: Sendable {
     }
 
     func currentJourney(token: String?) async throws -> CurrentJourneyResponse {
-        try await send(path: "api/journeys/current", token: token)
+        try await send(path: "api/journeys/current", token: token, cacheKey: "current-journey")
     }
 
     func currentStatus(token: String?) async throws -> CurrentStatusResponse {
-        try await send(path: "api/current-stop", token: token)
+        try await send(path: "api/current-stop", token: token, cacheKey: "current-status")
     }
 
     func planning(token: String) async throws -> PlanningResponse {
-        try await send(path: "api/data", token: token)
+        try await send(path: "api/data", token: token, cacheKey: "planning")
     }
 
     func planningRoute(points: [PlanningRoutePoint], token: String) async throws -> PlanningRouteResponse {
@@ -53,24 +54,26 @@ final class APIClient: Sendable {
             path: "api/planning-route",
             method: "POST",
             encodableBody: PlanningRouteBody(points: points),
-            token: token
+            token: token,
+            cacheKey: "planning-route-\(points.map { "\($0.lat),\($0.lng)" }.joined(separator: ";"))"
         )
     }
 
     func voyages(token: String) async throws -> VoyagesResponse {
-        try await send(path: "api/voyages", token: token)
+        try await send(path: "api/voyages", token: token, cacheKey: "voyages")
     }
 
     func logs(token: String) async throws -> LogsResponse {
         try await send(
             path: "api/logs",
             queryItems: [URLQueryItem(name: "trip", value: "all")],
-            token: token
+            token: token,
+            cacheKey: "logs-all"
         )
     }
 
     func todoData(token: String) async throws -> TodoDataResponse {
-        try await send(path: "to-do/api/data", token: token)
+        try await send(path: "to-do/api/data", token: token, cacheKey: "todo-data")
     }
 
     func planStop(cardID: String, due: Date, token: String) async throws {
@@ -116,6 +119,8 @@ final class APIClient: Sendable {
         longitude: Double,
         journeyName: String? = nil,
         placeName: String? = nil,
+        timestamp: Date = Date(),
+        litres: Double? = nil,
         token: String
     ) async throws {
         let _: SuccessResponse = try await send(
@@ -126,8 +131,9 @@ final class APIClient: Sendable {
                 cardId: cardID,
                 lat: latitude,
                 lng: longitude,
-                timestamp: Date(),
+                timestamp: timestamp,
                 source: "ios",
+                litres: litres,
                 journeyName: journeyName,
                 placeName: placeName
             ),
@@ -167,24 +173,27 @@ final class APIClient: Sendable {
         method: String = "GET",
         body: [String: String]? = nil,
         queryItems: [URLQueryItem] = [],
-        token: String?
+        token: String?,
+        cacheKey: String? = nil
     ) async throws -> Response {
         let data = body.map { try? JSONEncoder.captainsLog.encode($0) } ?? nil
-        return try await request(path: path, method: method, data: data, queryItems: queryItems, token: token)
+        return try await request(path: path, method: method, data: data, queryItems: queryItems, token: token, cacheKey: cacheKey)
     }
 
     private func send<Response: Decodable, Body: Encodable>(
         path: String,
         method: String,
         encodableBody: Body,
-        token: String?
+        token: String?,
+        cacheKey: String? = nil
     ) async throws -> Response {
         try await request(
             path: path,
             method: method,
             data: JSONEncoder.captainsLog.encode(encodableBody),
             queryItems: [],
-            token: token
+            token: token,
+            cacheKey: cacheKey
         )
     }
 
@@ -193,7 +202,8 @@ final class APIClient: Sendable {
         method: String,
         data: Data?,
         queryItems: [URLQueryItem],
-        token: String?
+        token: String?,
+        cacheKey: String?
     ) async throws -> Response {
         let url = baseURL.appending(path: path).appending(queryItems: queryItems)
         var request = URLRequest(url: url)
@@ -203,7 +213,16 @@ final class APIClient: Sendable {
         if data != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
 
-        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let responseData: Data
+        let response: URLResponse
+        do {
+            (responseData, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if let cacheKey, let cachedData = await responseCache.data(for: cacheKey) {
+                return try JSONDecoder.captainsLog.decode(Response.self, from: cachedData)
+            }
+            throw error
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
         }
@@ -211,7 +230,40 @@ final class APIClient: Sendable {
             let message = (try? JSONDecoder.captainsLog.decode(APIErrorResponse.self, from: responseData))?.error
             throw APIClientError.server(message ?? "Request failed (\(httpResponse.statusCode)).")
         }
-        return try JSONDecoder.captainsLog.decode(Response.self, from: responseData)
+        let decoded = try JSONDecoder.captainsLog.decode(Response.self, from: responseData)
+        if let cacheKey {
+            await responseCache.store(responseData, for: cacheKey)
+        }
+        return decoded
+    }
+}
+
+private actor ResponseCache {
+    private let directory: URL
+
+    init() {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        directory = caches.appending(path: "CaptainsLogResponses", directoryHint: .isDirectory)
+    }
+
+    func data(for key: String) -> Data? {
+        try? Data(contentsOf: fileURL(for: key))
+    }
+
+    func store(_ data: Data, for key: String) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: fileURL(for: key), options: .atomic)
+        } catch {
+            // A cache write must never make an otherwise successful request fail.
+        }
+    }
+
+    private func fileURL(for key: String) -> URL {
+        let encoded = Data(key.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+        return directory.appending(path: encoded).appendingPathExtension("json")
     }
 }
 
@@ -244,6 +296,7 @@ private struct LogEntryBody: Codable {
     let lng: Double
     let timestamp: Date
     let source: String
+    let litres: Double?
     let journeyName: String?
     let placeName: String?
 }

@@ -66,9 +66,13 @@ private struct SignInView: View {
 }
 
 private struct ChartroomView: View {
+    @State private var logEntryIntent: LogEntryIntent?
+
     var body: some View {
         TabView {
-            CurrentPositionView()
+            CurrentPositionView {
+                logEntryIntent = LogEntryIntent(action: "departed")
+            }
                 .tabItem { Label("Now", systemImage: "location.fill") }
             PlanView()
                 .tabItem { Label("Plan", systemImage: "map") }
@@ -79,16 +83,37 @@ private struct ChartroomView: View {
             TodoView()
                 .tabItem { Label("To Do", systemImage: "checklist") }
         }
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                logEntryIntent = LogEntryIntent(action: nil)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title2.bold())
+                    .frame(width: 54, height: 54)
+                    .foregroundStyle(.white)
+                    .background(Chartroom.sea, in: Circle())
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+            }
+            .accessibilityLabel("Add log entry")
+            .padding(.trailing, 18)
+            .padding(.bottom, 66)
+        }
+        .sheet(item: $logEntryIntent) { intent in
+            AddLogEntryView(initialAction: intent.action)
+        }
     }
 }
 
 private struct CurrentPositionView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @EnvironmentObject private var tracker: JourneyTracker
-    @State private var journeyName = ""
     @State private var camera: MapCameraPosition = .automatic
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
+    @State private var plannedRoute: PlanningRouteResponse?
+    @State private var confirmingEndJourney = false
+
+    let onStartJourney: () -> Void
 
     private let emptyPlanMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -128,6 +153,18 @@ private struct CurrentPositionView: View {
                 tracker.resumeTracking()
             }
             .refreshable { await refreshMapData() }
+            .confirmationDialog(
+                "End this journey?",
+                isPresented: $confirmingEndJourney,
+                titleVisibility: .visible
+            ) {
+                Button("End Journey", role: .destructive) {
+                    Task { await tracker.endJourney() }
+                }
+                Button("Keep Journey Running", role: .cancel) {}
+            } message: {
+                Text("Location sharing will stop. This cannot be triggered accidentally without confirming here.")
+            }
         }
     }
 
@@ -164,6 +201,14 @@ private struct CurrentPositionView: View {
 
     private var map: some View {
         Map(position: $camera) {
+            if let plannedRoute {
+                ForEach(Array(plannedRoute.legs.enumerated()), id: \.offset) { _, leg in
+                    if leg.mapCoordinates.count > 1 {
+                        MapPolyline(coordinates: leg.mapCoordinates)
+                            .stroke(Chartroom.route, style: StrokeStyle(lineWidth: 4, dash: [8, 6]))
+                    }
+                }
+            }
             if let track = tracker.currentJourney?.track, track.count > 1 {
                 MapPolyline(coordinates: track.map(\.coordinate))
                     .stroke(Chartroom.signal, lineWidth: 4)
@@ -173,7 +218,7 @@ private struct CurrentPositionView: View {
                     Image(systemName: "sailboat.fill")
                         .padding(10)
                         .foregroundStyle(Chartroom.ink)
-                        .background(.white, in: Circle())
+                        .background(Chartroom.surface, in: Circle())
                         .overlay(Circle().stroke(Chartroom.signal, lineWidth: 3))
                 }
             } else if let place = tracker.currentStatus?.current, let coordinate = place.coordinate {
@@ -181,7 +226,7 @@ private struct CurrentPositionView: View {
                     Image(systemName: "anchor")
                         .padding(10)
                         .foregroundStyle(Chartroom.ink)
-                        .background(.white, in: Circle())
+                        .background(Chartroom.surface, in: Circle())
                         .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
                 }
             }
@@ -244,9 +289,8 @@ private struct CurrentPositionView: View {
     }
 
     @MainActor private func refreshMapData() async {
-        async let trackerRefresh: Void = tracker.refresh()
-        async let planningRefresh: Void = refreshPlanningStatus()
-        _ = await (trackerRefresh, planningRefresh)
+        await tracker.refresh()
+        await refreshPlanningStatus()
     }
 
     @MainActor private func refreshPlanningStatus() async {
@@ -258,11 +302,38 @@ private struct CurrentPositionView: View {
 #endif
         guard let token = authentication.token else { return }
         do {
-            plannedStops = try await authentication.api.planning(token: token).stops
+            let stops = try await authentication.api.planning(token: token).stops
+                .filter { $0.dueComplete != true }
+                .sorted {
+                    switch ($0.due, $1.due) {
+                    case let (left?, right?): left < right
+                    case (_?, nil): true
+                    case (nil, _?): false
+                    case (nil, nil): $0.name < $1.name
+                    }
+                }
+            plannedStops = stops
+            plannedRoute = await loadPlannedRoute(stops: stops, token: token)
         } catch {
-            // Keep automatic map framing when planning data is unavailable.
-            plannedStops = nil
+            // Retain the last visible chart when the device moves in and out of coverage.
         }
+    }
+
+    @MainActor private func loadPlannedRoute(stops: [PlaceSummary], token: String) async -> PlanningRouteResponse? {
+        guard tracker.currentJourney?.active == true || tracker.currentStatus?.status == "underway" else { return nil }
+        var points: [PlanningRoutePoint] = []
+        if let point = tracker.currentJourney?.position {
+            points.append(PlanningRoutePoint(lat: point.lat, lng: point.lng))
+        } else if let start = tracker.currentStatus?.from ?? tracker.currentStatus?.current,
+                  let lat = start.lat, let lng = start.lng {
+            points.append(PlanningRoutePoint(lat: lat, lng: lng))
+        }
+        points.append(contentsOf: stops.compactMap { stop in
+            guard let lat = stop.lat, let lng = stop.lng else { return nil }
+            return PlanningRoutePoint(lat: lat, lng: lng)
+        })
+        guard points.count > 1 else { return nil }
+        return try? await authentication.api.planningRoute(points: points, token: token)
     }
 
     @ViewBuilder
@@ -275,8 +346,8 @@ private struct CurrentPositionView: View {
                 )
                 .font(.headline)
                 .foregroundStyle(tracker.isTracking ? Chartroom.sea : .secondary)
-                Button("End journey", role: .destructive) {
-                    Task { await tracker.endJourney() }
+                Button("End Journey", role: .destructive) {
+                    confirmingEndJourney = true
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
@@ -284,17 +355,18 @@ private struct CurrentPositionView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(20)
-            .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 20))
+            .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 20))
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Begin a journey")
+                Text("Ready to depart?")
                     .font(.system(.title2, design: .serif, weight: .semibold))
-                TextField("Journey name (optional)", text: $journeyName)
-                    .textFieldStyle(.roundedBorder)
+                Text("Start Journey records your departure and begins live position tracking.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 Button {
-                    Task { await tracker.startJourney(name: journeyName) }
+                    onStartJourney()
                 } label: {
-                    Label("Start journey", systemImage: "location.fill")
+                    Label("Start Journey", systemImage: "sailboat.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -302,7 +374,7 @@ private struct CurrentPositionView: View {
                 .disabled(tracker.isWorking)
             }
             .padding(20)
-            .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 20))
+            .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 20))
         }
     }
 

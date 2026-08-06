@@ -1,6 +1,218 @@
 import MapKit
 import SwiftUI
 
+struct LogEntryIntent: Identifiable {
+    let id = UUID()
+    let action: String?
+}
+
+struct AddLogEntryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authentication: AuthenticationManager
+    @EnvironmentObject private var tracker: JourneyTracker
+    @StateObject private var locator = LogLocationProvider()
+    @State private var places: [PlaceSummary] = []
+    @State private var selectedPlaceID = ""
+    @State private var action: String
+    @State private var journeyName = ""
+    @State private var litres = ""
+    @State private var timestamp = Date()
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private let initialAction: String?
+
+    init(initialAction: String?) {
+        self.initialAction = initialAction
+        _action = State(initialValue: initialAction ?? "arrived")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("What happened?") {
+                    Picker("Action", selection: $action) {
+                        ForEach(actions, id: \.key) { item in
+                            Label(item.label, systemImage: item.icon).tag(item.key)
+                        }
+                    }
+                    .disabled(initialAction == "departed")
+                }
+
+                Section("Where?") {
+                    if places.isEmpty {
+                        ProgressView("Finding nearby places…")
+                    } else {
+                        Picker("Place", selection: $selectedPlaceID) {
+                            ForEach(sortedPlaces) { place in
+                                Text(place.listName.map { "\(place.name) · \($0)" } ?? place.name)
+                                    .tag(place.id)
+                            }
+                        }
+                    }
+                    if let coordinate = logCoordinate {
+                        LabeledContent("Position", value: String(format: "%.4f°, %.4f°", coordinate.latitude, coordinate.longitude))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if action == "departed" {
+                    Section("Journey") {
+                        TextField("Journey name", text: $journeyName)
+                        Text("Saving the Departure entry starts live GPS tracking.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if action == "water" || action == "diesel" {
+                    Section("Quantity (optional)") {
+                        TextField("Litres", text: $litres)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                Section("When?") {
+                    DatePicker("Date and time", selection: $timestamp, in: ...Date())
+                }
+
+                if let errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Chartroom.paper)
+            .navigationTitle(initialAction == "departed" ? "Start Journey" : "New Log Entry")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action == "departed" ? "Start" : "Save") {
+                        Task { await save() }
+                    }
+                    .disabled(isSaving || selectedPlace == nil || logCoordinate == nil)
+                }
+            }
+            .onChange(of: selectedPlaceID) { updateSuggestedJourneyName() }
+            .onChange(of: action) { updateSuggestedJourneyName() }
+            .task { await load() }
+        }
+    }
+
+    private var actions: [(key: String, label: String, icon: String)] {
+        [
+            ("arrived", "Arrived", "anchor"),
+            ("departed", "Departed", "sailboat"),
+            ("visited", "Visited", "mappin.and.ellipse"),
+            ("water", "Water", "drop.fill"),
+            ("diesel", "Diesel", "fuelpump"),
+            ("bins", "Bins", "trash"),
+            ("power", "Shore power", "bolt.fill"),
+            ("boom", "Boom", "wrench.and.screwdriver")
+        ]
+    }
+
+    private var selectedPlace: PlaceSummary? {
+        places.first { $0.id == selectedPlaceID }
+    }
+
+    private var logCoordinate: CLLocationCoordinate2D? {
+        locator.coordinate ?? tracker.currentJourney?.position?.coordinate ?? selectedPlace?.coordinate
+    }
+
+    private var sortedPlaces: [PlaceSummary] {
+        guard let coordinate = locator.coordinate else { return places }
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return places.sorted { left, right in
+            distance(from: origin, to: left) < distance(from: origin, to: right)
+        }
+    }
+
+    private func distance(from origin: CLLocation, to place: PlaceSummary) -> CLLocationDistance {
+        guard let coordinate = place.coordinate else { return .greatestFiniteMagnitude }
+        return origin.distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+    }
+
+    @MainActor private func load() async {
+        locator.locate()
+        guard let token = authentication.token else { return }
+        do {
+            let planning = try await authentication.api.planning(token: token)
+            var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.id, $0) })
+            for stop in planning.stops { byID[stop.id] = stop }
+            if let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from {
+                byID[current.id] = current
+                selectedPlaceID = current.id
+            }
+            places = Array(byID.values).sorted { $0.name < $1.name }
+            if selectedPlaceID.isEmpty { selectedPlaceID = sortedPlaces.first?.id ?? "" }
+            updateSuggestedJourneyName()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateSuggestedJourneyName() {
+        guard action == "departed", journeyName.isEmpty, let place = selectedPlace else { return }
+        let destination = tracker.currentStatus?.plannedDestination?.name ?? tracker.currentStatus?.destination?.name
+        journeyName = destination.map { "\(place.name) → \($0)" } ?? "Journey from \(place.name)"
+    }
+
+    @MainActor private func save() async {
+        guard let token = authentication.token, let place = selectedPlace, let coordinate = logCoordinate else { return }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            try await authentication.api.addLogEntry(
+                action: action,
+                cardID: place.id,
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                journeyName: action == "departed" ? journeyName : nil,
+                placeName: place.name,
+                timestamp: timestamp,
+                litres: Double(litres),
+                token: token
+            )
+            await tracker.refresh()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+@MainActor
+private final class LogLocationProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
+    @Published private(set) var coordinate: CLLocationCoordinate2D?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+
+    func locate() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        coordinate = locations.last?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
+
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @State private var data: PlanningResponse?
@@ -17,7 +229,7 @@ struct PlanView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let data {
+                if data != nil {
                     List {
                         if !plannedStops.isEmpty {
                             Section {
@@ -339,7 +551,6 @@ struct VoyagesView: View {
 
 struct LogbookView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
-    @EnvironmentObject private var tracker: JourneyTracker
     @State private var logs: [LogEntry] = []
     @State private var errorMessage: String?
     @State private var loading = true
@@ -372,17 +583,6 @@ struct LogbookView: View {
                 }
             }
             .navigationTitle("Logbook")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        ForEach(logActions, id: \.key) { action in
-                            Button(action.label) { Task { await addEntry(action.key) } }
-                        }
-                    } label: {
-                        Label("Add entry", systemImage: "plus")
-                    }
-                }
-            }
             .task { await load() }
             .refreshable { await load() }
         }
@@ -397,45 +597,6 @@ struct LogbookView: View {
         case "broken": "wrench.and.screwdriver"
         default: "book.closed"
         }
-    }
-
-    private var logActions: [(key: String, label: String)] {
-        [
-            ("arrived", "Arrived"), ("departed", "Departed"), ("visited", "Visited"),
-            ("water", "Water"), ("diesel", "Diesel"), ("bins", "Bins"),
-            ("power", "Shore power"), ("boom", "Boom")
-        ]
-    }
-
-    @MainActor private func addEntry(_ action: String) async {
-        guard let token = authentication.token else { return }
-        let place = tracker.currentStatus?.current ?? tracker.currentStatus?.from ?? tracker.currentStatus?.destination
-        let point = tracker.currentJourney?.position
-        guard let place,
-              let latitude = point?.lat ?? place.lat,
-              let longitude = point?.lng ?? place.lng else {
-            errorMessage = "A current place and position are needed before adding a log entry."
-            return
-        }
-        let cardID = place.id
-        do {
-            let destinationName = tracker.currentStatus?.plannedDestination?.name
-                ?? tracker.currentStatus?.destination?.name
-            let journeyName = action == "departed"
-                ? destinationName.map { "\(place.name) → \($0)" } ?? "Journey from \(place.name)"
-                : nil
-            try await authentication.api.addLogEntry(
-                action: action,
-                cardID: cardID,
-                latitude: latitude,
-                longitude: longitude,
-                journeyName: journeyName,
-                placeName: place.name,
-                token: token
-            )
-            await tracker.refresh()
-            await load()
-        } catch { errorMessage = error.localizedDescription }
     }
 
     @MainActor private func load() async {

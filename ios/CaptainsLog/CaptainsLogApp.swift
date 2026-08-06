@@ -22,8 +22,10 @@ struct CaptainsLogApp: App {
 }
 
 enum Chartroom {
-    static let ink = Color(red: 11 / 255, green: 41 / 255, blue: 54 / 255)
-    static let sea = Color(red: 31 / 255, green: 112 / 255, blue: 133 / 255)
-    static let paper = Color(red: 244 / 255, green: 240 / 255, blue: 231 / 255)
-    static let signal = Color(red: 233 / 255, green: 120 / 255, blue: 74 / 255)
+    static let ink = Color("ChartroomInk")
+    static let sea = Color("ChartroomSea")
+    static let paper = Color("ChartroomPaper")
+    static let surface = Color("ChartroomSurface")
+    static let signal = Color("ChartroomSignal")
+    static let route = Color("ChartroomRoute")
 }

@@ -29,8 +29,9 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
         do {
             async let journey = authentication.api.currentJourney(token: authentication.token)
             async let status = authentication.api.currentStatus(token: authentication.token)
-            currentJourney = try await journey
-            currentStatus = try await status
+            let (journeyResponse, statusResponse) = try await (journey, status)
+            currentJourney = journeyWithPendingPositions(journeyResponse)
+            currentStatus = statusResponse
             if
                 currentJourney?.active == true,
                 let journeyID = currentJourney?.journey?.id
@@ -130,7 +131,36 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             sampleId: UUID().uuidString,
             source: "ios"
         )
+        recordLocally(point)
         Task { await upload(point) }
+    }
+
+    private func recordLocally(_ point: PositionPoint) {
+        guard let journey = currentJourney, journey.active else { return }
+        var track = journey.track ?? []
+        if !track.contains(where: { $0.id == point.id }) { track.append(point) }
+        currentJourney = CurrentJourneyResponse(
+            active: true,
+            journey: journey.journey,
+            position: point,
+            track: track
+        )
+    }
+
+    private func journeyWithPendingPositions(_ journey: CurrentJourneyResponse) -> CurrentJourneyResponse {
+        guard journey.active, let journeyID = journey.journey?.id else { return journey }
+        let pending = pendingPoints(journeyID: journeyID)
+        guard !pending.isEmpty else { return journey }
+        var track = journey.track ?? []
+        let existingIDs = Set(track.map(\.id))
+        track.append(contentsOf: pending.filter { !existingIDs.contains($0.id) })
+        track.sort { $0.timestamp < $1.timestamp }
+        return CurrentJourneyResponse(
+            active: true,
+            journey: journey.journey,
+            position: track.last ?? journey.position,
+            track: track
+        )
     }
 
     private func upload(_ point: PositionPoint) async {
