@@ -31,7 +31,15 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             async let status = authentication.api.currentStatus(token: authentication.token)
             currentJourney = try await journey
             currentStatus = try await status
-            if currentJourney?.active == false { stopLocationUpdates() }
+            if
+                currentJourney?.active == true,
+                let journeyID = currentJourney?.journey?.id
+            {
+                UserDefaults.standard.set(journeyID, forKey: activeJourneyKey)
+                if !isTracking { beginLocationUpdates() }
+            } else {
+                stopLocationUpdates()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

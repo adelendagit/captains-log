@@ -114,6 +114,8 @@ final class APIClient: Sendable {
         cardID: String,
         latitude: Double,
         longitude: Double,
+        journeyName: String? = nil,
+        placeName: String? = nil,
         token: String
     ) async throws {
         let _: SuccessResponse = try await send(
@@ -125,7 +127,9 @@ final class APIClient: Sendable {
                 lat: latitude,
                 lng: longitude,
                 timestamp: Date(),
-                source: "ios"
+                source: "ios",
+                journeyName: journeyName,
+                placeName: placeName
             ),
             token: token
         )
@@ -240,4 +244,6 @@ private struct LogEntryBody: Codable {
     let lng: Double
     let timestamp: Date
     let source: String
+    let journeyName: String?
+    let placeName: String?
 }

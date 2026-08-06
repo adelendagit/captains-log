@@ -8,6 +8,7 @@ const {
   endJourney,
   fetchJourneyCards,
   fetchJourneyComments,
+  findActiveJourney,
   parseJourneyDescription,
   parsePositionComment,
 } = require("../services/journeys");
@@ -52,25 +53,6 @@ async function requireBoardMember(req, res) {
   req.session.boardMemberId = memberId;
   req.session.boardMemberVerifiedAt = Date.now();
   return memberId;
-}
-
-function findActiveJourney(cards) {
-  return cards
-    .map((card) => ({
-      card,
-      metadata: parseJourneyDescription(card.desc),
-    }))
-    .filter(
-      ({ metadata }) =>
-        metadata?.status === "active" &&
-        metadata.startedAt &&
-        !Number.isNaN(new Date(metadata.startedAt).getTime()),
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.metadata.startedAt || 0) -
-        new Date(a.metadata.startedAt || 0),
-    )[0];
 }
 
 function normalizePosition(body) {

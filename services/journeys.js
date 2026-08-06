@@ -35,6 +35,25 @@ function parseJourneyDescription(description = "") {
   };
 }
 
+function findActiveJourney(cards) {
+  return cards
+    .map((card) => ({
+      card,
+      metadata: parseJourneyDescription(card.desc),
+    }))
+    .filter(
+      ({ metadata }) =>
+        metadata?.status === "active" &&
+        metadata.startedAt &&
+        !Number.isNaN(new Date(metadata.startedAt).getTime()),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.metadata.startedAt || 0) -
+        new Date(a.metadata.startedAt || 0),
+    )[0];
+}
+
 function buildPositionComment(position) {
   const lines = [
     "position",
@@ -222,6 +241,7 @@ module.exports = {
   endJourney,
   fetchJourneyCards,
   fetchJourneyComments,
+  findActiveJourney,
   parseJourneyDescription,
   parsePositionComment,
 };

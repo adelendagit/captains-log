@@ -411,18 +411,26 @@ struct LogbookView: View {
         guard let token = authentication.token else { return }
         let place = tracker.currentStatus?.current ?? tracker.currentStatus?.from ?? tracker.currentStatus?.destination
         let point = tracker.currentJourney?.position
-        guard let cardID = place?.id,
-              let latitude = point?.lat ?? place?.lat,
-              let longitude = point?.lng ?? place?.lng else {
+        guard let place,
+              let latitude = point?.lat ?? place.lat,
+              let longitude = point?.lng ?? place.lng else {
             errorMessage = "A current place and position are needed before adding a log entry."
             return
         }
+        let cardID = place.id
         do {
+            let destinationName = tracker.currentStatus?.plannedDestination?.name
+                ?? tracker.currentStatus?.destination?.name
+            let journeyName = action == "departed"
+                ? destinationName.map { "\(place.name) → \($0)" } ?? "Journey from \(place.name)"
+                : nil
             try await authentication.api.addLogEntry(
                 action: action,
                 cardID: cardID,
                 latitude: latitude,
                 longitude: longitude,
+                journeyName: journeyName,
+                placeName: place.name,
                 token: token
             )
             await tracker.refresh()

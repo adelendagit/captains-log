@@ -2569,6 +2569,9 @@ function setupLogWizard() {
   const locationStatus = document.getElementById("wizard-location-status");
   const locationList = document.getElementById("wizard-location-suggestions");
   const actionGrid = document.getElementById("wizard-action-grid");
+  const journeyNameInput = document.getElementById(
+    "wizard-journey-name-input",
+  );
   const litresInput = document.getElementById("wizard-litres-input");
   const backfillInput = document.getElementById("wizard-backfill-input");
   const submitStatus = document.getElementById("wizard-submit-status");
@@ -2584,17 +2587,10 @@ function setupLogWizard() {
     submitting: false,
   };
 
-  const baseSteps = [
-    "location",
-    "action",
-    "litres",
-    "backfill",
-    "notification",
-  ];
-
   const flowSteps = () => [
     "location",
     "action",
+    ...(wizardState.action === "departed" ? ["journey"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
     "backfill",
     "notification",
@@ -2616,18 +2612,14 @@ function setupLogWizard() {
   };
 
   const renderProgress = (step) => {
-    const currentIndex = baseSteps.indexOf(step);
+    const steps = flowSteps();
+    const currentIndex = steps.indexOf(step);
     document.querySelectorAll("[data-wizard-progress]").forEach((item) => {
       const itemStep = item.dataset.wizardProgress;
-      const itemIndex = baseSteps.indexOf(itemStep);
+      const itemIndex = steps.indexOf(itemStep);
+      item.classList.toggle("hidden", itemIndex === -1);
       item.classList.toggle("active", itemStep === step);
-      item.classList.toggle(
-        "complete",
-        itemIndex < currentIndex ||
-          (itemStep === "litres" &&
-            !["water", "diesel"].includes(wizardState.action) &&
-            currentIndex > baseSteps.indexOf("litres")),
-      );
+      item.classList.toggle("complete", itemIndex >= 0 && itemIndex < currentIndex);
     });
   };
 
@@ -2637,6 +2629,13 @@ function setupLogWizard() {
       section.classList.toggle("hidden", section.dataset.wizardStep !== step);
     });
     renderProgress(step);
+    const steps = flowSteps();
+    const stepCount = modal.querySelector(
+      `[data-wizard-step="${step}"] .log-wizard-step-count`,
+    );
+    if (stepCount && steps.includes(step)) {
+      stepCount.textContent = `Step ${steps.indexOf(step) + 1} of ${steps.length}`;
+    }
 
     backBtn.classList.toggle("hidden", step === "success");
     nextBtn.classList.toggle("hidden", step === "action");
@@ -2648,6 +2647,8 @@ function setupLogWizard() {
       nextBtn.disabled = !wizardState.draft || !selectedCardId();
     } else if (step === "litres") {
       nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
+    } else if (step === "journey") {
+      nextBtn.textContent = "Continue";
     } else if (step === "backfill") {
       nextBtn.textContent = "Continue";
     } else if (step === "notification") {
@@ -2657,6 +2658,21 @@ function setupLogWizard() {
       nextBtn.textContent = "Close";
       nextBtn.disabled = false;
     }
+  };
+
+  const selectedPlace = () => {
+    const cardId = selectedCardId();
+    return wizardState.suggestions.find((place) => place.id === cardId) || null;
+  };
+
+  const suggestedJourneyName = () => {
+    const from = selectedPlace()?.name;
+    const destination =
+      currentStatus?.plannedDestination?.name || currentStatus?.destination?.name;
+    if (from && destination && from !== destination) {
+      return `${from} → ${destination}`;
+    }
+    return from ? `Journey from ${from}` : "New journey";
   };
 
   const renderWizardLocations = (suggestions, selectedId) => {
@@ -2752,10 +2768,15 @@ function setupLogWizard() {
           ? "people"
           : "none",
       );
+      if (wizardState.action === "departed") {
+        journeyNameInput.value = suggestedJourneyName();
+      }
       renderStep(
         ["water", "diesel"].includes(wizardState.action)
           ? "litres"
-          : "backfill",
+          : wizardState.action === "departed"
+            ? "journey"
+            : "backfill",
       );
     });
   });
@@ -2767,6 +2788,7 @@ function setupLogWizard() {
     wizardState.action = null;
     wizardState.submitting = false;
     litresInput.value = "";
+    journeyNameInput.value = "";
     backfillInput.value = "";
     submitStatus.textContent = "";
     submitStatus.classList.remove("error");
@@ -2806,7 +2828,11 @@ function setupLogWizard() {
       lng: wizardState.draft.lng,
       timestamp,
       source: "log-wizard",
+      placeName: selectedPlace()?.name || "",
     };
+    if (wizardState.action === "departed") {
+      payload.journeyName = journeyNameInput.value.trim();
+    }
     if (
       ["water", "diesel"].includes(wizardState.action) &&
       litresInput.value !== ""
@@ -2829,6 +2855,17 @@ function setupLogWizard() {
       const logResult = await logResponse.json();
       if (!logResponse.ok) {
         throw new Error(logResult.error || "Failed to save the log entry.");
+      }
+
+      if (logResult.dueComplete) {
+        const completedStop = stops.find((stop) => stop.id === cardId);
+        if (completedStop) completedStop.dueComplete = true;
+        writeChartSnapshot();
+      }
+      if (logResult.dueCleared) {
+        const departedStop = stops.find((stop) => stop.id === cardId);
+        if (departedStop) departedStop.due = null;
+        writeChartSnapshot();
       }
 
       let notificationMessage = "No email notification was requested.";
@@ -2856,7 +2893,11 @@ function setupLogWizard() {
         }
       }
 
-      currentStatus = await (await fetch("/api/current-stop")).json();
+      [currentStatus, currentJourney] = await Promise.all([
+        fetch("/api/current-stop").then((response) => response.json()),
+        fetch("/api/journeys/current").then((response) => response.json()),
+      ]);
+      renderJourneyStatus();
       renderTable(
         stops,
         parseFloat(document.getElementById("speed-input").value) || 0,

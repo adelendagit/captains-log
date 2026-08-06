@@ -170,6 +170,7 @@
       <ol class="log-wizard-progress" aria-label="Log entry progress">
         <li data-wizard-progress="location">Location</li>
         <li data-wizard-progress="action">Action</li>
+        <li data-wizard-progress="journey">Journey</li>
         <li data-wizard-progress="litres">Litres</li>
         <li data-wizard-progress="backfill">Backfill</li>
         <li data-wizard-progress="notification">Notification</li>
@@ -190,6 +191,16 @@
           <h3>What happened?</h3>
           <p class="muted">Choose an action to continue.</p>
           <div id="wizard-action-grid" class="wizard-action-grid"></div>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="journey">
+          <span class="log-wizard-step-count">Journey</span>
+          <h3>Name this journey</h3>
+          <p class="muted">We’ve suggested a name from your departure and planned destination. Change it if you like.</p>
+          <label class="wizard-field" for="wizard-journey-name-input">
+            <span>Journey name</span>
+            <input type="text" id="wizard-journey-name-input" maxlength="160" autocomplete="off">
+          </label>
         </section>
 
         <section class="log-wizard-step hidden" data-wizard-step="litres">

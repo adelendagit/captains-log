@@ -12,6 +12,12 @@ const {
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 const { buildPlanningRoute } = require("../services/planningRoute");
 const { buildSeaRoute } = require("../services/seaRoute");
+const {
+  createJourney,
+  endJourney,
+  fetchJourneyCards,
+  findActiveJourney,
+} = require("../services/journeys");
 
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
@@ -777,6 +783,8 @@ router.post("/api/log-entry", async (req, res, next) => {
       timestamp,
       source,
       litres,
+      journeyName,
+      placeName,
     } = req.body || {};
 
     const normalizedAction = String(action || "")
@@ -815,6 +823,12 @@ router.post("/api/log-entry", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid timestamp" });
     }
 
+    const suppliedJourneyName = String(journeyName || "").trim();
+    const suppliedPlaceName = String(placeName || "").trim();
+    if (suppliedJourneyName.length > 160) {
+      return res.status(400).json({ error: "Journey name is too long" });
+    }
+
     const actionLabels = {
       arrived: "Arrived",
       departed: "Departed",
@@ -851,6 +865,59 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const text = commentLines.join("\n");
 
+    const journeyChange = {
+      ended: false,
+      started: false,
+      journey: null,
+    };
+    if (["arrived", "departed"].includes(normalizedAction)) {
+      const activeJourney = findActiveJourney(await fetchJourneyCards());
+      const memberId =
+        req.user.id || req.user.idMember || req.user.profile?.id || null;
+
+      if (normalizedAction === "arrived" && activeJourney) {
+        if (ts < new Date(activeJourney.metadata.startedAt)) {
+          return res
+            .status(400)
+            .json({ error: "Arrival time predates the active journey" });
+        }
+        await endJourney(req.user, activeJourney.card, {
+          endedAt: ts.toISOString(),
+          endedBy: memberId || "unknown",
+        });
+        journeyChange.ended = true;
+        journeyChange.journey = {
+          id: activeJourney.card.id,
+          name: activeJourney.card.name,
+        };
+      }
+
+      if (normalizedAction === "departed") {
+        if (activeJourney) {
+          journeyChange.journey = {
+            id: activeJourney.card.id,
+            name: activeJourney.card.name,
+          };
+        } else {
+          if (!memberId) {
+            return res.status(400).json({ error: "Missing Trello member ID" });
+          }
+          const newJourney = await createJourney(req.user, {
+            name:
+              suppliedJourneyName ||
+              (suppliedPlaceName ? `Journey from ${suppliedPlaceName}` : ""),
+            startedAt: ts.toISOString(),
+            startedBy: memberId,
+          });
+          journeyChange.started = true;
+          journeyChange.journey = {
+            id: newJourney.id,
+            name: newJourney.name,
+          };
+        }
+      }
+    }
+
     const oauth = {
       consumer_key: process.env.TRELLO_OAUTH_KEY,
       consumer_secret: process.env.TRELLO_OAUTH_SECRET,
@@ -881,15 +948,56 @@ router.post("/api/log-entry", async (req, res, next) => {
       }),
     );
 
+    const completesPlannedStop = ["arrived", "visited"].includes(
+      normalizedAction,
+    );
+    const clearsPlannedStopDueDate = normalizedAction === "departed";
+    const cardUpdate = completesPlannedStop
+      ? { dueComplete: true }
+      : clearsPlannedStopDueDate
+        ? { due: "null" }
+        : null;
+    const updateCard = async () => {
+      if (!cardUpdate) return;
+      const cardUrl = `https://api.trello.com/1/cards/${cardId}`;
+      const updateRequest = {
+        url: cardUrl,
+        method: "PUT",
+        data: cardUpdate,
+      };
+      const updateHeaders = oauthClient.toHeader(
+        oauthClient.authorize(updateRequest, {
+          key: oauth.token,
+          secret: oauth.token_secret,
+        }),
+      );
+
+      await axios.put(cardUrl, null, {
+        params: cardUpdate,
+        headers: updateHeaders,
+      });
+      invalidateBoardCache();
+    };
+
+    if (clearsPlannedStopDueDate) await updateCard();
+
     await axios.post(url, null, {
       params: { text },
       headers,
     });
 
+    if (completesPlannedStop) await updateCard();
+
     currentStopCache = null;
     currentStopCacheExpiresAt = 0;
 
-    res.json({ success: true, comment: text });
+    res.json({
+      success: true,
+      comment: text,
+      dueComplete: completesPlannedStop,
+      dueCleared: clearsPlannedStopDueDate,
+      journey: journeyChange,
+    });
   } catch (error) {
     next(error);
   }
