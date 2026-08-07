@@ -2571,6 +2571,8 @@ function setupLogWizard() {
   const locationStatus = document.getElementById("wizard-location-status");
   const locationList = document.getElementById("wizard-location-suggestions");
   const actionGrid = document.getElementById("wizard-action-grid");
+  const mooringOptions = document.getElementById("wizard-mooring-options");
+  const mooringStatus = document.getElementById("wizard-mooring-status");
   const journeyNameInput = document.getElementById(
     "wizard-journey-name-input",
   );
@@ -2593,6 +2595,7 @@ function setupLogWizard() {
   const flowSteps = () => [
     "location",
     "action",
+    ...(wizardState.action === "arrived" ? ["mooring"] : []),
     ...(wizardState.action === "departed" ? ["journey"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
     ...(wizardState.action === "other" ? ["custom"] : []),
@@ -2607,6 +2610,40 @@ function setupLogWizard() {
   const selectedNotification = () =>
     document.querySelector('input[name="wizard-notification"]:checked')
       ?.value || "none";
+
+  const selectedMooringLabelId = () =>
+    document.querySelector('input[name="wizard-mooring-label"]:checked')
+      ?.value || null;
+
+  const orangeMooringLabels = () =>
+    boardLabels.filter(
+      (label) =>
+        label.trelloColor === "orange" ||
+        String(label.color).toLowerCase() === "#ff9f1a",
+    );
+
+  const renderMooringOptions = () => {
+    const labels = orangeMooringLabels();
+    mooringOptions.innerHTML = labels
+      .map(
+        (label) => `
+          <label class="wizard-choice-card">
+            <input type="radio" name="wizard-mooring-label" value="${escapeMarkup(label.id)}">
+            <span class="wizard-mooring-swatch" aria-hidden="true"></span>
+            <span><strong>${escapeMarkup(label.name)}</strong></span>
+          </label>`,
+      )
+      .join("");
+    mooringStatus.textContent = labels.length
+      ? ""
+      : "No orange mooring labels are configured on the Trello board.";
+    mooringStatus.classList.toggle("error", labels.length === 0);
+    mooringOptions
+      .querySelectorAll('input[name="wizard-mooring-label"]')
+      .forEach((input) => {
+        input.addEventListener("change", () => renderStep("mooring"));
+      });
+  };
 
   const setNotification = (mode) => {
     const input = document.querySelector(
@@ -2653,6 +2690,9 @@ function setupLogWizard() {
       nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
     } else if (step === "journey") {
       nextBtn.textContent = "Continue";
+    } else if (step === "mooring") {
+      nextBtn.textContent = "Continue";
+      nextBtn.disabled = !selectedMooringLabelId();
     } else if (step === "custom") {
       nextBtn.textContent = "Continue";
       nextBtn.disabled = !customTextInput.value.trim();
@@ -2778,11 +2818,16 @@ function setupLogWizard() {
       if (wizardState.action === "departed") {
         journeyNameInput.value = suggestedJourneyName();
       }
+      if (wizardState.action === "arrived") {
+        renderMooringOptions();
+      }
       renderStep(
         ["water", "diesel"].includes(wizardState.action)
           ? "litres"
           : wizardState.action === "departed"
             ? "journey"
+            : wizardState.action === "arrived"
+              ? "mooring"
             : wizardState.action === "other"
               ? "custom"
             : "backfill",
@@ -2842,6 +2887,9 @@ function setupLogWizard() {
     };
     if (wizardState.action === "departed") {
       payload.journeyName = journeyNameInput.value.trim();
+    }
+    if (wizardState.action === "arrived") {
+      payload.mooringLabelId = selectedMooringLabelId();
     }
     if (wizardState.action === "other") {
       payload.customText = customTextInput.value.trim();

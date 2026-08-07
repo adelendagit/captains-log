@@ -217,6 +217,120 @@ test("departing a stop clears its Trello due date", async (t) => {
   ]);
 });
 
+test("records the selected orange mooring label and only adds it when missing", async (t) => {
+  const originalPost = axios.post;
+  const originalPut = axios.put;
+  const originalGet = axios.get;
+  const comments = [];
+  const addedLabels = [];
+  let cardHasMooringLabel = false;
+
+  axios.get = async (url) => {
+    if (url.includes("/boards/")) {
+      return {
+        data: {
+          cards: [
+            {
+              id: "stop-card",
+              idList: "places-list",
+              labels: cardHasMooringLabel
+                ? [
+                    {
+                      id: "mooring-buoy",
+                      name: "Mooring buoy",
+                      color: "orange",
+                    },
+                  ]
+                : [],
+            },
+          ],
+          lists: [{ id: "places-list", name: "Places" }],
+          labels: [
+            { id: "mooring-buoy", name: "Mooring buoy", color: "orange" },
+            { id: "not-mooring", name: "Sheltered", color: "green" },
+          ],
+          members: [],
+          customFields: [],
+        },
+      };
+    }
+    return { data: [] };
+  };
+  axios.post = async (url, _body, options) => {
+    if (url.endsWith("/actions/comments")) {
+      comments.push(options.params.text);
+    } else if (url.endsWith("/idLabels")) {
+      addedLabels.push(options.params.value);
+      cardHasMooringLabel = true;
+    }
+    return { data: {} };
+  };
+  axios.put = async () => ({ data: {} });
+  t.after(() => {
+    axios.post = originalPost;
+    axios.put = originalPut;
+    axios.get = originalGet;
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = {
+      id: "test-member",
+      token: "test-token",
+      tokenSecret: "test-token-secret",
+    };
+    next();
+  });
+  app.use(captainsLog);
+  app.use((error, _req, res, _next) => {
+    res.status(500).json({ error: error.message });
+  });
+
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+
+  const arrive = (mooringLabelId = "mooring-buoy") =>
+    fetch(`http://127.0.0.1:${port}/api/log-entry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "arrived",
+        cardId: "stop-card",
+        mooringLabelId,
+        lat: 37.5205,
+        lng: 23.4113,
+        timestamp: "2026-08-05T09:00:00.000Z",
+      }),
+    });
+
+  const firstResponse = await arrive();
+  const firstResult = await firstResponse.json();
+  assert.equal(firstResponse.status, 200);
+  assert.equal(firstResult.mooringLabelAdded, true);
+  assert.match(comments[0], /\nmooring: Mooring buoy$/);
+  assert.deepEqual(addedLabels, ["mooring-buoy"]);
+
+  const secondResponse = await arrive();
+  const secondResult = await secondResponse.json();
+  assert.equal(secondResponse.status, 200);
+  assert.equal(secondResult.mooringLabelAdded, false);
+  assert.match(comments[1], /\nmooring: Mooring buoy$/);
+  assert.deepEqual(addedLabels, ["mooring-buoy"]);
+
+  const invalidResponse = await arrive("not-mooring");
+  assert.equal(invalidResponse.status, 400);
+  assert.deepEqual(await invalidResponse.json(), {
+    error: "Invalid mooring type",
+  });
+  assert.equal(comments.length, 2);
+});
+
 test("logs water tank changes and custom Other text", async (t) => {
   const originalPost = axios.post;
   const comments = [];

@@ -115,7 +115,7 @@ struct AddLogEntryView: View {
 
     private var actions: [(key: String, label: String, icon: String)] {
         [
-            ("arrived", "Arrived", "anchor"),
+            ("arrived", "Arrived", "sailboat.fill"),
             ("departed", "Departed", "sailboat"),
             ("visited", "Visited", "mappin.and.ellipse"),
             ("water", "Water", "drop.fill"),
@@ -600,7 +600,7 @@ struct LogbookView: View {
 
     private func icon(for type: String) -> String {
         switch type.lowercased() {
-        case "arrived", "visited": "anchor"
+        case "arrived", "visited": "sailboat.fill"
         case "departed": "sailboat"
         case "diesel": "fuelpump"
         case "water": "drop.fill"

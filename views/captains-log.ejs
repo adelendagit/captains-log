@@ -170,6 +170,7 @@
       <ol class="log-wizard-progress" aria-label="Log entry progress">
         <li data-wizard-progress="location">Location</li>
         <li data-wizard-progress="action">Action</li>
+        <li data-wizard-progress="mooring">Mooring</li>
         <li data-wizard-progress="journey">Journey</li>
         <li data-wizard-progress="litres">Litres</li>
         <li data-wizard-progress="custom">Details</li>
@@ -202,6 +203,14 @@
             <span>Journey name</span>
             <input type="text" id="wizard-journey-name-input" maxlength="160" autocomplete="off">
           </label>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="mooring">
+          <span class="log-wizard-step-count">Step 3 of 6</span>
+          <h3>How are you moored?</h3>
+          <p class="muted">Choose the mooring type used for this arrival.</p>
+          <div id="wizard-mooring-options" class="wizard-mooring-options"></div>
+          <div id="wizard-mooring-status" class="wizard-status" role="status"></div>
         </section>
 
         <section class="log-wizard-step hidden" data-wizard-step="litres">

@@ -459,6 +459,7 @@ router.get("/api/data", async (req, res, next) => {
       id: l.id,
       name: l.name,
       color: colorMap[l.color] || "#888",
+      trelloColor: l.color,
     }));
 
     // Determine if user can plan
@@ -791,6 +792,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       journeyName,
       placeName,
       customText,
+      mooringLabelId,
     } = req.body || {};
 
     const normalizedAction = String(action || "")
@@ -846,6 +848,22 @@ router.post("/api/log-entry", async (req, res, next) => {
       return res.status(400).json({ error: "Custom log text is too long" });
     }
 
+    let mooringLabel = null;
+    let destinationCard = null;
+    if (normalizedAction === "arrived" && mooringLabelId) {
+      const board = await fetchBoard();
+      mooringLabel = (board.labels || []).find(
+        (label) => label.id === mooringLabelId && label.color === "orange",
+      );
+      destinationCard = (board.cards || []).find((card) => card.id === cardId);
+      if (!mooringLabel) {
+        return res.status(400).json({ error: "Invalid mooring type" });
+      }
+      if (!destinationCard) {
+        return res.status(400).json({ error: "Location card was not found" });
+      }
+    }
+
     const actionLabels = {
       arrived: "Arrived",
       departed: "Departed",
@@ -883,6 +901,9 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     if (source) {
       commentLines.push(`source: ${String(source).trim()}`);
+    }
+    if (mooringLabel) {
+      commentLines.push(`mooring: ${mooringLabel.name}`);
     }
 
     const text = commentLines.join("\n");
@@ -1001,12 +1022,44 @@ router.post("/api/log-entry", async (req, res, next) => {
       invalidateBoardCache();
     };
 
+    const addMooringLabel = async () => {
+      if (
+        !mooringLabel ||
+        (destinationCard.labels || []).some(
+          (label) => label.id === mooringLabel.id,
+        )
+      ) {
+        return false;
+      }
+
+      const labelUrl = `https://api.trello.com/1/cards/${cardId}/idLabels`;
+      const labelRequest = {
+        url: labelUrl,
+        method: "POST",
+        data: { value: mooringLabel.id },
+      };
+      const labelHeaders = oauthClient.toHeader(
+        oauthClient.authorize(labelRequest, {
+          key: oauth.token,
+          secret: oauth.token_secret,
+        }),
+      );
+      await axios.post(labelUrl, null, {
+        params: { value: mooringLabel.id },
+        headers: labelHeaders,
+      });
+      invalidateBoardCache();
+      return true;
+    };
+
     if (clearsPlannedStopDueDate) await updateCard();
 
     await axios.post(url, null, {
       params: { text },
       headers,
     });
+
+    const mooringLabelAdded = await addMooringLabel();
 
     if (completesPlannedStop) await updateCard();
 
@@ -1018,6 +1071,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       comment: text,
       dueComplete: completesPlannedStop,
       dueCleared: clearsPlannedStopDueDate,
+      mooringLabelAdded,
       journey: journeyChange,
     });
   } catch (error) {

@@ -223,7 +223,7 @@ private struct CurrentPositionView: View {
                 }
             } else if let place = tracker.currentStatus?.current, let coordinate = place.coordinate {
                 Annotation(place.name, coordinate: coordinate) {
-                    Image(systemName: "anchor")
+                    Image(systemName: "sailboat.fill")
                         .padding(10)
                         .foregroundStyle(Chartroom.ink)
                         .background(Chartroom.surface, in: Circle())
