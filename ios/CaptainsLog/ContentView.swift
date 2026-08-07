@@ -76,8 +76,6 @@ private struct ChartroomView: View {
                 .tabItem { Label("Now", systemImage: "location.fill") }
             PlanView()
                 .tabItem { Label("Plan", systemImage: "map") }
-            VoyagesView()
-                .tabItem { Label("Voyages", systemImage: "sailboat") }
             LogbookView()
                 .tabItem { Label("Logbook", systemImage: "book.closed") }
             TodoView()

@@ -690,31 +690,118 @@ body {
 .log-table tr:last-child td {
   border-bottom: none;
 }
-#log-controls {
+.voyage-filter-panel {
+  position: relative;
+  z-index: 500;
+  border: 1px solid #d7e2e8;
+  border-radius: 0.9rem;
+  background: #fff;
+  box-shadow: 0 3px 14px rgba(12, 74, 110, 0.08);
+}
+
+.voyage-filter-panel summary {
   display: flex;
-  gap: 1em;
-  margin-bottom: 1em;
-}
-
-#log-controls button {
-  background: #0077cc;
-  color: #fff;
-  border: none;
-  border-radius: 2em;
-  padding: 0.6em 1.6em;
-  font-size: 1em;
-  font-weight: 600;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem 0.9rem;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
-  transition:
-    background 0.15s,
-    box-shadow 0.15s;
+  list-style: none;
 }
 
-#log-controls button:hover,
-#log-controls button.active {
-  background: #005fa3;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+.voyage-filter-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.voyage-filter-panel summary::after {
+  content: "⌄";
+  margin-left: auto;
+  color: #58707d;
+  font-size: 1.2rem;
+  transition: transform 0.15s ease;
+}
+
+.voyage-filter-panel[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.voyage-filter-panel summary > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.voyage-filter-panel summary small {
+  color: #58707d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.voyage-filter-panel summary strong,
+.voyage-filter-panel summary #voyage-filter-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#voyage-filter-detail {
+  color: #58707d;
+  font-size: 0.82rem;
+}
+
+.voyage-filter-icon {
+  display: grid;
+  width: 2.2rem;
+  height: 2.2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #eaf6fb;
+  color: #0077cc;
+}
+
+.voyage-filter-options {
+  max-height: min(19rem, 50vh);
+  overflow-y: auto;
+  border-top: 1px solid #e6edf0;
+  padding: 0.45rem;
+}
+
+.voyage-filter-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-radius: 0.6rem;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+
+.voyage-filter-option:hover {
+  background: #f1f7fa;
+}
+
+.voyage-filter-option input {
+  margin-top: 0.2rem;
+  accent-color: #0077cc;
+}
+
+.voyage-filter-option span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.voyage-filter-option small {
+  color: #58707d;
+}
+
+.voyage-filter-all {
+  border-bottom: 1px solid #e6edf0;
+  border-radius: 0;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
 }
 
 /* Layout for log section */
@@ -730,7 +817,6 @@ body {
 }
 #log-map {
   height: 350px;
-  margin-top: 2rem;
 }
 #log-list {
   overflow-x: auto;
@@ -757,37 +843,6 @@ body {
   #log-list {
     flex: 1 1 50%;
   }
-}
-.historical-trip-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 2em 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5em;
-}
-
-.historical-trip-link {
-  background: #f7fafc;
-  border-radius: 1.5em;
-  padding: 0.7em 1.4em;
-  font-size: 1.05em;
-  color: #0077cc;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid #e0e0e0;
-  transition:
-    background 0.15s,
-    color 0.15s,
-    box-shadow 0.15s;
-  margin-bottom: 0.2em;
-  display: inline-block;
-}
-
-.historical-trip-link:hover {
-  background: #eaf6fb;
-  color: #005fa3;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
 .historical-log-header,
 .historical-log-entry {

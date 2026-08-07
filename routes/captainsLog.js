@@ -1199,8 +1199,8 @@ router.post("/api/log-notification", async (req, res, next) => {
 
 router.get("/captains-log", (req, res) => {
   // Keep the initial HTML independent of Trello so the page shell can render
-  // immediately. Chart and voyage data are filled in asynchronously.
-  res.render("captains-log", { historical: [], user: req.user });
+  // immediately. Chart, logbook, and voyage data are filled in asynchronously.
+  res.render("captains-log", { user: req.user });
 });
 
 router.post("/api/plan-stop", async (req, res, next) => {

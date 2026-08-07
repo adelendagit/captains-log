@@ -5,9 +5,10 @@ let leafletMap = null;
 // Store the last loaded logs for filtering
 let lastLoadedLogs = null;
 
-let currentLogFilter = null; // {start, end} or null for most recent trip
-
 let allLogsCache = null; // Store all logs here
+let voyagesCache = [];
+let selectedVoyageIds = new Set();
+let voyageSelectionInitialized = false;
 
 let stops = [];
 let places = [];
@@ -917,6 +918,7 @@ function writeLogbookSnapshot() {
         savedAt: Date.now(),
         logs: allLogsCache || [],
         mostRecentTripRange,
+        voyages: voyagesCache,
       }),
     );
   } catch (_error) {
@@ -928,6 +930,7 @@ function writeLogbookSnapshot() {
           savedAt: Date.now(),
           logs: (allLogsCache || []).slice(0, 500),
           mostRecentTripRange,
+          voyages: voyagesCache,
         }),
       );
     } catch (_fallbackError) {
@@ -2444,23 +2447,95 @@ function renderMapWithToggle() {
   }
 }
 
-function getMostRecentTripRangeFromTrips(trips) {
-  // Flatten all trips into one array if grouped by year
-  let allTrips = [];
-  if (Array.isArray(trips)) {
-    if (trips.length && Array.isArray(trips[0].trips)) {
-      trips.forEach((group) => allTrips.push(...group.trips));
-    } else {
-      allTrips = trips;
-    }
+function currentVoyage(voyages, now = new Date()) {
+  return voyages.find((voyage) => {
+    if (!voyage.start) return false;
+    const start = new Date(voyage.start);
+    const end = voyage.end ? new Date(voyage.end) : null;
+    return start <= now && (!end || now <= end);
+  });
+}
+
+function initializeVoyageSelection(allowEmpty = false) {
+  if (voyageSelectionInitialized || (!allowEmpty && voyagesCache.length === 0)) {
+    return;
   }
-  // Sort by start date descending
-  allTrips = allTrips
-    .filter((t) => t.start)
-    .sort((a, b) => new Date(b.start) - new Date(a.start));
-  if (!allTrips.length) return null;
-  const mostRecent = allTrips[0];
-  return { start: mostRecent.start, end: mostRecent.due || null };
+  const voyage = currentVoyage(voyagesCache);
+  if (voyage) {
+    selectedVoyageIds = new Set([voyage.id]);
+    voyageSelectionInitialized = true;
+  } else if (allowEmpty) {
+    selectedVoyageIds = new Set();
+    voyageSelectionInitialized = true;
+  }
+}
+
+function formatVoyageRange(voyage) {
+  const start = voyage.start
+    ? new Date(voyage.start).toLocaleDateString()
+    : "Beginning";
+  const end = voyage.end
+    ? new Date(voyage.end).toLocaleDateString()
+    : "Present";
+  return `${start} – ${end}`;
+}
+
+function renderVoyageFilter() {
+  const list = document.getElementById("voyage-filter-list");
+  const showAll = document.getElementById("voyage-filter-all");
+  const empty = document.getElementById("voyage-filter-empty");
+  const summary = document.getElementById("voyage-filter-summary");
+  const detail = document.getElementById("voyage-filter-detail");
+  if (!list || !showAll || !empty || !summary || !detail) return;
+
+  const validIds = new Set(voyagesCache.map((voyage) => voyage.id));
+  selectedVoyageIds = new Set(
+    [...selectedVoyageIds].filter((id) => validIds.has(id)),
+  );
+  const selected = voyagesCache.filter((voyage) =>
+    selectedVoyageIds.has(voyage.id),
+  );
+
+  showAll.checked = selected.length === 0;
+  empty.classList.toggle("hidden", voyagesCache.length > 0);
+  list.replaceChildren();
+
+  voyagesCache.forEach((voyage) => {
+    const label = document.createElement("label");
+    label.className = "voyage-filter-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = voyage.id;
+    checkbox.checked = selectedVoyageIds.has(voyage.id);
+    checkbox.addEventListener("change", () => {
+      voyageSelectionInitialized = true;
+      if (checkbox.checked) selectedVoyageIds.add(voyage.id);
+      else selectedVoyageIds.delete(voyage.id);
+      renderVoyageFilter();
+      renderFilteredLogs(stops);
+    });
+
+    const text = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = voyage.name;
+    const range = document.createElement("small");
+    range.textContent = formatVoyageRange(voyage);
+    text.append(name, range);
+    label.append(checkbox, text);
+    list.appendChild(label);
+  });
+
+  if (selected.length === 0) {
+    summary.textContent = "All entries";
+    detail.textContent = "Every logbook entry";
+  } else if (selected.length === 1) {
+    summary.textContent = selected[0].name;
+    detail.textContent = formatVoyageRange(selected[0]);
+  } else {
+    summary.textContent = `${selected.length} voyages`;
+    detail.textContent = "Combined logbook entries";
+  }
 }
 
 function renderFilteredLogs(stops = []) {
@@ -2470,19 +2545,14 @@ function renderFilteredLogs(stops = []) {
     return;
   }
   let logsToShow = allLogsCache;
-  if (currentLogFilter === "all") {
-    logsToShow = allLogsCache;
-  } else if (currentLogFilter && currentLogFilter.start) {
-    logsToShow = filterLogsByDate(
-      allLogsCache,
-      currentLogFilter.start,
-      currentLogFilter.end,
+  if (selectedVoyageIds.size > 0) {
+    const selectedVoyages = voyagesCache.filter((voyage) =>
+      selectedVoyageIds.has(voyage.id),
     );
-  } else if (mostRecentTripRange && mostRecentTripRange.start) {
-    logsToShow = filterLogsByDate(
-      allLogsCache,
-      mostRecentTripRange.start,
-      mostRecentTripRange.end,
+    logsToShow = allLogsCache.filter((log) =>
+      selectedVoyages.some((voyage) =>
+        isDateInRange(log.timestamp, voyage.start, voyage.end),
+      ),
     );
   }
   renderHistoricalLog(logsToShow, stops);
@@ -2502,38 +2572,35 @@ function setupLogTab() {
   const btn = document.querySelector(tabSelector);
   if (!btn) return;
 
-  const showAllBtn = document.getElementById("show-all-logs-btn");
-  const showLastTripBtn = document.getElementById("show-last-trip-btn");
-
   btn.addEventListener("click", () => {
-    currentLogFilter = null; // reset to most recent trip
     preloadAllLogs();
     renderFilteredLogs(stops);
   });
 
-  if (showAllBtn) {
-    showAllBtn.addEventListener("click", () => {
-      currentLogFilter = "all";
+  const showAll = document.getElementById("voyage-filter-all");
+  if (showAll) {
+    showAll.addEventListener("change", () => {
+      selectedVoyageIds.clear();
+      voyageSelectionInitialized = true;
+      renderVoyageFilter();
       renderFilteredLogs(stops);
     });
   }
 
-  if (showLastTripBtn) {
-    showLastTripBtn.addEventListener("click", () => {
-      currentLogFilter = null; // null means "most recent trip"
-      renderFilteredLogs(stops);
-    });
-  }
+  initializeVoyageSelection();
+  renderVoyageFilter();
 }
 
 // Utility to filter logs by date range
 function filterLogsByDate(logs, start, end) {
+  return logs.filter((log) => isDateInRange(log.timestamp, start, end));
+}
+
+function isDateInRange(timestamp, start, end) {
   const startDate = start ? new Date(start) : null;
   const endDate = end ? new Date(end) : null;
-  return logs.filter((l) => {
-    const d = new Date(l.timestamp);
-    return (!startDate || d >= startDate) && (!endDate || d <= endDate);
-  });
+  const date = new Date(timestamp);
+  return (!startDate || date >= startDate) && (!endDate || date <= endDate);
 }
 
 function getCurrentPosition() {
@@ -3074,85 +3141,20 @@ function initTabs() {
   });
 }
 
-// Listen for clicks on historical trips
-function setupHistoricalTripLinks(stops = []) {
-  document.querySelectorAll(".historical-trip-link").forEach((li) => {
-    li.addEventListener("click", () => {
-      // Switch to log tab
-      document.querySelectorAll(".tab-nav button").forEach((btn) => {
-        btn.classList.remove("active");
-        if (btn.dataset.tab === "log") btn.classList.add("active");
-      });
-      document
-        .querySelectorAll(".tab-content")
-        .forEach((sec) => sec.classList.add("hidden"));
-      document.getElementById("log").classList.remove("hidden");
-
-      // Filter logs for this trip
-      const start = li.getAttribute("data-trip-start");
-      const end = li.getAttribute("data-trip-end");
-      currentLogFilter = { start, end };
-      if (allLogsCache) {
-        renderFilteredLogs(stops);
-      } else {
-        preloadAllLogs();
-        renderFilteredLogs(stops);
-      }
-    });
-  });
-}
-
 async function loadVoyages() {
   try {
     const response = await fetch("/api/voyages");
     if (!response.ok) throw new Error("Unable to load voyages");
     const { voyages = [] } = await response.json();
-    const container = document.getElementById("historical");
-    if (!container) return;
-
-    const byYear = voyages.reduce((groups, voyage) => {
-      const date = voyage.start || voyage.end || "";
-      const year = date.slice(0, 4) || "No Date";
-      (groups[year] ??= []).push(voyage);
-      return groups;
-    }, {});
-
-    container.replaceChildren();
-    Object.entries(byYear)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .forEach(([year, trips]) => {
-        const heading = document.createElement("h3");
-        heading.textContent = year;
-        const list = document.createElement("ul");
-        list.className = "historical-trip-list";
-
-        trips
-          .sort((a, b) => new Date(b.start || b.end) - new Date(a.start || a.end))
-          .forEach((trip) => {
-            const item = document.createElement("li");
-            item.className = "historical-trip-link";
-            item.dataset.tripName = trip.name;
-            item.dataset.tripStart = trip.start || "";
-            item.dataset.tripEnd = trip.end || "";
-
-            const name = document.createElement("strong");
-            name.textContent = trip.name;
-            item.appendChild(name);
-            if (trip.start || trip.end) {
-              const range = document.createTextNode(
-                ` (${trip.start ? new Date(trip.start).toLocaleDateString() : "?"} – ${trip.end ? new Date(trip.end).toLocaleDateString() : "?"})`,
-              );
-              item.appendChild(range);
-            }
-            list.appendChild(item);
-          });
-
-        container.append(heading, list);
-      });
-
-    setupHistoricalTripLinks(stops);
+    voyagesCache = voyages;
+    initializeVoyageSelection(true);
+    renderVoyageFilter();
+    renderFilteredLogs(stops);
+    if (allLogsCache !== null) writeLogbookSnapshot();
   } catch (error) {
     console.warn(error.message);
+    initializeVoyageSelection(true);
+    renderVoyageFilter();
   }
 }
 
@@ -3175,6 +3177,9 @@ async function init() {
   if (logbookSnapshot) {
     allLogsCache = logbookSnapshot.logs;
     mostRecentTripRange = logbookSnapshot.mostRecentTripRange || null;
+    voyagesCache = Array.isArray(logbookSnapshot.voyages)
+      ? logbookSnapshot.voyages
+      : [];
   }
 
   setupLogTab();

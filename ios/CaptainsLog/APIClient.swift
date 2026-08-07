@@ -63,6 +63,11 @@ final class APIClient: Sendable {
         try await send(path: "api/voyages", token: token, cacheKey: "voyages")
     }
 
+    func cachedVoyages() async -> VoyagesResponse? {
+        guard let data = await responseCache.data(for: "voyages") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(VoyagesResponse.self, from: data)
+    }
+
     func logs(token: String) async throws -> LogsResponse {
         try await send(
             path: "api/logs",

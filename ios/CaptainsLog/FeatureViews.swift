@@ -509,59 +509,12 @@ struct PlanView: View {
     }
 }
 
-struct VoyagesView: View {
-    @EnvironmentObject private var authentication: AuthenticationManager
-    @State private var voyages: [VoyageSummary] = []
-    @State private var errorMessage: String?
-    @State private var loading = true
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if loading { ProgressView("Loading voyages…") }
-                else if let errorMessage { ContentUnavailableView("Couldn’t load voyages", systemImage: "exclamationmark.triangle", description: Text(errorMessage)) }
-                else if voyages.isEmpty { ContentUnavailableView("No voyages yet", systemImage: "sailboat") }
-                else {
-                    List(voyages) { voyage in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(voyage.name).font(.headline)
-                            Text(dateRange(voyage))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let desc = voyage.desc, !desc.isEmpty {
-                                Text(desc).font(.subheadline).lineLimit(3)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("Voyages")
-            .task { await load() }
-            .refreshable { await load() }
-        }
-    }
-
-    private func dateRange(_ voyage: VoyageSummary) -> String {
-        let start = voyage.start?.formatted(date: .abbreviated, time: .omitted) ?? "?"
-        let end = voyage.end?.formatted(date: .abbreviated, time: .omitted) ?? "present"
-        return "\(start) – \(end)"
-    }
-
-    @MainActor private func load() async {
-        guard let token = authentication.token else { return }
-        loading = true
-        defer { loading = false }
-        do {
-            voyages = try await authentication.api.voyages(token: token).voyages
-            errorMessage = nil
-        } catch { errorMessage = error.localizedDescription }
-    }
-}
-
 struct LogbookView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @State private var logs: [LogEntry] = []
+    @State private var voyages: [VoyageSummary] = []
+    @State private var selectedVoyageIDs: Set<String> = []
+    @State private var hasInitialVoyageSelection = false
     @State private var errorMessage: String?
     @State private var loading = true
 
@@ -570,31 +523,147 @@ struct LogbookView: View {
             Group {
                 if loading { ProgressView("Opening logbook…") }
                 else if let errorMessage { ContentUnavailableView("Couldn’t open logbook", systemImage: "exclamationmark.triangle", description: Text(errorMessage)) }
-                else if logs.isEmpty { ContentUnavailableView("No entries yet", systemImage: "book.closed") }
                 else {
-                    List(logs.sorted { $0.timestamp > $1.timestamp }) { entry in
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: icon(for: entry.type))
-                                .foregroundStyle(Chartroom.sea)
-                                .frame(width: 24)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(entry.type).font(.caption.bold()).foregroundStyle(Chartroom.sea)
-                                    Spacer()
-                                    Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Text(entry.cardName).font(.headline)
-                                if let area = entry.area { Text(area).font(.caption).foregroundStyle(.secondary) }
+                    List {
+                        if !voyages.isEmpty {
+                            Section("Voyage") {
+                                voyageSelector
                             }
                         }
-                        .padding(.vertical, 3)
+
+                        if filteredLogs.isEmpty {
+                            ContentUnavailableView(
+                                "No entries in this selection",
+                                systemImage: "book.closed",
+                                description: Text("Choose another voyage or show all entries.")
+                            )
+                            .listRowBackground(Color.clear)
+                        } else {
+                            Section {
+                                ForEach(filteredLogs.sorted { $0.timestamp > $1.timestamp }) { entry in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Image(systemName: icon(for: entry.type))
+                                            .foregroundStyle(Chartroom.sea)
+                                            .frame(width: 24)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            HStack {
+                                                Text(entry.type).font(.caption.bold()).foregroundStyle(Chartroom.sea)
+                                                Spacer()
+                                                Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                                    .font(.caption2).foregroundStyle(.secondary)
+                                            }
+                                            Text(entry.cardName).font(.headline)
+                                            if let area = entry.area { Text(area).font(.caption).foregroundStyle(.secondary) }
+                                        }
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle("Logbook")
             .task { await load() }
             .refreshable { await load() }
+        }
+    }
+
+    private var voyageSelector: some View {
+        Menu {
+            Button {
+                selectedVoyageIDs.removeAll()
+                hasInitialVoyageSelection = true
+            } label: {
+                Label("All entries", systemImage: selectedVoyageIDs.isEmpty ? "checkmark" : "circle")
+            }
+
+            Divider()
+
+            ForEach(voyages) { voyage in
+                Button {
+                    toggle(voyage)
+                } label: {
+                    Label(
+                        voyage.name,
+                        systemImage: selectedVoyageIDs.contains(voyage.id) ? "checkmark" : "circle"
+                    )
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sailboat")
+                    .foregroundStyle(Chartroom.sea)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectionTitle).foregroundStyle(.primary)
+                    Text(selectionDetail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+    }
+
+    private var selectedVoyages: [VoyageSummary] {
+        voyages.filter { selectedVoyageIDs.contains($0.id) }
+    }
+
+    private var filteredLogs: [LogEntry] {
+        guard !selectedVoyageIDs.isEmpty else { return logs }
+        return logs.filter { entry in
+            selectedVoyages.contains { includes(entry, in: $0) }
+        }
+    }
+
+    private func includes(_ entry: LogEntry, in voyage: VoyageSummary) -> Bool {
+        if let start = voyage.start, entry.timestamp < start { return false }
+        if let end = voyage.end, entry.timestamp > end { return false }
+        return true
+    }
+
+    private var selectionTitle: String {
+        if selectedVoyageIDs.isEmpty { return "All entries" }
+        if selectedVoyages.count == 1 { return selectedVoyages[0].name }
+        return "\(selectedVoyages.count) voyages"
+    }
+
+    private var selectionDetail: String {
+        if selectedVoyageIDs.isEmpty { return "Every logbook entry" }
+        if selectedVoyages.count == 1 { return dateRange(selectedVoyages[0]) }
+        return "Combined logbook entries"
+    }
+
+    private func dateRange(_ voyage: VoyageSummary) -> String {
+        let start = voyage.start?.formatted(date: .abbreviated, time: .omitted) ?? "Beginning"
+        let end = voyage.end?.formatted(date: .abbreviated, time: .omitted) ?? "Present"
+        return "\(start) – \(end)"
+    }
+
+    private func toggle(_ voyage: VoyageSummary) {
+        hasInitialVoyageSelection = true
+        if selectedVoyageIDs.contains(voyage.id) {
+            selectedVoyageIDs.remove(voyage.id)
+        } else {
+            selectedVoyageIDs.insert(voyage.id)
+        }
+    }
+
+    private func selectCurrentVoyageIfNeeded(allowAll: Bool = false) {
+        guard !hasInitialVoyageSelection else { return }
+        let now = Date()
+        if let current = voyages.first(where: { voyage in
+            guard let start = voyage.start, start <= now else { return false }
+            return voyage.end.map { now <= $0 } ?? true
+        }) {
+            selectedVoyageIDs = [current.id]
+            hasInitialVoyageSelection = true
+        } else if allowAll {
+            selectedVoyageIDs.removeAll()
+            hasInitialVoyageSelection = true
         }
     }
 
@@ -613,16 +682,36 @@ struct LogbookView: View {
         guard let token = authentication.token else { return }
         errorMessage = nil
 
-        if logs.isEmpty, let cachedLogs = await authentication.api.cachedLogs() {
-            logs = cachedLogs.logs
+        async let cachedLogs = authentication.api.cachedLogs()
+        async let cachedVoyages = authentication.api.cachedVoyages()
+        let (savedLogs, savedVoyages) = await (cachedLogs, cachedVoyages)
+
+        if logs.isEmpty, let savedLogs {
+            logs = savedLogs.logs
             loading = false
         } else {
             loading = logs.isEmpty
         }
 
+        if voyages.isEmpty, let savedVoyages {
+            voyages = savedVoyages.voyages
+            if !voyages.isEmpty { selectCurrentVoyageIfNeeded() }
+        }
+
         defer { loading = false }
+
+        async let freshLogs = authentication.api.logs(token: token)
+        async let freshVoyages = authentication.api.voyages(token: token)
+
         do {
-            logs = try await authentication.api.logs(token: token).logs
+            voyages = try await freshVoyages.voyages
+            selectCurrentVoyageIfNeeded(allowAll: true)
+        } catch {
+            // Voyage metadata is optional; the complete logbook remains useful.
+        }
+
+        do {
+            logs = try await freshLogs.logs
             errorMessage = nil
         } catch {
             if logs.isEmpty {
