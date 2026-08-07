@@ -72,6 +72,11 @@ final class APIClient: Sendable {
         )
     }
 
+    func cachedLogs() async -> LogsResponse? {
+        guard let data = await responseCache.data(for: "logs-all") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(LogsResponse.self, from: data)
+    }
+
     func todoData(token: String) async throws -> TodoDataResponse {
         try await send(path: "to-do/api/data", token: token, cacheKey: "todo-data")
     }

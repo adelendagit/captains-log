@@ -611,12 +611,24 @@ struct LogbookView: View {
 
     @MainActor private func load() async {
         guard let token = authentication.token else { return }
-        loading = true
+        errorMessage = nil
+
+        if logs.isEmpty, let cachedLogs = await authentication.api.cachedLogs() {
+            logs = cachedLogs.logs
+            loading = false
+        } else {
+            loading = logs.isEmpty
+        }
+
         defer { loading = false }
         do {
             logs = try await authentication.api.logs(token: token).logs
             errorMessage = nil
-        } catch { errorMessage = error.localizedDescription }
+        } catch {
+            if logs.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 
