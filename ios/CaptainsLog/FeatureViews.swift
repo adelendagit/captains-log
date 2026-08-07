@@ -16,6 +16,7 @@ struct AddLogEntryView: View {
     @State private var action: String
     @State private var journeyName = ""
     @State private var litres = ""
+    @State private var customText = ""
     @State private var timestamp = Date()
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -73,6 +74,12 @@ struct AddLogEntryView: View {
                     }
                 }
 
+                if action == "other" {
+                    Section("Details") {
+                        TextField("What happened?", text: $customText)
+                    }
+                }
+
                 Section("When?") {
                     DatePicker("Date and time", selection: $timestamp, in: ...Date())
                 }
@@ -97,7 +104,7 @@ struct AddLogEntryView: View {
                     Button(action == "departed" ? "Start" : "Save") {
                         Task { await save() }
                     }
-                    .disabled(isSaving || selectedPlace == nil || logCoordinate == nil)
+                    .disabled(isSaving || selectedPlace == nil || logCoordinate == nil || (action == "other" && customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                 }
             }
             .onChange(of: selectedPlaceID) { updateSuggestedJourneyName() }
@@ -114,8 +121,10 @@ struct AddLogEntryView: View {
             ("water", "Water", "drop.fill"),
             ("diesel", "Diesel", "fuelpump"),
             ("bins", "Bins", "trash"),
+            ("water-tank-change", "Water Tank Change", "drop.triangle.fill"),
             ("power", "Shore power", "bolt.fill"),
-            ("boom", "Boom", "wrench.and.screwdriver")
+            ("boom", "Boom", "wrench.and.screwdriver"),
+            ("other", "Other", "square.and.pencil")
         ]
     }
 
@@ -178,6 +187,7 @@ struct AddLogEntryView: View {
                 longitude: coordinate.longitude,
                 journeyName: action == "departed" ? journeyName : nil,
                 placeName: place.name,
+                customText: action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
                 timestamp: timestamp,
                 litres: Double(litres),
                 token: token

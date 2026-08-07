@@ -55,8 +55,10 @@ const LOCATION_LOG_ACTIONS = {
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
+  "water-tank-change": "Water Tank Change",
   power: "Power",
   boom: "Boom",
+  other: "Other",
 };
 
 function formatPositionAge(timestamp) {
@@ -2573,6 +2575,7 @@ function setupLogWizard() {
     "wizard-journey-name-input",
   );
   const litresInput = document.getElementById("wizard-litres-input");
+  const customTextInput = document.getElementById("wizard-custom-text-input");
   const backfillInput = document.getElementById("wizard-backfill-input");
   const submitStatus = document.getElementById("wizard-submit-status");
   const successMessage = document.getElementById("wizard-success-message");
@@ -2592,6 +2595,7 @@ function setupLogWizard() {
     "action",
     ...(wizardState.action === "departed" ? ["journey"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
+    ...(wizardState.action === "other" ? ["custom"] : []),
     "backfill",
     "notification",
   ];
@@ -2649,6 +2653,9 @@ function setupLogWizard() {
       nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
     } else if (step === "journey") {
       nextBtn.textContent = "Continue";
+    } else if (step === "custom") {
+      nextBtn.textContent = "Continue";
+      nextBtn.disabled = !customTextInput.value.trim();
     } else if (step === "backfill") {
       nextBtn.textContent = "Continue";
     } else if (step === "notification") {
@@ -2776,6 +2783,8 @@ function setupLogWizard() {
           ? "litres"
           : wizardState.action === "departed"
             ? "journey"
+            : wizardState.action === "other"
+              ? "custom"
             : "backfill",
       );
     });
@@ -2788,6 +2797,7 @@ function setupLogWizard() {
     wizardState.action = null;
     wizardState.submitting = false;
     litresInput.value = "";
+    customTextInput.value = "";
     journeyNameInput.value = "";
     backfillInput.value = "";
     submitStatus.textContent = "";
@@ -2832,6 +2842,9 @@ function setupLogWizard() {
     };
     if (wizardState.action === "departed") {
       payload.journeyName = journeyNameInput.value.trim();
+    }
+    if (wizardState.action === "other") {
+      payload.customText = customTextInput.value.trim();
     }
     if (
       ["water", "diesel"].includes(wizardState.action) &&
@@ -2923,6 +2936,9 @@ function setupLogWizard() {
   });
   litresInput.addEventListener("input", () => {
     if (wizardState.step === "litres") renderStep("litres");
+  });
+  customTextInput.addEventListener("input", () => {
+    if (wizardState.step === "custom") renderStep("custom");
   });
 
   backBtn.addEventListener("click", () => {

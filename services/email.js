@@ -17,8 +17,10 @@ const ACTION_LABELS = {
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
+  "water-tank-change": "Water Tank Change",
   power: "Power",
   boom: "Boom",
+  other: "Other",
 };
 
 function escapeHtml(value) {
@@ -87,8 +89,17 @@ function formatDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
-function buildNotification({ action, location, lat, lng, timestamp, litres }) {
-  const actionLabel = ACTION_LABELS[action];
+function buildNotification({
+  action,
+  location,
+  lat,
+  lng,
+  timestamp,
+  litres,
+  customText,
+}) {
+  const actionLabel =
+    action === "other" && customText ? customText : ACTION_LABELS[action];
   const safeAction = escapeHtml(actionLabel);
   const safeLocation = escapeHtml(location);
   const siteUrl = (

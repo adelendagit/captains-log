@@ -216,3 +216,70 @@ test("departing a stop clears its Trello due date", async (t) => {
     "log-departed",
   ]);
 });
+
+test("logs water tank changes and custom Other text", async (t) => {
+  const originalPost = axios.post;
+  const comments = [];
+
+  axios.post = async (_url, _body, options) => {
+    comments.push(options.params.text);
+    return { data: {} };
+  };
+  t.after(() => {
+    axios.post = originalPost;
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = {
+      id: "test-member",
+      token: "test-token",
+      tokenSecret: "test-token-secret",
+    };
+    next();
+  });
+  app.use(captainsLog);
+  app.use((error, _req, res, _next) => {
+    res.status(500).json({ error: error.message });
+  });
+
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+
+  const log = (body) =>
+    fetch(`http://127.0.0.1:${port}/api/log-entry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cardId: "stop-card",
+        lat: 37.5205,
+        lng: 23.4113,
+        timestamp: "2026-08-05T09:00:00.000Z",
+        ...body,
+      }),
+    });
+
+  const waterTankResponse = await log({ action: "water-tank-change" });
+  assert.equal(waterTankResponse.status, 200);
+  assert.match(comments[0], /^Water Tank Change\n/);
+
+  const otherResponse = await log({
+    action: "other",
+    customText: "  Changed   the impeller  ",
+  });
+  assert.equal(otherResponse.status, 200);
+  assert.match(comments[1], /^Other: Changed the impeller\n/);
+
+  const emptyOtherResponse = await log({ action: "other", customText: " " });
+  assert.equal(emptyOtherResponse.status, 400);
+  assert.deepEqual(await emptyOtherResponse.json(), {
+    error: "Please describe what happened",
+  });
+  assert.equal(comments.length, 2);
+});

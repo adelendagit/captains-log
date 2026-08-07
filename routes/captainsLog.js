@@ -225,6 +225,8 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
         type = "Departed";
       } else if (/^visited\b/i.test(text)) {
         type = "Visited";
+      } else if (/^water tank change\b/i.test(text)) {
+        type = "Water Tank Change";
       } else if (/^water\b/i.test(text)) {
         type = "Water";
       } else {
@@ -235,6 +237,7 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
         const gasChangeMatch = /^gas tank change\b/i.test(text);
         const gasRefillMatch = /^gas tank refill\b/i.test(text);
         const bbqGasMatch = /^bbq gas change\b/i.test(text);
+        const otherMatch = text.match(/^other:\s*(.+)$/im);
         const brokenMatch = text.match(/^broken\s+(.+)/i);
         const fixedMatch = text.match(/^fixed\s+(.+)/i);
 
@@ -250,6 +253,8 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
           type = "Gas tank refill";
         } else if (bbqGasMatch) {
           type = "BBQ gas change";
+        } else if (otherMatch) {
+          type = otherMatch[1].trim();
         } else if (brokenMatch) {
           type = "Broken";
           item = brokenMatch[1]
@@ -785,6 +790,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       litres,
       journeyName,
       placeName,
+      customText,
     } = req.body || {};
 
     const normalizedAction = String(action || "")
@@ -799,8 +805,10 @@ router.post("/api/log-entry", async (req, res, next) => {
       "bins",
       "bbq-gas-change",
       "gas-tank-change",
+      "water-tank-change",
       "power",
       "boom",
+      "other",
     ];
     if (!allowedActions.includes(normalizedAction)) {
       return res.status(400).json({ error: "Invalid action" });
@@ -825,8 +833,17 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const suppliedJourneyName = String(journeyName || "").trim();
     const suppliedPlaceName = String(placeName || "").trim();
+    const suppliedCustomText = String(customText || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (suppliedJourneyName.length > 160) {
       return res.status(400).json({ error: "Journey name is too long" });
+    }
+    if (normalizedAction === "other" && !suppliedCustomText) {
+      return res.status(400).json({ error: "Please describe what happened" });
+    }
+    if (suppliedCustomText.length > 160) {
+      return res.status(400).json({ error: "Custom log text is too long" });
     }
 
     const actionLabels = {
@@ -838,8 +855,10 @@ router.post("/api/log-entry", async (req, res, next) => {
       bins: "Bins",
       "bbq-gas-change": "BBQ Gas Change",
       "gas-tank-change": "Gas Tank Change",
+      "water-tank-change": "Water Tank Change",
       power: "Power",
       boom: "Boom",
+      other: "Other",
     };
 
     const litresValue = parseFloat(litres);
@@ -848,9 +867,12 @@ router.post("/api/log-entry", async (req, res, next) => {
       Number.isFinite(litresValue) &&
       litresValue >= 0;
 
-    const headline = hasLitres
-      ? `${actionLabels[normalizedAction]} ${litresValue} litres`
-      : actionLabels[normalizedAction];
+    const headline =
+      normalizedAction === "other"
+        ? `Other: ${suppliedCustomText}`
+        : hasLitres
+          ? `${actionLabels[normalizedAction]} ${litresValue} litres`
+          : actionLabels[normalizedAction];
 
     const commentLines = [
       headline,
@@ -1007,14 +1029,32 @@ router.post("/api/log-notification", async (req, res, next) => {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
 
-    const { mode, requestId, action, cardId, lat, lng, timestamp, litres } =
-      req.body || {};
+    const {
+      mode,
+      requestId,
+      action,
+      cardId,
+      lat,
+      lng,
+      timestamp,
+      litres,
+      customText,
+    } = req.body || {};
 
     if (!["people", "test"].includes(mode)) {
       return res.status(400).json({ error: "Invalid notification option" });
     }
     if (!ACTION_LABELS[action]) {
       return res.status(400).json({ error: "Invalid action" });
+    }
+    const suppliedCustomText = String(customText || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (action === "other" && !suppliedCustomText) {
+      return res.status(400).json({ error: "Please describe what happened" });
+    }
+    if (suppliedCustomText.length > 160) {
+      return res.status(400).json({ error: "Custom log text is too long" });
     }
     if (!cardId) {
       return res.status(400).json({ error: "Missing cardId" });
@@ -1087,6 +1127,7 @@ router.post("/api/log-notification", async (req, res, next) => {
       lat: latitude,
       lng: longitude,
       timestamp: loggedAt.toISOString(),
+      customText: suppliedCustomText || null,
       litres:
         ["water", "diesel"].includes(action) && Number.isFinite(litresValue)
           ? litresValue

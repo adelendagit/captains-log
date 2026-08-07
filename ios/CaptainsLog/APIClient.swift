@@ -119,6 +119,7 @@ final class APIClient: Sendable {
         longitude: Double,
         journeyName: String? = nil,
         placeName: String? = nil,
+        customText: String? = nil,
         timestamp: Date = Date(),
         litres: Double? = nil,
         token: String
@@ -135,7 +136,8 @@ final class APIClient: Sendable {
                 source: "ios",
                 litres: litres,
                 journeyName: journeyName,
-                placeName: placeName
+                placeName: placeName,
+                customText: customText
             ),
             token: token
         )
@@ -299,4 +301,5 @@ private struct LogEntryBody: Codable {
     let litres: Double?
     let journeyName: String?
     let placeName: String?
+    let customText: String?
 }

@@ -172,6 +172,7 @@
         <li data-wizard-progress="action">Action</li>
         <li data-wizard-progress="journey">Journey</li>
         <li data-wizard-progress="litres">Litres</li>
+        <li data-wizard-progress="custom">Details</li>
         <li data-wizard-progress="backfill">Backfill</li>
         <li data-wizard-progress="notification">Notification</li>
       </ol>
@@ -213,6 +214,16 @@
               <input type="number" id="wizard-litres-input" min="0" step="1" inputmode="decimal" placeholder="e.g. 30">
               <span>litres</span>
             </div>
+          </label>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="custom">
+          <span class="log-wizard-step-count">Step 3 of 5</span>
+          <h3>What happened?</h3>
+          <p class="muted">Enter a short description for this log entry.</p>
+          <label class="wizard-field" for="wizard-custom-text-input">
+            <span>Description</span>
+            <input type="text" id="wizard-custom-text-input" maxlength="160" autocomplete="off" placeholder="e.g. Changed the impeller">
           </label>
         </section>
 
