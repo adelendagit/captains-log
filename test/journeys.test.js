@@ -12,7 +12,10 @@ const {
   exchangePairingCode,
 } = require("../services/mobileAuth");
 const { buildSeaRoute, isValidPoint } = require("../services/seaRoute");
-const { buildPlanningRoute } = require("../services/planningRoute");
+const {
+  buildPlanningRoute,
+  classifyPlanningPoint,
+} = require("../services/planningRoute");
 
 test("parses journey metadata stored in a card description", () => {
   assert.deepEqual(
@@ -45,7 +48,10 @@ test("round trips a structured GPS position comment", () => {
     sampleId: "sample_12345678",
     source: "ios",
   };
-  assert.deepEqual(parsePositionComment(buildPositionComment(position)), position);
+  assert.deepEqual(
+    parsePositionComment(buildPositionComment(position)),
+    position,
+  );
 });
 
 test("rejects malformed position comments", () => {
@@ -103,15 +109,43 @@ test("calculates coastline-aware planning distance between nearby stops", () => 
   assert.ok(route.legs[0].distanceNm < 4);
 });
 
-test("routes Channel Rock Bay to Wasp Bay around the headland", () => {
+test("uses the detailed coastline for the open channel beside Channel Rock Bay", () => {
   const route = buildPlanningRoute([
     { lat: 37.52283333333333, lng: 23.426166666666667 },
     { lat: 37.5205, lng: 23.41133333333333 },
   ]);
   assert.equal(route.legs.length, 1);
-  assert.equal(route.legs[0].method, "coastline");
-  assert.ok(route.legs[0].coordinates.length > 2);
+  assert.equal(route.legs[0].method, "direct-water");
+  assert.equal(route.legs[0].coordinates.length, 2);
   assert.ok(route.legs[0].distanceNm > 0.72);
+});
+
+test("snaps nearshore planning endpoints to water before routing", () => {
+  const vikos = {
+    lat: 37.49783333333333,
+    lng: 23.4575,
+  };
+  const cliffBeach = {
+    lat: 37.504444444444,
+    lng: 23.501388888889,
+  };
+  const russianBay = {
+    lat: 37.51833333333333,
+    lng: 23.42866666666667,
+  };
+  const classification = classifyPlanningPoint(vikos);
+  assert.equal(classification.onLand, true);
+  assert.equal(classification.routable, true);
+  assert.equal(classification.snapped, true);
+  assert.ok(classification.distanceToWaterM > 100);
+  assert.ok(classification.distanceToWaterM < 200);
+
+  const route = buildPlanningRoute([vikos, cliffBeach, russianBay]);
+  assert.equal(route.legs.length, 2);
+  assert.ok(route.legs.every((leg) => leg.method === "coastline"));
+  assert.ok(route.legs.every((leg) => leg.snappedEndpoints));
+  assert.ok(route.legs.every((leg) => leg.coordinates.length > 2));
+  assert.notDeepEqual(route.legs[0].coordinates[0], [vikos.lng, vikos.lat]);
 });
 
 test("rejects invalid planning route coordinates", () => {

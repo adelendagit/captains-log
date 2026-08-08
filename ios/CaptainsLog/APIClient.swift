@@ -142,6 +142,15 @@ final class APIClient: Sendable {
         )
     }
 
+    func archiveTodo(cardID: String, token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "to-do/\(cardID)/archive",
+            method: "POST",
+            body: [:],
+            token: token
+        )
+    }
+
     func reorderTodos(listID: String, cardIDs: [String], token: String) async throws {
         let _: SuccessResponse = try await send(
             path: "to-do/reorder",

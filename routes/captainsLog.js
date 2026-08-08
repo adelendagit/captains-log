@@ -10,7 +10,10 @@ const {
   invalidateBoardCache,
 } = require("../services/trello");
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
-const { buildPlanningRoute } = require("../services/planningRoute");
+const {
+  buildPlanningRoute,
+  classifyPlanningPoint,
+} = require("../services/planningRoute");
 const { buildSeaRoute } = require("../services/seaRoute");
 const {
   createJourney,
@@ -502,6 +505,57 @@ router.get("/api/data", async (req, res, next) => {
     res.json({ stops, places, canPlan, boardLabels });
   } catch (err) {
     next(err);
+  }
+});
+
+router.get("/api/location-audit", async (req, res, next) => {
+  try {
+    const { cards, lists, customFields } = await fetchBoard();
+    const listNames = Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    );
+    const locations = cards
+      .map((card) => {
+        const lat = getCFNumber(card, customFields, "Latitude");
+        const lng = getCFNumber(card, customFields, "Longitude");
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        const listName = listNames[card.idList] || "Unknown";
+        const classification = classifyPlanningPoint({ lat, lng });
+        const intentionalLand = listName.toLowerCase() === "land";
+        const status = intentionalLand
+          ? "intentional-land"
+          : !classification.onLand
+            ? "water"
+            : classification.routable
+              ? "nearshore"
+              : "review";
+        return {
+          id: card.id,
+          name: card.name,
+          listName,
+          lat,
+          lng,
+          trelloUrl: card.shortUrl,
+          status,
+          distanceToWaterM: classification.distanceToWaterM,
+        };
+      })
+      .filter(Boolean);
+    const counts = locations.reduce(
+      (result, location) => {
+        result[location.status] += 1;
+        return result;
+      },
+      { water: 0, nearshore: 0, review: 0, "intentional-land": 0 },
+    );
+
+    res.json({
+      total: locations.length,
+      counts,
+      locations: locations.filter((location) => location.status !== "water"),
+    });
+  } catch (error) {
+    next(error);
   }
 });
 

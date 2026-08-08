@@ -1707,11 +1707,30 @@ body {
   color: #c1d6d5;
 }
 
+.live-journey-message.is-editable {
+  width: fit-content;
+  max-width: calc(100% - 1.55rem);
+  padding: 0.3rem 0.45rem;
+  margin-left: 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  cursor: text;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.live-journey-message.is-editable:hover,
+.live-journey-message.is-editable:focus-visible {
+  border-color: rgba(255, 255, 255, 0.28);
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .current-stop-description-controls {
   margin: 0.65rem 0 0 1.55rem;
 }
 
-.current-stop-description-edit-btn,
 .current-stop-description-actions button {
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
@@ -1720,10 +1739,6 @@ body {
   cursor: pointer;
   font: inherit;
   font-weight: 700;
-}
-
-.current-stop-description-edit-btn {
-  padding: 0.45rem 0.75rem;
 }
 
 .current-stop-description-form {
@@ -1749,7 +1764,9 @@ body {
   color: var(--chart-ink);
   background: #fff;
   font: inherit;
-  resize: vertical;
+  line-height: 1.45;
+  overflow-y: hidden;
+  resize: none;
 }
 
 .current-stop-description-actions {
@@ -1888,6 +1905,11 @@ body {
 
   .live-journey-message {
     margin-left: 0;
+  }
+
+  .live-journey-message.is-editable {
+    max-width: 100%;
+    margin-left: -0.45rem;
   }
 
   .current-stop-description-controls {

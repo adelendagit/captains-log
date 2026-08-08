@@ -65,13 +65,9 @@
       <p id="live-journey-message" class="live-journey-message">Connecting to the ship’s log.</p>
       <% if (user) { %>
         <div id="current-stop-description-controls" class="current-stop-description-controls hidden">
-          <button type="button" id="edit-current-stop-description-btn" class="current-stop-description-edit-btn">
-            <i class="fa-solid fa-pen" aria-hidden="true"></i>
-            Edit description
-          </button>
           <form id="current-stop-description-form" class="current-stop-description-form hidden">
             <label for="current-stop-description-input">Description</label>
-            <textarea id="current-stop-description-input" maxlength="16384" rows="4"></textarea>
+            <textarea id="current-stop-description-input" maxlength="16384" rows="1"></textarea>
             <div class="current-stop-description-actions">
               <button type="button" id="cancel-current-stop-description-btn">Cancel</button>
               <button type="submit" id="save-current-stop-description-btn">Save</button>

@@ -3,6 +3,7 @@ const multer = require("multer");
 const {
   DEFAULT_LIST_ID,
   addTodoCardAttachment,
+  archiveTodoCard,
   createTodoCard,
   downloadTodoCardAttachment,
   fetchTodoCards,
@@ -128,6 +129,28 @@ router.patch("/:cardId", async (req, res, next) => {
       req.params.cardId,
       name,
       desc,
+      lists.map((list) => list.id),
+    );
+    res.json({ success: true });
+  } catch (error) {
+    if (error.status) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.post("/:cardId/archive", async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(403).json({ error: "Not authenticated" });
+      return;
+    }
+
+    const lists = await getAvailableLists(req.user);
+    await archiveTodoCard(
+      req.params.cardId,
       lists.map((list) => list.id),
     );
     res.json({ success: true });

@@ -93,6 +93,17 @@ async function updateTodoCard(cardId, name, desc, allowedListIds) {
   return data;
 }
 
+async function archiveTodoCard(cardId, allowedListIds) {
+  const card = await fetchCard(cardId);
+  assertAllowedList(card.idList, allowedListIds);
+
+  if (!card.closed) {
+    await axios.put(`${API_BASE}/cards/${cardId}`, null, {
+      params: { ...credentials(), closed: true },
+    });
+  }
+}
+
 async function addTodoCardAttachment(
   cardId,
   { buffer, filename, mimeType },
@@ -185,6 +196,7 @@ module.exports = {
   BOARD_ID,
   DEFAULT_LIST_ID,
   addTodoCardAttachment,
+  archiveTodoCard,
   createTodoCard,
   downloadTodoCardAttachment,
   fetchTodoCards,

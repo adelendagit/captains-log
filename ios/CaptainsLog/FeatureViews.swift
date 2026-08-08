@@ -60,141 +60,175 @@ struct AddLogEntryView: View {
 
     init(initialAction: String?) {
         self.initialAction = initialAction
-        let action = initialAction ?? "arrived"
+        let action = initialAction ?? ""
         _action = State(initialValue: action)
         _notificationMode = State(initialValue: Self.defaultNotificationMode(for: action))
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("What happened?") {
-                    Picker("Action", selection: $action) {
-                        ForEach(actions, id: \.key) { item in
-                            Label(item.label, systemImage: item.icon).tag(item.key)
+            Group {
+                if action.isEmpty {
+                    List {
+                        Section {
+                            ForEach(actions, id: \.key) { item in
+                                Button {
+                                    action = item.key
+                                } label: {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: item.icon)
+                                            .frame(width: 24)
+                                            .foregroundStyle(Chartroom.sea)
+                                        Text(item.label)
+                                            .foregroundStyle(Chartroom.ink)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.bold())
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } header: {
+                            Text("What would you like to log?")
                         }
                     }
-                    .disabled(initialAction != nil)
-                }
-
-                Section("Where?") {
-                    if places.isEmpty {
-                        ProgressView("Finding nearby places…")
-                    } else {
-                        Picker("Place", selection: $selectedPlaceID) {
-                            ForEach(displayedPlaces) { place in
-                                Text(place.listName.map { "\(place.name) · \($0)" } ?? place.name)
-                                    .tag(place.id)
+                    .scrollContentBackground(.hidden)
+                    .background(Chartroom.paper)
+                } else {
+                    Form {
+                        Section("Where?") {
+                            if places.isEmpty {
+                                ProgressView("Finding nearby places…")
+                            } else {
+                                Picker("Place", selection: $selectedPlaceID) {
+                                    ForEach(displayedPlaces) { place in
+                                        Text(place.listName.map { "\(place.name) · \($0)" } ?? place.name)
+                                            .tag(place.id)
+                                    }
+                                }
+                                if canToggleAllPlaces {
+                                    Button(showAllPlaces ? "Show nearby only" : "Show all \(sortedPlaces.count) places") {
+                                        showAllPlaces.toggle()
+                                    }
+                                    .font(.footnote)
+                                }
+                            }
+                            if let coordinate = logCoordinate {
+                                LabeledContent("Position", value: String(format: "%.4f°, %.4f°", coordinate.latitude, coordinate.longitude))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        if canToggleAllPlaces {
-                            Button(showAllPlaces ? "Show nearby only" : "Show all \(sortedPlaces.count) places") {
-                                showAllPlaces.toggle()
-                            }
-                            .font(.footnote)
-                        }
-                    }
-                    if let coordinate = logCoordinate {
-                        LabeledContent("Position", value: String(format: "%.4f°, %.4f°", coordinate.latitude, coordinate.longitude))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
 
-                if action == "arrived" {
-                    Section("Mooring") {
-                        if mooringLabels.isEmpty {
-                            Label("No orange mooring labels are configured on the Trello board.", systemImage: "exclamationmark.triangle")
-                                .font(.footnote)
-                                .foregroundStyle(.orange)
-                        } else {
-                            Picker("Mooring type", selection: $selectedMooringLabelID) {
-                                Text("Select a mooring type").tag("")
-                                ForEach(mooringLabels) { label in
-                                    Text(label.name).tag(label.id)
+                        if action == "arrived" {
+                            Section("Mooring") {
+                                if mooringLabels.isEmpty {
+                                    Label("No orange mooring labels are configured on the Trello board.", systemImage: "exclamationmark.triangle")
+                                        .font(.footnote)
+                                        .foregroundStyle(.orange)
+                                } else {
+                                    Picker("Mooring type", selection: $selectedMooringLabelID) {
+                                        Text("Select a mooring type").tag("")
+                                        ForEach(mooringLabels) { label in
+                                            Text(label.name).tag(label.id)
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
 
-                if action == "departed" {
-                    Section("Journey") {
-                        TextField("Journey name", text: $journeyName)
-                            .onChange(of: journeyName) { enforceLogTextLimit(on: $journeyName) }
-                        Text("\(journeyName.utf16.count)/\(logTextLimit)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("Saving the Departure entry starts live GPS tracking.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                        if action == "departed" {
+                            Section("Journey") {
+                                TextField("Journey name", text: $journeyName)
+                                    .onChange(of: journeyName) { enforceLogTextLimit(on: $journeyName) }
+                                Text("\(journeyName.utf16.count)/\(logTextLimit)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("Saving the Departure entry starts live GPS tracking.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
-                if action == "water" || action == "diesel" {
-                    Section("Quantity (optional)") {
-                        TextField("Litres", text: $litres)
-                            .keyboardType(.decimalPad)
-                    }
-                }
+                        if action == "water" || action == "diesel" {
+                            Section("Quantity (optional)") {
+                                TextField("Litres", text: $litres)
+                                    .keyboardType(.decimalPad)
+                            }
+                        }
 
-                if action == "temperature" || action == "arrived" {
-                    Section(action == "arrived" ? "Sea Temp (optional)" : "Sea Temp") {
-                        TextField("Degrees °C", text: $temperature)
-                            .keyboardType(.decimalPad)
-                    }
-                }
+                        if action == "temperature" || action == "arrived" {
+                            Section(action == "arrived" ? "Sea Temp (optional)" : "Sea Temp") {
+                                TextField("Degrees °C", text: $temperature)
+                                    .keyboardType(.decimalPad)
+                            }
+                        }
 
-                if action == "other" {
-                    Section("Details") {
-                        TextField("What happened?", text: $customText)
-                            .onChange(of: customText) { enforceLogTextLimit(on: $customText) }
-                        Text("\(customText.utf16.count)/\(logTextLimit)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                        if action == "other" {
+                            Section("Details") {
+                                TextField("What happened?", text: $customText)
+                                    .onChange(of: customText) { enforceLogTextLimit(on: $customText) }
+                                Text("\(customText.utf16.count)/\(logTextLimit)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
-                Section("When?") {
-                    DatePicker("Date and time", selection: $timestamp, in: ...Date())
-                }
+                        Section("When?") {
+                            DatePicker("Date and time", selection: $timestamp, in: ...Date())
+                        }
 
-                Section("Notification") {
-                    Picker("Email", selection: $notificationMode) {
-                        ForEach(LogNotificationMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
+                        Section("Notification") {
+                            Picker("Email", selection: $notificationMode) {
+                                ForEach(LogNotificationMode.allCases) { mode in
+                                    Text(mode.label).tag(mode)
+                                }
+                            }
+                            Text(notificationMode.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let errorMessage {
+                            Section {
+                                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            }
                         }
                     }
-                    Text(notificationMode.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let errorMessage {
-                    Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
+                    .scrollContentBackground(.hidden)
+                    .background(Chartroom.paper)
                 }
             }
-            .scrollContentBackground(.hidden)
             .background(Chartroom.paper)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(confirmationButtonTitle) {
-                        if logWasSaved {
-                            dismiss()
-                        } else {
-                            Task { await save() }
+                    if initialAction == nil, !action.isEmpty {
+                        Button {
+                            action = ""
+                        } label: {
+                            Label("Actions", systemImage: "chevron.left")
                         }
+                    } else {
+                        Button("Cancel") { dismiss() }
                     }
-                    .disabled(isSaving || (!logWasSaved && !canSave))
+                }
+                if !action.isEmpty {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(confirmationButtonTitle) {
+                            if logWasSaved {
+                                dismiss()
+                            } else {
+                                Task { await save() }
+                            }
+                        }
+                        .disabled(isSaving || (!logWasSaved && !canSave))
+                    }
                 }
             }
             .onChange(of: selectedPlaceID) {
@@ -207,7 +241,9 @@ struct AddLogEntryView: View {
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
             }
-            .task { await load() }
+            .task(id: action) {
+                if !action.isEmpty { await load() }
+            }
         }
     }
 
@@ -216,10 +252,11 @@ struct AddLogEntryView: View {
     }
 
     private var navigationTitle: String {
+        if action.isEmpty { return "New Log Entry" }
         switch initialAction {
-        case "departed": "Start Journey"
-        case "arrived": "End Journey"
-        default: "New Log Entry"
+        case "departed": return "Start Journey"
+        case "arrived": return "End Journey"
+        default: return actions.first(where: { $0.key == action }).map { "Log \($0.label)" } ?? "New Log Entry"
         }
     }
 
@@ -887,6 +924,7 @@ struct LogbookView: View {
                             }
                         }
                     }
+                    .environment(\.editMode, .constant(.active))
                 }
             }
             .navigationTitle("Logbook")
@@ -1058,7 +1096,8 @@ struct TodoView: View {
     @State private var pendingCardIDs: Set<String> = []
     @State private var editingCard: TodoCard?
     @State private var isAdding = false
-    @State private var isReordering = false
+    @State private var queuedReorders: [String: PendingTodoOrder] = [:]
+    @State private var isSavingOrder = false
     @State private var loading = true
     @State private var keepAwakeTask: Task<Void, Never>?
 
@@ -1093,15 +1132,11 @@ struct TodoView: View {
             }
             .navigationTitle("To Do")
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if lists.count > 1 {
                         Picker("List", selection: $selectedListID) {
                             ForEach(lists) { Text($0.name).tag($0.id) }
                         }
-                        .disabled(isReordering)
-                    }
-                    if (selectedList?.cards.filter({ !$0.dueComplete }).count ?? 0) > 1 {
-                        EditButton()
                     }
                 }
             }
@@ -1124,6 +1159,9 @@ struct TodoView: View {
                     },
                     onAddPhoto: { imageData, filename in
                         try await addPhoto(to: card, imageData: imageData, filename: filename)
+                    },
+                    onArchive: {
+                        try await archive(card)
                     }
                 )
             }
@@ -1174,7 +1212,7 @@ struct TodoView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Open \(card.name)")
         }
-        .disabled(pendingCardIDs.contains(card.id) || isReordering)
+        .disabled(pendingCardIDs.contains(card.id))
         .swipeActions {
             Button { editingCard = card } label: {
                 Label("Edit", systemImage: "pencil")
@@ -1248,8 +1286,7 @@ struct TodoView: View {
     }
 
     @MainActor private func toggle(_ card: TodoCard) async {
-        guard !isReordering,
-              !pendingCardIDs.contains(card.id),
+        guard !pendingCardIDs.contains(card.id),
               let token = authentication.token else { return }
         let complete = !card.dueComplete
 
@@ -1270,8 +1307,7 @@ struct TodoView: View {
     }
 
     @MainActor private func edit(_ card: TodoCard, name: String, desc: String) async -> Bool {
-        guard !isReordering,
-              !pendingCardIDs.contains(card.id),
+        guard !pendingCardIDs.contains(card.id),
               let token = authentication.token else { return false }
 
         pendingCardIDs.insert(card.id)
@@ -1301,6 +1337,24 @@ struct TodoView: View {
             pendingCardIDs.remove(card.id)
             actionErrorMessage = error.localizedDescription
             return false
+        }
+    }
+
+    @MainActor private func archive(_ card: TodoCard) async throws {
+        guard !pendingCardIDs.contains(card.id),
+              let token = authentication.token else {
+            throw APIClientError.server("Not authenticated")
+        }
+
+        pendingCardIDs.insert(card.id)
+        defer { pendingCardIDs.remove(card.id) }
+        try await authentication.api.archiveTodo(cardID: card.id, token: token)
+        withAnimation {
+            for list in lists where list.cards.contains(where: { $0.id == card.id }) {
+                updateCards(in: list.id) { cards in
+                    cards.filter { $0.id != card.id }
+                }
+            }
         }
     }
 
@@ -1335,55 +1389,58 @@ struct TodoView: View {
     }
 
     @MainActor private func moveOpenCards(from source: IndexSet, to destination: Int) {
-        guard !isReordering,
-              let list = selectedList,
+        guard let list = selectedList,
               let token = authentication.token else { return }
 
-        let previousCards = list.cards
         var openCards = list.cards.filter { !$0.dueComplete }
         openCards.move(fromOffsets: source, toOffset: destination)
         let cardIDs = openCards.map(\.id)
+        let positions = Dictionary(
+            uniqueKeysWithValues: cardIDs.enumerated().map {
+                ($0.element, Double(($0.offset + 1) * 16384))
+            }
+        )
 
-        isReordering = true
         withAnimation {
             updateCards(in: list.id) { cards in
-                openCards + cards.filter(\.dueComplete)
+                (openCards + cards.filter(\.dueComplete)).map { card in
+                    TodoCard(
+                        id: card.id,
+                        name: card.name,
+                        desc: card.desc,
+                        due: card.due,
+                        dueComplete: card.dueComplete,
+                        pos: positions[card.id] ?? card.pos,
+                        attachments: card.attachments
+                    )
+                }
             }
         }
 
-        Task {
+        queuedReorders[list.id] = PendingTodoOrder(
+            listID: list.id,
+            cardIDs: cardIDs,
+            token: token
+        )
+        guard !isSavingOrder else { return }
+        isSavingOrder = true
+        Task { await saveQueuedReorders() }
+    }
+
+    @MainActor private func saveQueuedReorders() async {
+        while let reorder = queuedReorders.values.first {
+            queuedReorders[reorder.listID] = nil
             do {
                 try await authentication.api.reorderTodos(
-                    listID: list.id,
-                    cardIDs: cardIDs,
-                    token: token
+                    listID: reorder.listID,
+                    cardIDs: reorder.cardIDs,
+                    token: reorder.token
                 )
-                updateCards(in: list.id) { cards in
-                    let positions = Dictionary(
-                        uniqueKeysWithValues: cardIDs.enumerated().map {
-                            ($0.element, Double(($0.offset + 1) * 16384))
-                        }
-                    )
-                    return cards.map { card in
-                        TodoCard(
-                            id: card.id,
-                            name: card.name,
-                            desc: card.desc,
-                            due: card.due,
-                            dueComplete: card.dueComplete,
-                            pos: positions[card.id] ?? card.pos,
-                            attachments: card.attachments
-                        )
-                    }
-                }
             } catch {
-                withAnimation {
-                    updateCards(in: list.id) { _ in previousCards }
-                }
                 actionErrorMessage = error.localizedDescription
             }
-            isReordering = false
         }
+        isSavingOrder = false
     }
 
     private func updateCards(in listID: String, transform: ([TodoCard]) -> [TodoCard]) {
@@ -1456,6 +1513,12 @@ struct TodoView: View {
     }
 }
 
+private struct PendingTodoOrder {
+    let listID: String
+    let cardIDs: [String]
+    let token: String
+}
+
 private struct TodoDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authentication: AuthenticationManager
@@ -1464,24 +1527,30 @@ private struct TodoDetailView: View {
     @State private var attachments: [TodoAttachment]
     @State private var photoSelection: PhotosPickerItem?
     @State private var isSaving = false
+    @State private var isArchiving = false
     @State private var isUploadingPhoto = false
     @State private var showingCamera = false
     @State private var photoError: String?
+    @State private var archiveError: String?
+    @State private var showingArchiveConfirmation = false
 
     let onSave: (String, String) async -> Bool
     let onAddPhoto: (Data, String) async throws -> TodoAttachment
+    let onArchive: () async throws -> Void
     let cardID: String
 
     init(
         card: TodoCard,
         onSave: @escaping (String, String) async -> Bool,
-        onAddPhoto: @escaping (Data, String) async throws -> TodoAttachment
+        onAddPhoto: @escaping (Data, String) async throws -> TodoAttachment,
+        onArchive: @escaping () async throws -> Void
     ) {
         _name = State(initialValue: card.name)
         _desc = State(initialValue: card.desc ?? "")
         _attachments = State(initialValue: card.attachments ?? [])
         self.onSave = onSave
         self.onAddPhoto = onAddPhoto
+        self.onArchive = onArchive
         cardID = card.id
     }
 
@@ -1520,6 +1589,15 @@ private struct TodoDetailView: View {
                     if isUploadingPhoto {
                         ProgressView("Adding photo to Trello…")
                     }
+                }
+                Section {
+                    Button(role: .destructive) {
+                        showingArchiveConfirmation = true
+                    } label: {
+                        Label("Archive", systemImage: "archivebox")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(isSaving || isUploadingPhoto || isArchiving)
                 }
             }
             .navigationTitle("Task Details")
@@ -1578,7 +1656,22 @@ private struct TodoDetailView: View {
             } message: {
                 Text(photoError ?? "Please try again.")
             }
-            .interactiveDismissDisabled(isSaving || isUploadingPhoto)
+            .alert("Couldn’t archive task", isPresented: archiveErrorIsPresented) {
+                Button("OK", role: .cancel) { archiveError = nil }
+            } message: {
+                Text(archiveError ?? "Please try again.")
+            }
+            .confirmationDialog(
+                "Archive this task in Trello?",
+                isPresented: $showingArchiveConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Archive", role: .destructive) {
+                    Task { await performArchive() }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .interactiveDismissDisabled(isSaving || isUploadingPhoto || isArchiving)
         }
     }
 
@@ -1586,6 +1679,13 @@ private struct TodoDetailView: View {
         Binding(
             get: { photoError != nil },
             set: { if !$0 { photoError = nil } }
+        )
+    }
+
+    private var archiveErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { archiveError != nil },
+            set: { if !$0 { archiveError = nil } }
         )
     }
 
@@ -1615,6 +1715,18 @@ private struct TodoDetailView: View {
             attachments.append(attachment)
         } catch {
             photoError = error.localizedDescription
+        }
+    }
+
+    @MainActor private func performArchive() async {
+        guard !isArchiving else { return }
+        isArchiving = true
+        defer { isArchiving = false }
+        do {
+            try await onArchive()
+            dismiss()
+        } catch {
+            archiveError = error.localizedDescription
         }
     }
 }

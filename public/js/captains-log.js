@@ -106,28 +106,44 @@ function renderCurrentStopDescriptionEditor(place = null) {
   if (!controls) return;
 
   const form = document.getElementById("current-stop-description-form");
-  const editButton = document.getElementById(
-    "edit-current-stop-description-btn",
-  );
   const input = document.getElementById("current-stop-description-input");
   const status = document.getElementById("current-stop-description-status");
+  const message = document.getElementById("live-journey-message");
   const hasCurrentStop = Boolean(place?.id);
+  if (!hasCurrentStop) currentStopDescriptionEditing = false;
 
   controls.classList.toggle("hidden", !hasCurrentStop);
-  editButton.classList.toggle(
-    "hidden",
-    !hasCurrentStop || currentStopDescriptionEditing,
-  );
   form.classList.toggle(
     "hidden",
     !hasCurrentStop || !currentStopDescriptionEditing,
   );
+  message.classList.toggle(
+    "hidden",
+    hasCurrentStop && currentStopDescriptionEditing,
+  );
+  message.classList.toggle("is-editable", hasCurrentStop);
+  if (hasCurrentStop) {
+    message.setAttribute("role", "button");
+    message.setAttribute("tabindex", "0");
+    message.setAttribute("aria-label", "Edit current stop description");
+  } else {
+    message.removeAttribute("role");
+    message.removeAttribute("tabindex");
+    message.removeAttribute("aria-label");
+  }
 
   if (hasCurrentStop && !currentStopDescriptionEditing) {
     input.value = String(place.desc || "");
     status.textContent = "";
     status.classList.remove("error");
   }
+}
+
+function resizeCurrentStopDescriptionInput() {
+  const input = document.getElementById("current-stop-description-input");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${input.scrollHeight}px`;
 }
 
 function isAnchorage(place) {
@@ -209,7 +225,11 @@ function renderJourneyStatus() {
     const canEditDescription = Boolean(
       document.getElementById("current-stop-description-controls"),
     );
-    message.textContent = canEditDescription ? placeSummary(place) : "";
+    message.textContent = canEditDescription
+      ? place.desc
+        ? placeSummary(place)
+        : "Add a description…"
+      : "";
     message.classList.toggle("hidden", !canEditDescription);
     renderCurrentStopDescriptionEditor(place);
     updatedLabel.textContent = "Arrived";
@@ -785,9 +805,7 @@ function setupCurrentStopDescriptionEditor() {
   const form = document.getElementById("current-stop-description-form");
   if (!form) return;
 
-  const editButton = document.getElementById(
-    "edit-current-stop-description-btn",
-  );
+  const message = document.getElementById("live-journey-message");
   const cancelButton = document.getElementById(
     "cancel-current-stop-description-btn",
   );
@@ -797,15 +815,24 @@ function setupCurrentStopDescriptionEditor() {
   const input = document.getElementById("current-stop-description-input");
   const status = document.getElementById("current-stop-description-status");
 
-  editButton.addEventListener("click", () => {
+  const startEditing = () => {
     if (currentStatus?.status !== "arrived" || !currentStatus.current) return;
     currentStopDescriptionEditing = true;
     input.value = String(currentStatus.current.desc || "");
     status.textContent = "";
     status.classList.remove("error");
     renderCurrentStopDescriptionEditor(currentStatus.current);
+    resizeCurrentStopDescriptionInput();
     input.focus();
+  };
+
+  message.addEventListener("click", startEditing);
+  message.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    startEditing();
   });
+  input.addEventListener("input", resizeCurrentStopDescriptionInput);
 
   cancelButton.addEventListener("click", () => {
     currentStopDescriptionEditing = false;
