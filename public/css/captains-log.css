@@ -1532,7 +1532,11 @@ body.log-wizard-open {
 body {
   color: var(--chart-ink);
   background:
-    radial-gradient(circle at 12% 8%, rgba(31, 112, 133, 0.08), transparent 25rem),
+    radial-gradient(
+      circle at 12% 8%,
+      rgba(31, 112, 133, 0.08),
+      transparent 25rem
+    ),
     var(--chart-paper);
 }
 
@@ -1690,13 +1694,93 @@ body {
 
 .live-journey.is-anchored {
   background:
-    radial-gradient(circle at 88% 20%, rgba(97, 198, 185, 0.16), transparent 15rem),
+    radial-gradient(
+      circle at 88% 20%,
+      rgba(97, 198, 185, 0.16),
+      transparent 15rem
+    ),
     linear-gradient(115deg, rgba(11, 41, 54, 0.98), rgba(25, 91, 100, 0.94));
 }
 
 .live-journey-message {
   margin: 0.65rem 0 0 1.55rem;
   color: #c1d6d5;
+}
+
+.current-stop-description-controls {
+  margin: 0.65rem 0 0 1.55rem;
+}
+
+.current-stop-description-edit-btn,
+.current-stop-description-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.current-stop-description-edit-btn {
+  padding: 0.45rem 0.75rem;
+}
+
+.current-stop-description-form {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 44rem;
+}
+
+.current-stop-description-form label {
+  color: #c1d6d5;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.current-stop-description-form textarea {
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.65rem;
+  box-sizing: border-box;
+  color: var(--chart-ink);
+  background: #fff;
+  font: inherit;
+  resize: vertical;
+}
+
+.current-stop-description-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.current-stop-description-actions button {
+  padding: 0.45rem 0.9rem;
+}
+
+.current-stop-description-actions button[type="submit"] {
+  color: var(--chart-ink);
+  background: #fff;
+}
+
+.current-stop-description-actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.current-stop-description-status {
+  min-height: 1.2em;
+  margin: 0;
+  color: #c1d6d5;
+  font-size: 0.85rem;
+}
+
+.current-stop-description-status.error {
+  color: #ffd1c2;
 }
 
 .live-journey-readings {
@@ -1803,6 +1887,10 @@ body {
   }
 
   .live-journey-message {
+    margin-left: 0;
+  }
+
+  .current-stop-description-controls {
     margin-left: 0;
   }
 

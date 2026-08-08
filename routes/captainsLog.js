@@ -36,11 +36,14 @@ function extractTimestamp(text, fallback, cardId) {
 }
 
 function extractTemperature(text) {
-  const match = String(text || "").match(
+  const value = String(text || "");
+  const metadataMatch = value.match(
     /^temperature:\s*(-?\d+(?:\.\d+)?)\s*(?:°\s*C?)?\s*$/im,
   );
-  if (!match) return null;
-  const temperature = Number(match[1]);
+  const headlineMatch = value.match(
+    /^\s*(-?\d+(?:\.\d+)?)\s*°(?:\s*C)?(?:\s*$|\s*\n)/i,
+  );
+  const temperature = Number((metadataMatch || headlineMatch)?.[1]);
   return Number.isFinite(temperature) ? temperature : null;
 }
 
@@ -179,8 +182,18 @@ function deriveCurrentStatus(cards, lists, customFields, comments) {
     );
     result.destination = plannedDestination;
     result.arrivedAt = lastArrived.ts;
-    result.temperature = extractTemperature(lastArrived.data.text);
     const currentCardId = lastArrived.data.card.id;
+    const latestTemperature = actions
+      .filter(
+        (action) =>
+          action.data.card.id === currentCardId &&
+          new Date(action.ts) >= new Date(lastArrived.ts) &&
+          extractTemperature(action.data.text) !== null,
+      )
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+    result.temperature = latestTemperature
+      ? extractTemperature(latestTemperature.data.text)
+      : null;
     result.visitCount = actions.filter(
       (action) =>
         action.data.card.id === currentCardId &&
@@ -654,10 +667,74 @@ router.post(["/planning-route", "/api/planning-route"], (req, res, next) => {
 router.get("/api/current-stop", async (req, res, next) => {
   try {
     const result = await getCurrentStatus();
-    res.set("Cache-Control", "public, max-age=30");
-    res.json(result);
+    res.vary("Cookie");
+    res.set(
+      "Cache-Control",
+      req.user ? "private, max-age=30" : "public, max-age=30",
+    );
+    if (req.user || !result.current) return res.json(result);
+    res.json({
+      ...result,
+      current: { ...result.current, desc: undefined },
+    });
   } catch (err) {
     next(err);
+  }
+});
+
+router.put("/api/current-stop/description", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const description = String(req.body?.description ?? "").replace(
+      /\r\n/g,
+      "\n",
+    );
+    if (description.length > 16_384) {
+      return res
+        .status(400)
+        .json({ error: "Description must be 16,384 characters or fewer" });
+    }
+
+    const status = await getCurrentStatus();
+    if (status.status !== "arrived" || !status.current?.id) {
+      return res
+        .status(409)
+        .json({ error: "There is no current stop to update" });
+    }
+
+    const url = `https://api.trello.com/1/cards/${status.current.id}`;
+    const oauth1a = require("oauth-1.0a");
+    const crypto = require("crypto");
+    const oauthClient = oauth1a({
+      consumer: {
+        key: process.env.TRELLO_OAUTH_KEY,
+        secret: process.env.TRELLO_OAUTH_SECRET,
+      },
+      signature_method: "HMAC-SHA1",
+      hash_function(baseString, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(baseString)
+          .digest("base64");
+      },
+    });
+    const requestData = { url, method: "PUT", data: { desc: description } };
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(requestData, {
+        key: req.user.token,
+        secret: req.user.tokenSecret,
+      }),
+    );
+
+    await axios.put(url, null, { params: { desc: description }, headers });
+    invalidateBoardCache();
+    if (currentStopCache?.current?.id === status.current.id) {
+      currentStopCache.current.desc = description;
+    }
+    res.json({ success: true, description });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -677,8 +754,7 @@ router.get("/api/voyages", async (req, res, next) => {
           }))
           .filter((voyage) => voyage.start || voyage.end)
           .sort(
-            (a, b) =>
-              new Date(b.start || b.end) - new Date(a.start || a.end),
+            (a, b) => new Date(b.start || b.end) - new Date(a.start || a.end),
           )
       : [];
     res.set("Cache-Control", "public, max-age=60");
@@ -882,7 +958,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       visited: "Visited",
       water: "Water",
       diesel: "Diesel",
-      temperature: "Temperature",
+      temperature: "Sea Temp",
       bins: "Bins",
       "bbq-gas-change": "BBQ Gas Change",
       "gas-tank-change": "Gas Tank Change",

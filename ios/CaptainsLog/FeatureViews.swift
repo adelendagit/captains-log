@@ -139,7 +139,7 @@ struct AddLogEntryView: View {
                 }
 
                 if action == "temperature" || action == "arrived" {
-                    Section(action == "arrived" ? "Temperature (optional)" : "Temperature") {
+                    Section(action == "arrived" ? "Sea Temp (optional)" : "Sea Temp") {
                         TextField("Degrees °C", text: $temperature)
                             .keyboardType(.decimalPad)
                     }
@@ -239,7 +239,7 @@ struct AddLogEntryView: View {
             ("visited", "Visited", "mappin.and.ellipse"),
             ("water", "Water", "drop.fill"),
             ("diesel", "Diesel", "fuelpump"),
-            ("temperature", "Temperature", "thermometer.medium"),
+            ("temperature", "Sea Temp", "thermometer.medium"),
             ("bins", "Bins", "trash"),
             ("bbq-gas-change", "BBQ Gas Change", "flame.fill"),
             ("gas-tank-change", "Gas Tank Change", "cylinder.fill"),

@@ -183,7 +183,7 @@ private struct CurrentPositionView: View {
                 statusReading(statusMetricThree.label, statusMetricThree.value)
                 if tracker.currentJourney?.active != true && tracker.currentStatus?.status == "arrived" {
                     Divider().overlay(.white.opacity(0.18))
-                    statusReading("Temperature", statusTemperature)
+                    statusReading("Sea Temp", statusTemperature)
                 }
             }
             .frame(minHeight: 44)

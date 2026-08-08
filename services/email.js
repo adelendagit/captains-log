@@ -14,7 +14,7 @@ const ACTION_LABELS = {
   visited: "Visited",
   water: "Water",
   diesel: "Diesel",
-  temperature: "Temperature",
+  temperature: "Sea Temp",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",

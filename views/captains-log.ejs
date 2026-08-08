@@ -63,12 +63,29 @@
         <h1 id="live-journey-title">Checking Skibidi’s position…</h1>
       </div>
       <p id="live-journey-message" class="live-journey-message">Connecting to the ship’s log.</p>
+      <% if (user) { %>
+        <div id="current-stop-description-controls" class="current-stop-description-controls hidden">
+          <button type="button" id="edit-current-stop-description-btn" class="current-stop-description-edit-btn">
+            <i class="fa-solid fa-pen" aria-hidden="true"></i>
+            Edit description
+          </button>
+          <form id="current-stop-description-form" class="current-stop-description-form hidden">
+            <label for="current-stop-description-input">Description</label>
+            <textarea id="current-stop-description-input" maxlength="16384" rows="4"></textarea>
+            <div class="current-stop-description-actions">
+              <button type="button" id="cancel-current-stop-description-btn">Cancel</button>
+              <button type="submit" id="save-current-stop-description-btn">Save</button>
+            </div>
+            <p id="current-stop-description-status" class="current-stop-description-status" role="status"></p>
+          </form>
+        </div>
+      <% } %>
     </div>
     <dl class="live-journey-readings">
       <div><dt id="live-journey-updated-label">Last report</dt><dd id="live-journey-updated">—</dd></div>
       <div><dt id="live-journey-speed-label">Speed</dt><dd id="live-journey-speed">—</dd></div>
       <div><dt id="live-journey-course-label">Course</dt><dd id="live-journey-course">—</dd></div>
-      <div id="live-journey-temperature-reading" class="hidden"><dt>Temperature</dt><dd id="live-journey-temperature">—</dd></div>
+      <div id="live-journey-temperature-reading" class="hidden"><dt>Sea Temp</dt><dd id="live-journey-temperature">—</dd></div>
     </dl>
   </section>
   <div class="planning-flex">
@@ -158,7 +175,7 @@
         <li data-wizard-progress="mooring">Mooring</li>
         <li data-wizard-progress="journey">Journey</li>
         <li data-wizard-progress="litres">Litres</li>
-        <li data-wizard-progress="temperature">Temperature</li>
+        <li data-wizard-progress="temperature">Sea Temp</li>
         <li data-wizard-progress="custom">Details</li>
         <li data-wizard-progress="backfill">Backfill</li>
         <li data-wizard-progress="notification">Notification</li>
@@ -214,10 +231,10 @@
 
         <section class="log-wizard-step hidden" data-wizard-step="temperature">
           <span class="log-wizard-step-count">Step 3 of 5</span>
-          <h3>Temperature</h3>
-          <p class="muted">Enter the temperature reading. It’s optional when logging an arrival.</p>
+          <h3>Sea temperature</h3>
+          <p class="muted">Enter the sea temperature. It’s optional when logging an arrival.</p>
           <label class="wizard-field" for="wizard-temperature-input">
-            <span>Temperature</span>
+            <span>Sea temp</span>
             <div class="wizard-number-input">
               <input type="number" id="wizard-temperature-input" step="0.1" inputmode="decimal" placeholder="e.g. 27.8">
               <span>Degrees °C</span>

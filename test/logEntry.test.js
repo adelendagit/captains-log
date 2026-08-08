@@ -517,8 +517,10 @@ test("adds an optional temperature to an arrival log", async (t) => {
   assert.match(comments[0], /\ntemperature: 27\.8$/);
 });
 
-test("returns the latest arrival temperature in current stop status", async (t) => {
+test("keeps the current stop description private and lets a logged-in user update it", async (t) => {
   const originalGet = axios.get;
+  const originalPut = axios.put;
+  const updates = [];
   const board = {
     lists: [{ id: "list-1", name: "Saronic Gulf" }],
     cards: [
@@ -526,7 +528,7 @@ test("returns the latest arrival temperature in current stop status", async (t) 
         id: "stop-card",
         idList: "list-1",
         name: "Poros",
-        desc: "",
+        desc: "A quiet anchorage near town.",
         labels: [],
         customFieldItems: [
           { idCustomField: "latitude", value: { number: "37.5" } },
@@ -544,6 +546,19 @@ test("returns the latest arrival temperature in current stop status", async (t) 
   const comments = [
     {
       type: "commentCard",
+      date: "2026-08-05T10:00:00.000Z",
+      data: {
+        card: { id: "stop-card" },
+        text: [
+          "27.8°",
+          "timestamp: 2026-08-05T10:00:00.000Z",
+          "lat: 37.5",
+          "lng: 23.4",
+        ].join("\n"),
+      },
+    },
+    {
+      type: "commentCard",
       date: "2026-08-05T09:00:00.000Z",
       data: {
         card: { id: "stop-card" },
@@ -552,7 +567,6 @@ test("returns the latest arrival temperature in current stop status", async (t) 
           "timestamp: 2026-08-05T09:00:00.000Z",
           "lat: 37.5",
           "lng: 23.4",
-          "temperature: 27.8",
         ].join("\n"),
       },
     },
@@ -561,11 +575,27 @@ test("returns the latest arrival temperature in current stop status", async (t) 
   axios.get = async (url) => ({
     data: String(url).includes("/actions?") ? comments : board,
   });
+  axios.put = async (url, body, options) => {
+    updates.push({ url, body, options });
+    return { data: {} };
+  };
   t.after(() => {
     axios.get = originalGet;
+    axios.put = originalPut;
   });
 
   const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    if (req.get("x-test-user")) {
+      req.user = {
+        id: "test-member",
+        token: "test-token",
+        tokenSecret: "test-token-secret",
+      };
+    }
+    next();
+  });
   app.use(captainsLog);
   const server = await new Promise((resolve) => {
     const listeningServer = app.listen(0, "127.0.0.1", () =>
@@ -582,4 +612,55 @@ test("returns the latest arrival temperature in current stop status", async (t) 
   assert.equal(response.status, 200);
   assert.equal(status.status, "arrived");
   assert.equal(status.temperature, 27.8);
+  assert.equal(Object.hasOwn(status.current, "desc"), false);
+  assert.equal(response.headers.get("cache-control"), "public, max-age=30");
+  assert.equal(response.headers.get("vary"), "Cookie");
+
+  const authenticatedResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/current-stop`,
+    { headers: { "x-test-user": "yes" } },
+  );
+  const authenticatedStatus = await authenticatedResponse.json();
+
+  assert.equal(authenticatedResponse.status, 200);
+  assert.equal(
+    authenticatedStatus.current.desc,
+    "A quiet anchorage near town.",
+  );
+  assert.equal(
+    authenticatedResponse.headers.get("cache-control"),
+    "private, max-age=30",
+  );
+
+  const updateResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/current-stop/description`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-test-user": "yes",
+      },
+      body: JSON.stringify({ description: "Sheltered, with good holding." }),
+    },
+  );
+  const updateResult = await updateResponse.json();
+
+  assert.equal(updateResponse.status, 200);
+  assert.equal(updateResult.description, "Sheltered, with good holding.");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].url, "https://api.trello.com/1/cards/stop-card");
+  assert.deepEqual(updates[0].options.params, {
+    desc: "Sheltered, with good holding.",
+  });
+
+  const unauthenticatedUpdate = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/current-stop/description`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: "Nope" }),
+    },
+  );
+  assert.equal(unauthenticatedUpdate.status, 403);
+  assert.equal(updates.length, 1);
 });

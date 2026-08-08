@@ -27,6 +27,7 @@ let canPlan = false;
 let boardLabels = [];
 let currentStatus = null;
 let currentJourney = null;
+let currentStopDescriptionEditing = false;
 let journeyLayerGroup = null;
 let journeyRefreshInterval = null;
 let underwayMarker = null;
@@ -53,7 +54,7 @@ const LOCATION_LOG_ACTIONS = {
   visited: "Visited",
   water: "Water",
   diesel: "Diesel",
-  temperature: "Temperature",
+  temperature: "Sea Temp",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
@@ -65,7 +66,10 @@ const LOCATION_LOG_ACTIONS = {
 
 function formatPositionAge(timestamp) {
   if (!timestamp) return "No position yet";
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(timestamp)) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(timestamp)) / 1000),
+  );
   if (seconds < 10) return "Just now";
   if (seconds < 60) return `${seconds} seconds ago`;
   const minutes = Math.floor(seconds / 60);
@@ -88,14 +92,49 @@ function placeSummary(place) {
     .split(/\n\s*\n/)
     .map((part) => part.trim())
     .find(Boolean);
-  if (description) return description.length > 180 ? `${description.slice(0, 177)}…` : description;
+  if (description)
+    return description.length > 180
+      ? `${description.slice(0, 177)}…`
+      : description;
   return place?.listName
     ? `Skibidi’s last logged position in ${place.listName}.`
     : "Skibidi’s last logged position.";
 }
 
+function renderCurrentStopDescriptionEditor(place = null) {
+  const controls = document.getElementById("current-stop-description-controls");
+  if (!controls) return;
+
+  const form = document.getElementById("current-stop-description-form");
+  const editButton = document.getElementById(
+    "edit-current-stop-description-btn",
+  );
+  const input = document.getElementById("current-stop-description-input");
+  const status = document.getElementById("current-stop-description-status");
+  const hasCurrentStop = Boolean(place?.id);
+
+  controls.classList.toggle("hidden", !hasCurrentStop);
+  editButton.classList.toggle(
+    "hidden",
+    !hasCurrentStop || currentStopDescriptionEditing,
+  );
+  form.classList.toggle(
+    "hidden",
+    !hasCurrentStop || !currentStopDescriptionEditing,
+  );
+
+  if (hasCurrentStop && !currentStopDescriptionEditing) {
+    input.value = String(place.desc || "");
+    status.textContent = "";
+    status.classList.remove("error");
+  }
+}
+
 function isAnchorage(place) {
-  const words = [place?.listName, ...(place?.labels || []).map((label) => label.name)]
+  const words = [
+    place?.listName,
+    ...(place?.labels || []).map((label) => label.name),
+  ]
     .filter(Boolean)
     .join(" ");
   return /anchor|anchorage|bay|harbour|harbor|marina|port/i.test(words);
@@ -126,18 +165,27 @@ function renderJourneyStatus() {
   temperatureReading?.classList.toggle("hidden", !showTemperature);
 
   panel.classList.toggle("is-live", Boolean(currentJourney?.active));
-  panel.classList.toggle("is-anchored", !currentJourney?.active && currentStatus?.status === "arrived");
+  panel.classList.toggle(
+    "is-anchored",
+    !currentJourney?.active && currentStatus?.status === "arrived",
+  );
   indicator.classList.toggle("is-live", Boolean(currentJourney?.active));
-  indicator.classList.toggle("is-anchored", !currentJourney?.active && currentStatus?.status === "arrived");
+  indicator.classList.toggle(
+    "is-anchored",
+    !currentJourney?.active && currentStatus?.status === "arrived",
+  );
 
   if (currentJourney?.active) {
+    message.classList.remove("hidden");
+    renderCurrentStopDescriptionEditor();
     eyebrow.textContent = "Underway · Live position";
     updatedLabel.textContent = "Last report";
     speedLabel.textContent = "Speed";
     courseLabel.textContent = "Course";
     title.textContent = currentJourney.journey.name;
     if (!currentJourney.position) {
-      message.textContent = "The journey has started. Waiting for the first GPS report.";
+      message.textContent =
+        "The journey has started. Waiting for the first GPS report.";
       updated.textContent = "Waiting";
       speed.textContent = "—";
       course.textContent = "—";
@@ -147,8 +195,10 @@ function renderJourneyStatus() {
     const point = currentJourney.position;
     message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
     updated.textContent = formatPositionAge(point.timestamp);
-    speed.textContent = point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
-    course.textContent = point.course == null ? "—" : `${Math.round(point.course)}°`;
+    speed.textContent =
+      point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
+    course.textContent =
+      point.course == null ? "—" : `${Math.round(point.course)}°`;
     return;
   }
 
@@ -156,7 +206,12 @@ function renderJourneyStatus() {
     const place = currentStatus.current;
     eyebrow.textContent = isAnchorage(place) ? "At anchor" : "Current stop";
     title.textContent = place.name;
-    message.textContent = placeSummary(place);
+    const canEditDescription = Boolean(
+      document.getElementById("current-stop-description-controls"),
+    );
+    message.textContent = canEditDescription ? placeSummary(place) : "";
+    message.classList.toggle("hidden", !canEditDescription);
+    renderCurrentStopDescriptionEditor(place);
     updatedLabel.textContent = "Arrived";
     speedLabel.textContent = "Visits";
     courseLabel.textContent = "Area";
@@ -173,11 +228,18 @@ function renderJourneyStatus() {
   }
 
   if (currentStatus?.status === "underway") {
+    message.classList.remove("hidden");
+    renderCurrentStopDescriptionEditor();
     const from = currentStatus.from?.name;
-    const destination = currentStatus.destination?.name || currentStatus.plannedDestination?.name;
+    const destination =
+      currentStatus.destination?.name || currentStatus.plannedDestination?.name;
     eyebrow.textContent = "Underway · Last report";
-    title.textContent = from && destination ? `${from} → ${destination}` : destination || "Underway";
-    message.textContent = "Live GPS is not available; the chart shows the estimated passage.";
+    title.textContent =
+      from && destination
+        ? `${from} → ${destination}`
+        : destination || "Underway";
+    message.textContent =
+      "Live GPS is not available; the chart shows the estimated passage.";
     updatedLabel.textContent = "Departed";
     speedLabel.textContent = "Destination";
     courseLabel.textContent = "Position";
@@ -188,8 +250,11 @@ function renderJourneyStatus() {
   }
 
   eyebrow.textContent = "Last known position";
+  message.classList.remove("hidden");
+  renderCurrentStopDescriptionEditor();
   title.textContent = "Position not yet logged";
-  message.textContent = "The chart still shows planned stops and previous voyages.";
+  message.textContent =
+    "The chart still shows planned stops and previous voyages.";
   updatedLabel.textContent = "Last report";
   speedLabel.textContent = "Status";
   courseLabel.textContent = "Chart";
@@ -318,7 +383,10 @@ async function loadHistoricalSeaRoute(markers) {
   if (!historicalSeaRouteCache.has(key)) {
     const request = fetch("/sea-route", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({
         points: markers.map(({ lat, lng }) => ({ lat, lng })),
       }),
@@ -437,7 +505,8 @@ async function loadPlanningRoute(sequence) {
       }),
     })
       .then((response) => {
-        if (!response.ok) throw new Error("Unable to calculate planned sea route");
+        if (!response.ok)
+          throw new Error("Unable to calculate planned sea route");
         return response.json();
       })
       .then((payload) => {
@@ -703,12 +772,86 @@ async function refreshCurrentStatus() {
     if (plannedOnlyToggle) {
       resetPlanningMap();
       renderMapWithToggle();
-      const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
+      const speed =
+        parseFloat(document.getElementById("speed-input")?.value) || 0;
       renderTable(stops, speed);
     }
   } catch (error) {
     console.warn(error.message);
   }
+}
+
+function setupCurrentStopDescriptionEditor() {
+  const form = document.getElementById("current-stop-description-form");
+  if (!form) return;
+
+  const editButton = document.getElementById(
+    "edit-current-stop-description-btn",
+  );
+  const cancelButton = document.getElementById(
+    "cancel-current-stop-description-btn",
+  );
+  const saveButton = document.getElementById(
+    "save-current-stop-description-btn",
+  );
+  const input = document.getElementById("current-stop-description-input");
+  const status = document.getElementById("current-stop-description-status");
+
+  editButton.addEventListener("click", () => {
+    if (currentStatus?.status !== "arrived" || !currentStatus.current) return;
+    currentStopDescriptionEditing = true;
+    input.value = String(currentStatus.current.desc || "");
+    status.textContent = "";
+    status.classList.remove("error");
+    renderCurrentStopDescriptionEditor(currentStatus.current);
+    input.focus();
+  });
+
+  cancelButton.addEventListener("click", () => {
+    currentStopDescriptionEditing = false;
+    renderCurrentStopDescriptionEditor(currentStatus?.current);
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (currentStatus?.status !== "arrived" || !currentStatus.current) return;
+
+    saveButton.disabled = true;
+    cancelButton.disabled = true;
+    status.textContent = "Saving…";
+    status.classList.remove("error");
+
+    try {
+      const response = await fetch("/api/current-stop/description", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: input.value }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to update the description");
+      }
+
+      currentStatus.current.desc = result.description;
+      const matchingStop = stops.find(
+        (stop) => stop.id === currentStatus.current.id,
+      );
+      if (matchingStop) matchingStop.desc = result.description;
+      const matchingPlace = places.find(
+        (place) => place.id === currentStatus.current.id,
+      );
+      if (matchingPlace) matchingPlace.desc = result.description;
+      currentStopDescriptionEditing = false;
+      writeChartSnapshot();
+      renderJourneyStatus();
+    } catch (error) {
+      status.textContent = error.message || "Unable to update the description";
+      status.classList.add("error");
+    } finally {
+      saveButton.disabled = false;
+      cancelButton.disabled = false;
+    }
+  });
 }
 
 // map rating/labels → color
@@ -850,7 +993,9 @@ async function preloadAllLogs() {
   if (logsLoadStarted) return;
   logsLoadStarted = true;
   setLogLoadingStatus(
-    allLogsCache ? "Updating logbook in the background…" : "Loading recent logbook entries…",
+    allLogsCache
+      ? "Updating logbook in the background…"
+      : "Loading recent logbook entries…",
   );
 
   if (window.EventSource) {
@@ -869,7 +1014,9 @@ async function preloadAllLogs() {
         mostRecentTripRange = payload.mostRecentTripRange;
       }
       if (isFirstFreshBatch) writeLogbookSnapshot();
-      setLogLoadingStatus(`Loaded ${allLogsCache.length} entries; loading older entries…`);
+      setLogLoadingStatus(
+        `Loaded ${allLogsCache.length} entries; loading older entries…`,
+      );
       scheduleLogRender();
     });
     source.addEventListener("done", () => {
@@ -2472,7 +2619,10 @@ function currentVoyage(voyages, now = new Date()) {
 }
 
 function initializeVoyageSelection(allowEmpty = false) {
-  if (voyageSelectionInitialized || (!allowEmpty && voyagesCache.length === 0)) {
+  if (
+    voyageSelectionInitialized ||
+    (!allowEmpty && voyagesCache.length === 0)
+  ) {
     return;
   }
   const voyage = currentVoyage(voyagesCache);
@@ -2655,13 +2805,9 @@ function setupLogWizard() {
   const actionGrid = document.getElementById("wizard-action-grid");
   const mooringOptions = document.getElementById("wizard-mooring-options");
   const mooringStatus = document.getElementById("wizard-mooring-status");
-  const journeyNameInput = document.getElementById(
-    "wizard-journey-name-input",
-  );
+  const journeyNameInput = document.getElementById("wizard-journey-name-input");
   const litresInput = document.getElementById("wizard-litres-input");
-  const temperatureInput = document.getElementById(
-    "wizard-temperature-input",
-  );
+  const temperatureInput = document.getElementById("wizard-temperature-input");
   const customTextInput = document.getElementById("wizard-custom-text-input");
   const backfillInput = document.getElementById("wizard-backfill-input");
   const submitStatus = document.getElementById("wizard-submit-status");
@@ -2746,7 +2892,10 @@ function setupLogWizard() {
       const itemIndex = steps.indexOf(itemStep);
       item.classList.toggle("hidden", itemIndex === -1);
       item.classList.toggle("active", itemStep === step);
-      item.classList.toggle("complete", itemIndex >= 0 && itemIndex < currentIndex);
+      item.classList.toggle(
+        "complete",
+        itemIndex >= 0 && itemIndex < currentIndex,
+      );
     });
   };
 
@@ -2809,7 +2958,8 @@ function setupLogWizard() {
   const suggestedJourneyName = () => {
     const from = selectedPlace()?.name;
     const destination =
-      currentStatus?.plannedDestination?.name || currentStatus?.destination?.name;
+      currentStatus?.plannedDestination?.name ||
+      currentStatus?.destination?.name;
     if (from && destination && from !== destination) {
       return `${from} → ${destination}`;
     }
@@ -3223,6 +3373,7 @@ async function init() {
 
   setupLogTab();
   setupLogWizard();
+  setupCurrentStopDescriptionEditor();
   initTabs();
 
   // Start independent requests together. None of these need to hold up the
