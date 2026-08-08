@@ -70,9 +70,14 @@ private struct ChartroomView: View {
 
     var body: some View {
         TabView {
-            CurrentPositionView {
-                logEntryIntent = LogEntryIntent(action: "departed")
-            }
+            CurrentPositionView(
+                onStartJourney: {
+                    logEntryIntent = LogEntryIntent(action: "departed")
+                },
+                onEndJourney: {
+                    logEntryIntent = LogEntryIntent(action: "arrived")
+                }
+            )
                 .tabItem { Label("Now", systemImage: "location.fill") }
             PlanView()
                 .tabItem { Label("Plan", systemImage: "map") }
@@ -109,9 +114,9 @@ private struct CurrentPositionView: View {
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
     @State private var plannedRoute: PlanningRouteResponse?
-    @State private var confirmingEndJourney = false
 
     let onStartJourney: () -> Void
+    let onEndJourney: () -> Void
 
     private let emptyPlanMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -151,18 +156,6 @@ private struct CurrentPositionView: View {
                 tracker.resumeTracking()
             }
             .refreshable { await refreshMapData() }
-            .confirmationDialog(
-                "End this journey?",
-                isPresented: $confirmingEndJourney,
-                titleVisibility: .visible
-            ) {
-                Button("End Journey", role: .destructive) {
-                    Task { await tracker.endJourney() }
-                }
-                Button("Keep Journey Running", role: .cancel) {}
-            } message: {
-                Text("Location sharing will stop. This cannot be triggered accidentally without confirming here.")
-            }
         }
     }
 
@@ -345,7 +338,7 @@ private struct CurrentPositionView: View {
                 .font(.headline)
                 .foregroundStyle(tracker.isTracking ? Chartroom.sea : .secondary)
                 Button("End Journey", role: .destructive) {
-                    confirmingEndJourney = true
+                    onEndJourney()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)

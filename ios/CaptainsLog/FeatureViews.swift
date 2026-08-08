@@ -72,7 +72,7 @@ struct AddLogEntryView: View {
                             Label(item.label, systemImage: item.icon).tag(item.key)
                         }
                     }
-                    .disabled(initialAction == "departed")
+                    .disabled(initialAction != nil)
                 }
 
                 Section("Where?") {
@@ -178,14 +178,14 @@ struct AddLogEntryView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Chartroom.paper)
-            .navigationTitle(initialAction == "departed" ? "Start Journey" : "New Log Entry")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(logWasSaved ? "Done" : (action == "departed" ? "Start" : "Save")) {
+                    Button(confirmationButtonTitle) {
                         if logWasSaved {
                             dismiss()
                         } else {
@@ -211,6 +211,23 @@ struct AddLogEntryView: View {
 
     private static func defaultNotificationMode(for action: String) -> LogNotificationMode {
         ["arrived", "departed", "visited"].contains(action) ? .people : .none
+    }
+
+    private var navigationTitle: String {
+        switch initialAction {
+        case "departed": "Start Journey"
+        case "arrived": "End Journey"
+        default: "New Log Entry"
+        }
+    }
+
+    private var confirmationButtonTitle: String {
+        if logWasSaved { return "Done" }
+        switch initialAction {
+        case "departed": return "Start"
+        case "arrived": return "End"
+        default: return "Save"
+        }
     }
 
     private var actions: [(key: String, label: String, icon: String)] {
@@ -344,6 +361,9 @@ struct AddLogEntryView: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
+            if action == "arrived", tracker.currentJourney?.active == true {
+                try await tracker.flushPendingPositions()
+            }
             let quantity = Double(litres)
             let temperatureValue = parsedTemperature
             let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil

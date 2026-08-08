@@ -75,6 +75,14 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
         beginLocationUpdates()
     }
 
+    func flushPendingPositions() async throws {
+        guard
+            let token = authentication.token,
+            let journeyID = currentJourney?.journey?.id
+        else { return }
+        try await flushPending(journeyID: journeyID, token: token)
+    }
+
     func endJourney() async {
         guard
             let token = authentication.token,
