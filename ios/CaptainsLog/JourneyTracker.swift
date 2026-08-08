@@ -30,6 +30,18 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
     }
 
     func refresh() async {
+        if currentJourney == nil || currentStatus == nil {
+            async let cachedJourney = authentication.api.cachedCurrentJourney()
+            async let cachedStatus = authentication.api.cachedCurrentStatus()
+            let (journey, status) = await (cachedJourney, cachedStatus)
+            if currentJourney == nil, let journey {
+                currentJourney = journeyWithPendingPositions(journey)
+            }
+            if currentStatus == nil, let status {
+                currentStatus = status
+            }
+        }
+
         do {
             async let journey = authentication.api.currentJourney(token: authentication.token)
             async let status = authentication.api.currentStatus(token: authentication.token)

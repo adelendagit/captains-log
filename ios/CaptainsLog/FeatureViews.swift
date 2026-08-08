@@ -1050,6 +1050,9 @@ struct TodoView: View {
     @State private var selectedListID = ""
     @State private var newItem = ""
     @State private var errorMessage: String?
+    @State private var actionErrorMessage: String?
+    @State private var pendingCardIDs: Set<String> = []
+    @State private var isAdding = false
     @State private var loading = true
 
     var body: some View {
@@ -1062,8 +1065,9 @@ struct TodoView: View {
                         Section {
                             HStack {
                                 TextField("New task", text: $newItem)
+                                    .disabled(isAdding)
                                 Button("Add") { Task { await addItem() } }
-                                    .disabled(newItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    .disabled(isAdding || newItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                         }
                         Section("Open") {
@@ -1091,7 +1095,19 @@ struct TodoView: View {
             }
             .task { await load() }
             .refreshable { await load() }
+            .alert("Couldn’t update task", isPresented: actionErrorIsPresented) {
+                Button("OK", role: .cancel) { actionErrorMessage = nil }
+            } message: {
+                Text(actionErrorMessage ?? "Please try again.")
+            }
         }
+    }
+
+    private var actionErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )
     }
 
     private var selectedList: TodoList? {
@@ -1101,8 +1117,13 @@ struct TodoView: View {
     private func todoRow(_ card: TodoCard) -> some View {
         Button { Task { await toggle(card) } } label: {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: card.dueComplete ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(card.dueComplete ? Chartroom.sea : .secondary)
+                if pendingCardIDs.contains(card.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: card.dueComplete ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(card.dueComplete ? Chartroom.sea : .secondary)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(card.name)
                         .strikethrough(card.dueComplete)
@@ -1114,11 +1135,12 @@ struct TodoView: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(pendingCardIDs.contains(card.id))
     }
 
     @MainActor private func load() async {
         guard let token = authentication.token else { return }
-        loading = true
+        loading = lists.isEmpty
         defer { loading = false }
         do {
             lists = try await authentication.api.todoData(token: token).lists
@@ -1128,21 +1150,112 @@ struct TodoView: View {
     }
 
     @MainActor private func addItem() async {
-        guard let token = authentication.token, let listID = selectedList?.id else { return }
+        guard !isAdding,
+              let token = authentication.token,
+              let listID = selectedList?.id else { return }
         let name = newItem.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
+
+        let temporaryID = "pending-\(UUID().uuidString)"
+        let temporaryCard = TodoCard(
+            id: temporaryID,
+            name: name,
+            desc: nil,
+            due: nil,
+            dueComplete: false
+        )
+
+        isAdding = true
+        newItem = ""
+        pendingCardIDs.insert(temporaryID)
+        withAnimation {
+            updateCards(in: listID) { $0 + [temporaryCard] }
+        }
+
         do {
-            try await authentication.api.addTodo(name: name, listID: listID, token: token)
-            newItem = ""
-            await load()
-        } catch { errorMessage = error.localizedDescription }
+            let cardID = try await authentication.api.addTodo(name: name, listID: listID, token: token)
+            replaceCard(
+                temporaryID,
+                with: TodoCard(id: cardID, name: name, desc: nil, due: nil, dueComplete: false)
+            )
+            pendingCardIDs.remove(temporaryID)
+        } catch {
+            withAnimation {
+                updateCards(in: listID) { cards in
+                    cards.filter { $0.id != temporaryID }
+                }
+            }
+            pendingCardIDs.remove(temporaryID)
+            newItem = name
+            actionErrorMessage = error.localizedDescription
+        }
+        isAdding = false
     }
 
     @MainActor private func toggle(_ card: TodoCard) async {
-        guard let token = authentication.token else { return }
+        guard !pendingCardIDs.contains(card.id),
+              let token = authentication.token else { return }
+        let complete = !card.dueComplete
+
+        pendingCardIDs.insert(card.id)
+        withAnimation {
+            setCompletion(cardID: card.id, complete: complete)
+        }
+
         do {
-            try await authentication.api.setTodoCompletion(cardID: card.id, complete: !card.dueComplete, token: token)
-            await load()
-        } catch { errorMessage = error.localizedDescription }
+            try await authentication.api.setTodoCompletion(cardID: card.id, complete: complete, token: token)
+        } catch {
+            withAnimation {
+                setCompletion(cardID: card.id, complete: card.dueComplete)
+            }
+            actionErrorMessage = error.localizedDescription
+        }
+        pendingCardIDs.remove(card.id)
+    }
+
+    private func updateCards(in listID: String, transform: ([TodoCard]) -> [TodoCard]) {
+        guard let listIndex = lists.firstIndex(where: { $0.id == listID }) else { return }
+        let list = lists[listIndex]
+        lists[listIndex] = TodoList(
+            id: list.id,
+            name: list.name,
+            pos: list.pos,
+            cards: transform(list.cards)
+        )
+    }
+
+    private func replaceCard(_ cardID: String, with replacement: TodoCard) {
+        guard let listIndex = lists.firstIndex(where: { list in
+            list.cards.contains(where: { $0.id == cardID })
+        }) else { return }
+        let list = lists[listIndex]
+        lists[listIndex] = TodoList(
+            id: list.id,
+            name: list.name,
+            pos: list.pos,
+            cards: list.cards.map { $0.id == cardID ? replacement : $0 }
+        )
+    }
+
+    private func setCompletion(cardID: String, complete: Bool) {
+        guard let listIndex = lists.firstIndex(where: { list in
+            list.cards.contains(where: { $0.id == cardID })
+        }) else { return }
+        let list = lists[listIndex]
+        lists[listIndex] = TodoList(
+            id: list.id,
+            name: list.name,
+            pos: list.pos,
+            cards: list.cards.map { card in
+                guard card.id == cardID else { return card }
+                return TodoCard(
+                    id: card.id,
+                    name: card.name,
+                    desc: card.desc,
+                    due: card.due,
+                    dueComplete: complete
+                )
+            }
+        )
     }
 }

@@ -41,8 +41,18 @@ final class APIClient: Sendable {
         try await send(path: "api/journeys/current", token: token, cacheKey: "current-journey")
     }
 
+    func cachedCurrentJourney() async -> CurrentJourneyResponse? {
+        guard let data = await responseCache.data(for: "current-journey") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(CurrentJourneyResponse.self, from: data)
+    }
+
     func currentStatus(token: String?) async throws -> CurrentStatusResponse {
         try await send(path: "api/current-stop", token: token, cacheKey: "current-status")
+    }
+
+    func cachedCurrentStatus() async -> CurrentStatusResponse? {
+        guard let data = await responseCache.data(for: "current-status") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(CurrentStatusResponse.self, from: data)
     }
 
     func planning(token: String) async throws -> PlanningResponse {
@@ -104,13 +114,14 @@ final class APIClient: Sendable {
         )
     }
 
-    func addTodo(name: String, listID: String, token: String) async throws {
-        let _: CreateTodoResponse = try await send(
+    func addTodo(name: String, listID: String, token: String) async throws -> String {
+        let response: CreateTodoResponse = try await send(
             path: "to-do/items",
             method: "POST",
             body: ["name": name, "listId": listID],
             token: token
         )
+        return response.cardId
     }
 
     func setTodoCompletion(cardID: String, complete: Bool, token: String) async throws {
