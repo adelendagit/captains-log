@@ -6,6 +6,30 @@ struct LogEntryIntent: Identifiable {
     let action: String?
 }
 
+private enum LogNotificationMode: String, CaseIterable, Identifiable {
+    case people
+    case test
+    case none
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .people: "Notify people"
+        case .test: "Send test to me"
+        case .none: "Don’t email"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .people: "Email the configured notification list."
+        case .test: "Email the configured reply-to address."
+        case .none: "Save the log entry only."
+        }
+    }
+}
+
 struct AddLogEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authentication: AuthenticationManager
@@ -18,14 +42,18 @@ struct AddLogEntryView: View {
     @State private var litres = ""
     @State private var customText = ""
     @State private var timestamp = Date()
+    @State private var notificationMode: LogNotificationMode
     @State private var isSaving = false
+    @State private var logWasSaved = false
     @State private var errorMessage: String?
 
     private let initialAction: String?
 
     init(initialAction: String?) {
         self.initialAction = initialAction
-        _action = State(initialValue: initialAction ?? "arrived")
+        let action = initialAction ?? "arrived"
+        _action = State(initialValue: action)
+        _notificationMode = State(initialValue: Self.defaultNotificationMode(for: action))
     }
 
     var body: some View {
@@ -84,6 +112,17 @@ struct AddLogEntryView: View {
                     DatePicker("Date and time", selection: $timestamp, in: ...Date())
                 }
 
+                Section("Notification") {
+                    Picker("Email", selection: $notificationMode) {
+                        ForEach(LogNotificationMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    Text(notificationMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle")
@@ -101,16 +140,27 @@ struct AddLogEntryView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(action == "departed" ? "Start" : "Save") {
-                        Task { await save() }
+                    Button(logWasSaved ? "Done" : (action == "departed" ? "Start" : "Save")) {
+                        if logWasSaved {
+                            dismiss()
+                        } else {
+                            Task { await save() }
+                        }
                     }
-                    .disabled(isSaving || selectedPlace == nil || logCoordinate == nil || (action == "other" && customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(isSaving || (!logWasSaved && !canSave))
                 }
             }
             .onChange(of: selectedPlaceID) { updateSuggestedJourneyName() }
-            .onChange(of: action) { updateSuggestedJourneyName() }
+            .onChange(of: action) {
+                updateSuggestedJourneyName()
+                notificationMode = Self.defaultNotificationMode(for: action)
+            }
             .task { await load() }
         }
+    }
+
+    private static func defaultNotificationMode(for action: String) -> LogNotificationMode {
+        ["arrived", "departed", "visited"].contains(action) ? .people : .none
     }
 
     private var actions: [(key: String, label: String, icon: String)] {
@@ -130,6 +180,12 @@ struct AddLogEntryView: View {
 
     private var selectedPlace: PlaceSummary? {
         places.first { $0.id == selectedPlaceID }
+    }
+
+    private var canSave: Bool {
+        selectedPlace != nil &&
+            logCoordinate != nil &&
+            (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var logCoordinate: CLLocationCoordinate2D? {
@@ -180,6 +236,8 @@ struct AddLogEntryView: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
+            let quantity = Double(litres)
+            let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
             try await authentication.api.addLogEntry(
                 action: action,
                 cardID: place.id,
@@ -187,11 +245,31 @@ struct AddLogEntryView: View {
                 longitude: coordinate.longitude,
                 journeyName: action == "departed" ? journeyName : nil,
                 placeName: place.name,
-                customText: action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+                customText: details,
                 timestamp: timestamp,
-                litres: Double(litres),
+                litres: quantity,
                 token: token
             )
+            logWasSaved = true
+            if notificationMode != .none {
+                do {
+                    _ = try await authentication.api.sendLogNotification(
+                        mode: notificationMode.rawValue,
+                        action: action,
+                        cardID: place.id,
+                        latitude: coordinate.latitude,
+                        longitude: coordinate.longitude,
+                        timestamp: timestamp,
+                        litres: quantity,
+                        customText: details,
+                        token: token
+                    )
+                } catch {
+                    await tracker.refresh()
+                    errorMessage = "The log was saved, but the email could not be sent: \(error.localizedDescription)"
+                    return
+                }
+            }
             await tracker.refresh()
             dismiss()
         } catch {
@@ -225,6 +303,7 @@ private final class LogLocationProvider: NSObject, ObservableObject, @preconcurr
 
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
+    @EnvironmentObject private var tracker: JourneyTracker
     @State private var data: PlanningResponse?
     @State private var currentStatus: CurrentStatusResponse?
     @State private var route: PlanningRouteResponse?
@@ -232,46 +311,53 @@ struct PlanView: View {
     @State private var routeLoading = false
     @State private var speedKnots = 6.0
     @State private var camera: MapCameraPosition = .automatic
+    @State private var visibleRegion: MKCoordinateRegion?
+    @State private var hasSetInitialCamera = false
     @State private var errorMessage: String?
     @State private var searchText = ""
     @State private var workingCardID: String?
 
+    private let initialMapRadiusMeters: CLLocationDistance = 1_000
+
     var body: some View {
         NavigationStack {
-            Group {
-                if data != nil {
-                    List {
-                        if !plannedStops.isEmpty {
-                            Section {
-                                planningMap
-                                routeSummary
-                            }
-                        }
-                        if let errorMessage {
-                            Section {
-                                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                                    .font(.footnote)
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                        Section("Planned stops") {
-                            if plannedStops.isEmpty {
-                                ContentUnavailableView("No stops planned", systemImage: "map", description: Text("Choose a place below to add the next stop."))
-                            }
-                            ForEach(plannedStops) { stop in
-                                placeRow(stop, isPlanned: true)
-                            }
-                        }
-                        Section("Places") {
-                            ForEach(filteredPlaces) { place in
-                                placeRow(place, isPlanned: false)
-                            }
-                        }
+            List {
+                Section {
+                    planningMap
+                    if !plannedStops.isEmpty {
+                        routeSummary
                     }
-                } else if let errorMessage {
-                    ContentUnavailableView("Couldn’t load planning", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-                } else {
-                    ProgressView("Loading chart…")
+                }
+                if let errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+                Section("Planned stops") {
+                    if data == nil {
+                        ProgressView("Loading planned stops…")
+                    } else if plannedStops.isEmpty {
+                        ContentUnavailableView("No stops planned", systemImage: "map", description: Text("Choose a place below to add the next stop."))
+                    }
+                    ForEach(plannedStops) { stop in
+                        placeRow(stop, isPlanned: true)
+                    }
+                }
+                Section("Places in map") {
+                    if data == nil {
+                        ProgressView("Loading places…")
+                    } else if filteredPlaces.isEmpty {
+                        ContentUnavailableView(
+                            searchText.isEmpty ? "No places in this map area" : "No matching places in this map area",
+                            systemImage: "mappin.slash",
+                            description: Text("Pan or zoom the map to see saved places here.")
+                        )
+                    }
+                    ForEach(filteredPlaces) { place in
+                        placeRow(place, isPlanned: false)
+                    }
                 }
             }
             .navigationTitle("Planning")
@@ -308,6 +394,26 @@ struct PlanView: View {
         return stops
     }
 
+    private var mapPlaces: [PlaceSummary] {
+        var byID: [String: PlaceSummary] = [:]
+        for place in data?.places ?? [] { byID[place.id] = place }
+        for stop in data?.stops ?? [] { byID[stop.id] = stop }
+        if let current = currentStatus?.current ?? currentStatus?.from {
+            byID[current.id] = current
+        }
+        return byID.values
+            .filter { $0.coordinate != nil }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var currentMapCoordinate: CLLocationCoordinate2D? {
+        tracker.currentJourney?.position?.coordinate ??
+            currentStatus?.current?.coordinate ??
+            currentStatus?.from?.coordinate ??
+            tracker.currentStatus?.current?.coordinate ??
+            tracker.currentStatus?.from?.coordinate
+    }
+
     private var planningMap: some View {
         Map(position: $camera) {
             if let route {
@@ -318,26 +424,84 @@ struct PlanView: View {
                     }
                 }
             }
-            ForEach(Array(routeStops.enumerated()), id: \.element.id) { index, stop in
-                if let coordinate = stop.coordinate {
-                    Annotation(stop.name, coordinate: coordinate) {
-                        ZStack {
-                            Circle()
-                                .fill(index == 0 ? Chartroom.sea : Chartroom.signal)
-                                .frame(width: 30, height: 30)
-                            Text(index == 0 ? "●" : "\(index)")
-                                .font(.caption.bold())
-                                .foregroundStyle(.white)
-                        }
+            ForEach(mapPlaces) { place in
+                if let coordinate = place.coordinate {
+                    Annotation(place.name, coordinate: coordinate) {
+                        mapMarker(for: place)
                     }
+                }
+            }
+            if let coordinate = currentMapCoordinate {
+                Annotation("Skibidi", coordinate: coordinate) {
+                    Image(systemName: "sailboat.fill")
+                        .padding(9)
+                        .foregroundStyle(Chartroom.ink)
+                        .background(Chartroom.surface, in: Circle())
+                        .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
                 }
             }
         }
         .mapStyle(.standard(elevation: .realistic))
-        .frame(height: 260)
+        .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .listRowInsets(EdgeInsets())
-        .accessibilityLabel("Planned sea route")
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+        }
+        .accessibilityLabel("Saved places and planned sea route")
+    }
+
+    private func mapMarker(for place: PlaceSummary) -> some View {
+        let plannedIndex = plannedStops.firstIndex(where: { $0.id == place.id }).map { $0 + 1 }
+        let rating = place.rating.map { min(5, max(1, $0)) }
+        return ZStack(alignment: .topTrailing) {
+            Circle()
+                .fill(markerColor(for: place, isPlanned: plannedIndex != nil))
+                .frame(width: 34, height: 34)
+                .overlay {
+                    Image(systemName: rating == nil ? (plannedIndex == nil ? "mappin" : "mappin.and.ellipse") : "star.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(markerForeground(for: rating))
+                }
+                .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 2))
+                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+            if let plannedIndex {
+                Text("\(plannedIndex)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .frame(width: 17, height: 17)
+                    .background(Chartroom.signal, in: Circle())
+                    .offset(x: 6, y: -6)
+            }
+        }
+        .accessibilityLabel(markerAccessibilityLabel(for: place, plannedIndex: plannedIndex))
+    }
+
+    private func markerColor(for place: PlaceSummary, isPlanned: Bool) -> Color {
+        guard let rating = place.rating else {
+            if isPlanned { return Chartroom.signal }
+            let visited = place.labels?.contains { $0.name.localizedCaseInsensitiveCompare("visited") == .orderedSame } == true
+            return visited ? Color(white: 0.33) : Color(white: 0.74)
+        }
+        switch rating {
+        case 5...: return Color(red: 0, green: 0.5, blue: 0)
+        case 4: return Color(red: 0.56, green: 0.93, blue: 0.56)
+        case 3: return Color(red: 1, green: 1, blue: 0.72)
+        case 2: return Color(red: 1, green: 0.72, blue: 0.71)
+        default: return .red
+        }
+    }
+
+    private func markerForeground(for rating: Int?) -> Color {
+        guard let rating else { return .white }
+        return (2...4).contains(rating) ? .black : .white
+    }
+
+    private func markerAccessibilityLabel(for place: PlaceSummary, plannedIndex: Int?) -> String {
+        var parts = [place.name]
+        if let rating = place.rating { parts.append("\(rating) out of 5 stars") }
+        if let plannedIndex { parts.append("planned stop \(plannedIndex)") }
+        return parts.joined(separator: ", ")
     }
 
     private var routeSummary: some View {
@@ -379,23 +543,36 @@ struct PlanView: View {
 
     private var filteredPlaces: [PlaceSummary] {
         guard let places = data?.places else { return [] }
-        guard !searchText.isEmpty else { return places }
-        return places.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            ($0.listName?.localizedCaseInsensitiveContains(searchText) ?? false)
+        return places.filter { place in
+            guard let coordinate = place.coordinate else { return false }
+            let matchesSearch = searchText.isEmpty ||
+                place.name.localizedCaseInsensitiveContains(searchText) ||
+                (place.listName?.localizedCaseInsensitiveContains(searchText) ?? false)
+            return matchesSearch && isVisible(coordinate)
         }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func isVisible(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        guard let visibleRegion else { return true }
+        let latitudeDistance = abs(coordinate.latitude - visibleRegion.center.latitude)
+        let rawLongitudeDistance = abs(coordinate.longitude - visibleRegion.center.longitude)
+        let longitudeDistance = min(rawLongitudeDistance, 360 - rawLongitudeDistance)
+        return latitudeDistance <= abs(visibleRegion.span.latitudeDelta) / 2 &&
+            longitudeDistance <= abs(visibleRegion.span.longitudeDelta) / 2
     }
 
     private func placeRow(_ place: PlaceSummary, isPlanned: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: isPlanned ? "mappin.and.ellipse" : "mappin")
-                .foregroundStyle(isPlanned ? Chartroom.signal : Chartroom.sea)
+            Image(systemName: place.rating == nil ? (isPlanned ? "mappin.and.ellipse" : "mappin") : "star.circle.fill")
+                .foregroundStyle(markerColor(for: place, isPlanned: isPlanned))
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
                 Text(place.name).font(.headline)
                 HStack(spacing: 6) {
                     if let listName = place.listName { Text(listName) }
                     if let due = place.due { Text("· \(due.formatted(date: .abbreviated, time: .omitted))") }
+                    if let rating = place.rating { Text("· \(rating)★") }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -428,6 +605,7 @@ struct PlanView: View {
     }
 
     @MainActor private func load() async {
+        focusInitialMapIfNeeded()
         guard let token = authentication.token else { return }
         do {
             async let planningRequest = authentication.api.planning(token: token)
@@ -436,10 +614,24 @@ struct PlanView: View {
             data = planning
             currentStatus = status
             errorMessage = nil
+            focusInitialMapIfNeeded()
             await loadRoute(token: token)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    @MainActor private func focusInitialMapIfNeeded() {
+        guard !hasSetInitialCamera else { return }
+        guard let coordinate = currentMapCoordinate ?? mapPlaces.first?.coordinate else { return }
+        let region = MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: initialMapRadiusMeters * 2,
+            longitudinalMeters: initialMapRadiusMeters * 2
+        )
+        camera = .region(region)
+        visibleRegion = region
+        hasSetInitialCamera = true
     }
 
     @MainActor private func loadRoute(token: String) async {
@@ -461,7 +653,6 @@ struct PlanView: View {
             legByDestinationID = Dictionary(
                 uniqueKeysWithValues: zip(sequence.dropFirst(), response.legs).map { ($0.id, $1) }
             )
-            camera = .automatic
         } catch {
             route = nil
             legByDestinationID = [:]

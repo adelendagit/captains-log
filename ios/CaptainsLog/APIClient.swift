@@ -153,6 +153,36 @@ final class APIClient: Sendable {
         )
     }
 
+    func sendLogNotification(
+        mode: String,
+        requestID: String = UUID().uuidString,
+        action: String,
+        cardID: String,
+        latitude: Double,
+        longitude: Double,
+        timestamp: Date,
+        litres: Double? = nil,
+        customText: String? = nil,
+        token: String
+    ) async throws -> LogNotificationResponse {
+        try await send(
+            path: "api/log-notification",
+            method: "POST",
+            encodableBody: LogNotificationBody(
+                mode: mode,
+                requestId: requestID,
+                action: action,
+                cardId: cardID,
+                lat: latitude,
+                lng: longitude,
+                timestamp: timestamp,
+                litres: litres,
+                customText: customText
+            ),
+            token: token
+        )
+    }
+
     func startJourney(name: String, token: String) async throws -> StartJourneyResponse {
         try await send(
             path: "api/journeys/start",
@@ -311,5 +341,17 @@ private struct LogEntryBody: Codable {
     let litres: Double?
     let journeyName: String?
     let placeName: String?
+    let customText: String?
+}
+
+private struct LogNotificationBody: Codable {
+    let mode: String
+    let requestId: String
+    let action: String
+    let cardId: String
+    let lat: Double
+    let lng: Double
+    let timestamp: Date
+    let litres: Double?
     let customText: String?
 }

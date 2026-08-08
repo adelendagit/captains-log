@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct CaptainsLogApp: App {
@@ -17,6 +18,9 @@ struct CaptainsLogApp: App {
                 .environmentObject(authentication)
                 .environmentObject(tracker)
                 .tint(Chartroom.sea)
+                .onChange(of: tracker.isUnderway, initial: true) { _, isUnderway in
+                    UIApplication.shared.isIdleTimerDisabled = isUnderway
+                }
         }
     }
 }

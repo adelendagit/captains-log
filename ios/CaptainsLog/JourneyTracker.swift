@@ -14,6 +14,10 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
     private var lastAcceptedAt: Date?
     private let activeJourneyKey = "active-journey-id"
 
+    var isUnderway: Bool {
+        currentJourney?.active == true || currentStatus?.status == "underway"
+    }
+
     init(authentication: AuthenticationManager) {
         self.authentication = authentication
         super.init()

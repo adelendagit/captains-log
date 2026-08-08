@@ -149,6 +149,11 @@ struct SuccessResponse: Codable {
     let success: Bool
 }
 
+struct LogNotificationResponse: Codable {
+    let success: Bool
+    let recipientCount: Int
+}
+
 struct StartJourneyResponse: Codable {
     let success: Bool
     let journey: JourneySummary
