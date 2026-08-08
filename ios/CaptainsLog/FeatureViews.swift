@@ -40,6 +40,7 @@ struct AddLogEntryView: View {
     @State private var action: String
     @State private var journeyName = ""
     @State private var litres = ""
+    @State private var temperature = ""
     @State private var customText = ""
     @State private var timestamp = Date()
     @State private var notificationMode: LogNotificationMode
@@ -98,6 +99,13 @@ struct AddLogEntryView: View {
                 if action == "water" || action == "diesel" {
                     Section("Quantity (optional)") {
                         TextField("Litres", text: $litres)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                if action == "temperature" {
+                    Section("Temperature") {
+                        TextField("Degrees °C", text: $temperature)
                             .keyboardType(.decimalPad)
                     }
                 }
@@ -170,6 +178,7 @@ struct AddLogEntryView: View {
             ("visited", "Visited", "mappin.and.ellipse"),
             ("water", "Water", "drop.fill"),
             ("diesel", "Diesel", "fuelpump"),
+            ("temperature", "Temperature", "thermometer.medium"),
             ("bins", "Bins", "trash"),
             ("water-tank-change", "Water Tank Change", "drop.triangle.fill"),
             ("power", "Shore power", "bolt.fill"),
@@ -186,10 +195,15 @@ struct AddLogEntryView: View {
         selectedPlace != nil &&
             logCoordinate != nil &&
             (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            && (action != "temperature" || parsedTemperature != nil)
     }
 
     private var logCoordinate: CLLocationCoordinate2D? {
         locator.coordinate ?? tracker.currentJourney?.position?.coordinate ?? selectedPlace?.coordinate
+    }
+
+    private var parsedTemperature: Double? {
+        Double(temperature.replacingOccurrences(of: ",", with: "."))
     }
 
     private var sortedPlaces: [PlaceSummary] {
@@ -237,6 +251,7 @@ struct AddLogEntryView: View {
         defer { isSaving = false }
         do {
             let quantity = Double(litres)
+            let temperatureValue = parsedTemperature
             let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
             try await authentication.api.addLogEntry(
                 action: action,
@@ -248,6 +263,7 @@ struct AddLogEntryView: View {
                 customText: details,
                 timestamp: timestamp,
                 litres: quantity,
+                temperature: temperatureValue,
                 token: token
             )
             logWasSaved = true
@@ -261,6 +277,7 @@ struct AddLogEntryView: View {
                         longitude: coordinate.longitude,
                         timestamp: timestamp,
                         litres: quantity,
+                        temperature: temperatureValue,
                         customText: details,
                         token: token
                     )

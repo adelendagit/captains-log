@@ -14,6 +14,7 @@ const ACTION_LABELS = {
   visited: "Visited",
   water: "Water",
   diesel: "Diesel",
+  temperature: "Temperature",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
@@ -96,6 +97,7 @@ function buildNotification({
   lng,
   timestamp,
   litres,
+  temperature,
   customText,
 }) {
   const actionLabel =
@@ -107,8 +109,13 @@ function buildNotification({
   ).replace(/\/$/, "");
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
   const hasLitres = Number.isFinite(litres);
+  const hasTemperature = Number.isFinite(temperature);
   const headline = `${actionLabel}${action === "arrived" || action === "visited" ? " at" : action === "departed" ? " from" : " at"} ${location}`;
-  const details = hasLitres ? `${litres} litres` : null;
+  const details = hasTemperature
+    ? `${temperature} °C`
+    : hasLitres
+      ? `${litres} litres`
+      : null;
   const when = formatDate(timestamp);
 
   const html = `<!doctype html>

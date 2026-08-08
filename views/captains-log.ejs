@@ -157,6 +157,7 @@
         <li data-wizard-progress="mooring">Mooring</li>
         <li data-wizard-progress="journey">Journey</li>
         <li data-wizard-progress="litres">Litres</li>
+        <li data-wizard-progress="temperature">Temperature</li>
         <li data-wizard-progress="custom">Details</li>
         <li data-wizard-progress="backfill">Backfill</li>
         <li data-wizard-progress="notification">Notification</li>
@@ -206,6 +207,19 @@
             <div class="wizard-number-input">
               <input type="number" id="wizard-litres-input" min="0" step="1" inputmode="decimal" placeholder="e.g. 30">
               <span>litres</span>
+            </div>
+          </label>
+        </section>
+
+        <section class="log-wizard-step hidden" data-wizard-step="temperature">
+          <span class="log-wizard-step-count">Step 3 of 5</span>
+          <h3>Temperature</h3>
+          <p class="muted">Enter the temperature reading.</p>
+          <label class="wizard-field" for="wizard-temperature-input">
+            <span>Temperature</span>
+            <div class="wizard-number-input">
+              <input type="number" id="wizard-temperature-input" step="0.1" inputmode="decimal" placeholder="e.g. 27.8">
+              <span>Degrees °C</span>
             </div>
           </label>
         </section>

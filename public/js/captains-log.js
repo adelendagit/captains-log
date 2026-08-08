@@ -53,6 +53,7 @@ const LOCATION_LOG_ACTIONS = {
   visited: "Visited",
   water: "Water",
   diesel: "Diesel",
+  temperature: "Temperature",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
@@ -2644,6 +2645,9 @@ function setupLogWizard() {
     "wizard-journey-name-input",
   );
   const litresInput = document.getElementById("wizard-litres-input");
+  const temperatureInput = document.getElementById(
+    "wizard-temperature-input",
+  );
   const customTextInput = document.getElementById("wizard-custom-text-input");
   const backfillInput = document.getElementById("wizard-backfill-input");
   const submitStatus = document.getElementById("wizard-submit-status");
@@ -2665,6 +2669,7 @@ function setupLogWizard() {
     ...(wizardState.action === "arrived" ? ["mooring"] : []),
     ...(wizardState.action === "departed" ? ["journey"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
+    ...(wizardState.action === "temperature" ? ["temperature"] : []),
     ...(wizardState.action === "other" ? ["custom"] : []),
     "backfill",
     "notification",
@@ -2755,6 +2760,9 @@ function setupLogWizard() {
       nextBtn.disabled = !wizardState.draft || !selectedCardId();
     } else if (step === "litres") {
       nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
+    } else if (step === "temperature") {
+      nextBtn.textContent = "Continue";
+      nextBtn.disabled = temperatureInput.value === "";
     } else if (step === "journey") {
       nextBtn.textContent = "Continue";
     } else if (step === "mooring") {
@@ -2891,13 +2899,15 @@ function setupLogWizard() {
       renderStep(
         ["water", "diesel"].includes(wizardState.action)
           ? "litres"
-          : wizardState.action === "departed"
-            ? "journey"
-            : wizardState.action === "arrived"
-              ? "mooring"
-            : wizardState.action === "other"
-              ? "custom"
-            : "backfill",
+          : wizardState.action === "temperature"
+            ? "temperature"
+            : wizardState.action === "departed"
+              ? "journey"
+              : wizardState.action === "arrived"
+                ? "mooring"
+                : wizardState.action === "other"
+                  ? "custom"
+                  : "backfill",
       );
     });
   });
@@ -2909,6 +2919,7 @@ function setupLogWizard() {
     wizardState.action = null;
     wizardState.submitting = false;
     litresInput.value = "";
+    temperatureInput.value = "";
     customTextInput.value = "";
     journeyNameInput.value = "";
     backfillInput.value = "";
@@ -2966,6 +2977,12 @@ function setupLogWizard() {
       litresInput.value !== ""
     ) {
       payload.litres = litresInput.value;
+    }
+    if (
+      wizardState.action === "temperature" &&
+      temperatureInput.value !== ""
+    ) {
+      payload.temperature = temperatureInput.value;
     }
 
     wizardState.submitting = true;
@@ -3051,6 +3068,9 @@ function setupLogWizard() {
   });
   litresInput.addEventListener("input", () => {
     if (wizardState.step === "litres") renderStep("litres");
+  });
+  temperatureInput.addEventListener("input", () => {
+    if (wizardState.step === "temperature") renderStep("temperature");
   });
   customTextInput.addEventListener("input", () => {
     if (wizardState.step === "custom") renderStep("custom");

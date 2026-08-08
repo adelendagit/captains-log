@@ -789,6 +789,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       timestamp,
       source,
       litres,
+      temperature,
       journeyName,
       placeName,
       customText,
@@ -804,6 +805,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       "visited",
       "water",
       "diesel",
+      "temperature",
       "bins",
       "bbq-gas-change",
       "gas-tank-change",
@@ -870,6 +872,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       visited: "Visited",
       water: "Water",
       diesel: "Diesel",
+      temperature: "Temperature",
       bins: "Bins",
       "bbq-gas-change": "BBQ Gas Change",
       "gas-tank-change": "Gas Tank Change",
@@ -884,13 +887,25 @@ router.post("/api/log-entry", async (req, res, next) => {
       ["water", "diesel"].includes(normalizedAction) &&
       Number.isFinite(litresValue) &&
       litresValue >= 0;
+    const temperatureValue = Number(temperature);
+    const hasTemperature =
+      normalizedAction === "temperature" &&
+      temperature !== null &&
+      temperature !== undefined &&
+      temperature !== "" &&
+      Number.isFinite(temperatureValue);
+    if (normalizedAction === "temperature" && !hasTemperature) {
+      return res.status(400).json({ error: "Missing or invalid temperature" });
+    }
 
     const headline =
       normalizedAction === "other"
         ? `Other: ${suppliedCustomText}`
-        : hasLitres
-          ? `${actionLabels[normalizedAction]} ${litresValue} litres`
-          : actionLabels[normalizedAction];
+        : hasTemperature
+          ? `${temperatureValue}°`
+          : hasLitres
+            ? `${actionLabels[normalizedAction]} ${litresValue} litres`
+            : actionLabels[normalizedAction];
 
     const commentLines = [
       headline,
@@ -1092,6 +1107,7 @@ router.post("/api/log-notification", async (req, res, next) => {
       lng,
       timestamp,
       litres,
+      temperature,
       customText,
     } = req.body || {};
 
@@ -1109,6 +1125,16 @@ router.post("/api/log-notification", async (req, res, next) => {
     }
     if (suppliedCustomText.length > 160) {
       return res.status(400).json({ error: "Custom log text is too long" });
+    }
+    const suppliedTemperature = Number(temperature);
+    if (
+      action === "temperature" &&
+      (temperature === null ||
+        temperature === undefined ||
+        temperature === "" ||
+        !Number.isFinite(suppliedTemperature))
+    ) {
+      return res.status(400).json({ error: "Missing or invalid temperature" });
     }
     if (!cardId) {
       return res.status(400).json({ error: "Missing cardId" });
@@ -1185,6 +1211,10 @@ router.post("/api/log-notification", async (req, res, next) => {
       litres:
         ["water", "diesel"].includes(action) && Number.isFinite(litresValue)
           ? litresValue
+          : null,
+      temperature:
+        action === "temperature" && Number.isFinite(suppliedTemperature)
+          ? suppliedTemperature
           : null,
     });
 

@@ -132,6 +132,7 @@ final class APIClient: Sendable {
         customText: String? = nil,
         timestamp: Date = Date(),
         litres: Double? = nil,
+        temperature: Double? = nil,
         token: String
     ) async throws {
         let _: SuccessResponse = try await send(
@@ -145,6 +146,7 @@ final class APIClient: Sendable {
                 timestamp: timestamp,
                 source: "ios",
                 litres: litres,
+                temperature: temperature,
                 journeyName: journeyName,
                 placeName: placeName,
                 customText: customText
@@ -162,6 +164,7 @@ final class APIClient: Sendable {
         longitude: Double,
         timestamp: Date,
         litres: Double? = nil,
+        temperature: Double? = nil,
         customText: String? = nil,
         token: String
     ) async throws -> LogNotificationResponse {
@@ -177,6 +180,7 @@ final class APIClient: Sendable {
                 lng: longitude,
                 timestamp: timestamp,
                 litres: litres,
+                temperature: temperature,
                 customText: customText
             ),
             token: token
@@ -339,6 +343,7 @@ private struct LogEntryBody: Codable {
     let timestamp: Date
     let source: String
     let litres: Double?
+    let temperature: Double?
     let journeyName: String?
     let placeName: String?
     let customText: String?
@@ -353,5 +358,6 @@ private struct LogNotificationBody: Codable {
     let lng: Double
     let timestamp: Date
     let litres: Double?
+    let temperature: Double?
     let customText: String?
 }
