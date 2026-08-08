@@ -36,6 +36,7 @@ struct AddLogEntryView: View {
     @EnvironmentObject private var tracker: JourneyTracker
     @StateObject private var locator = LogLocationProvider()
     @State private var places: [PlaceSummary] = []
+    @State private var sortedPlaces: [PlaceSummary] = []
     @State private var selectedPlaceID = ""
     @State private var action: String
     @State private var journeyName = ""
@@ -159,6 +160,7 @@ struct AddLogEntryView: View {
                 }
             }
             .onChange(of: selectedPlaceID) { updateSuggestedJourneyName() }
+            .onChange(of: locatorCoordinateKey) { updateSortedPlaces() }
             .onChange(of: action) {
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
@@ -206,12 +208,20 @@ struct AddLogEntryView: View {
         Double(temperature.replacingOccurrences(of: ",", with: "."))
     }
 
-    private var sortedPlaces: [PlaceSummary] {
+    private var locatorCoordinateKey: String? {
+        locator.coordinate.map { "\($0.latitude),\($0.longitude)" }
+    }
+
+    private func sortedByDistance(_ places: [PlaceSummary]) -> [PlaceSummary] {
         guard let coordinate = locator.coordinate else { return places }
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return places.sorted { left, right in
             distance(from: origin, to: left) < distance(from: origin, to: right)
         }
+    }
+
+    private func updateSortedPlaces() {
+        sortedPlaces = sortedByDistance(places)
     }
 
     private func distance(from origin: CLLocation, to place: PlaceSummary) -> CLLocationDistance {
@@ -231,6 +241,7 @@ struct AddLogEntryView: View {
                 selectedPlaceID = current.id
             }
             places = Array(byID.values).sorted { $0.name < $1.name }
+            updateSortedPlaces()
             if selectedPlaceID.isEmpty { selectedPlaceID = sortedPlaces.first?.id ?? "" }
             updateSuggestedJourneyName()
         } catch {
