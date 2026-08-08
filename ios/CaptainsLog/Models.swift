@@ -49,6 +49,10 @@ struct PlaceSummary: Codable, Identifiable {
     let rating: Int?
     let desc: String?
     let labels: [PlaceLabel]?
+    let trelloUrl: URL?
+    let navilyUrl: URL?
+    let visitCount: Int?
+    let lastVisitedAt: Date?
 
     var coordinate: CLLocationCoordinate2D? {
         guard let lat, let lng else { return nil }
@@ -58,6 +62,26 @@ struct PlaceSummary: Codable, Identifiable {
     var looksLikeAnchorage: Bool {
         let words = ([listName] + (labels ?? []).map(\.name)).compactMap { $0 }.joined(separator: " ")
         return words.range(of: "anchor|anchorage|bay|harbour|harbor|marina|port", options: .regularExpression) != nil
+    }
+
+    var mooringLabels: [PlaceLabel] {
+        (labels ?? []).filter {
+            $0.trelloColor?.localizedCaseInsensitiveCompare("orange") == .orderedSame ||
+                $0.color?.localizedCaseInsensitiveCompare("#ff9f1a") == .orderedSame
+        }
+    }
+
+    var mooringSummary: String? {
+        let names = mooringLabels.map(\.name)
+        return names.isEmpty ? nil : names.joined(separator: ", ")
+    }
+
+    var mooringSystemImage: String {
+        let text = mooringLabels.map(\.name).joined(separator: " ").lowercased()
+        if text.range(of: "buoy|mooring", options: .regularExpression) != nil { return "lifepreserver.fill" }
+        if text.range(of: "marina|berth|pontoon|quay|dock|harbou?r|port", options: .regularExpression) != nil { return "building.2.fill" }
+        if text.range(of: "anchor|anchorage", options: .regularExpression) != nil { return "anchor" }
+        return "mappin"
     }
 }
 

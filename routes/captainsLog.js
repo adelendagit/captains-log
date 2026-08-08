@@ -4,10 +4,12 @@ const axios = require("axios");
 const {
   fetchBoard,
   fetchBoardWithAllComments,
+  fetchAllComments,
   fetchCommentPage,
   fetchRecentComments,
   fetchBoardWithCredentials,
   invalidateBoardCache,
+  invalidateCommentCache,
 } = require("../services/trello");
 const { ACTION_LABELS, sendLogNotification } = require("../services/email");
 const {
@@ -116,6 +118,7 @@ function buildStopPayload(card, listNames, customFields) {
     id: l.id,
     name: l.name,
     color: colorMap[l.color] || "#888",
+    trelloColor: l.color,
   }));
 
   return {
@@ -131,6 +134,26 @@ function buildStopPayload(card, listNames, customFields) {
     desc: card.desc || "",
     labels,
   };
+}
+
+function buildVisitStats(comments) {
+  const stats = new Map();
+  for (const action of comments || []) {
+    const text = action?.data?.text;
+    const cardId = action?.data?.card?.id;
+    if (!cardId || !/^(arrived|visited)\b/i.test(text || "")) continue;
+    const timestamp = extractTimestamp(text, action.date, cardId);
+    const current = stats.get(cardId) || { visitCount: 0, lastVisitedAt: null };
+    current.visitCount += 1;
+    if (
+      !current.lastVisitedAt ||
+      new Date(timestamp) > new Date(current.lastVisitedAt)
+    ) {
+      current.lastVisitedAt = timestamp;
+    }
+    stats.set(cardId, current);
+  }
+  return stats;
 }
 
 function deriveCurrentStatus(cards, lists, customFields, comments) {
@@ -412,13 +435,18 @@ router.get("/api/closest-locations", async (req, res, next) => {
 
 router.get("/api/data", async (req, res, next) => {
   try {
+    const [board, allComments] = await Promise.all([
+      fetchBoard(),
+      fetchAllComments(),
+    ]);
     const {
       cards,
       lists,
       customFields,
       members,
       labels: boardLabelsRaw,
-    } = await fetchBoard();
+    } = board;
+    const visitStats = buildVisitStats(allComments);
 
     const tripsListId = lists.find((l) => l.name === "Trips").id;
 
@@ -434,6 +462,7 @@ router.get("/api/data", async (req, res, next) => {
           id: l.id,
           name: l.name,
           color: colorMap[l.color] || "#888",
+          trelloColor: l.color,
         }));
 
         return {
@@ -449,6 +478,7 @@ router.get("/api/data", async (req, res, next) => {
           navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
           desc: c.desc,
           labels,
+          ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
         };
       })
       .sort((a, b) => new Date(a.due) - new Date(b.due));
@@ -467,6 +497,7 @@ router.get("/api/data", async (req, res, next) => {
           id: l.id,
           name: l.name,
           color: colorMap[l.color] || "#888",
+          trelloColor: l.color,
         }));
         return {
           id: c.id,
@@ -476,8 +507,10 @@ router.get("/api/data", async (req, res, next) => {
           lng: getCFNumber(c, customFields, "Longitude"),
           rating: ratingText !== null ? parseInt(ratingText, 10) : null,
           trelloUrl: c.shortUrl,
+          navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
           desc: c.desc,
           labels,
+          ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
         };
       });
 
@@ -1226,6 +1259,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       params: { text },
       headers,
     });
+    invalidateCommentCache();
 
     const mooringLabelAdded = await addMooringLabel();
 

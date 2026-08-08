@@ -114,6 +114,11 @@ private struct CurrentPositionView: View {
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
     @State private var plannedRoute: PlanningRouteResponse?
+    @State private var isEditingDescription = false
+    @State private var descriptionDraft = ""
+    @State private var isSavingDescription = false
+    @State private var descriptionError: String?
+    @FocusState private var descriptionIsFocused: Bool
 
     let onStartJourney: () -> Void
     let onEndJourney: () -> Void
@@ -156,6 +161,10 @@ private struct CurrentPositionView: View {
                 tracker.resumeTracking()
             }
             .refreshable { await refreshMapData() }
+            .onChange(of: tracker.currentStatus?.current?.id) {
+                isEditingDescription = false
+                descriptionError = nil
+            }
         }
     }
 
@@ -172,9 +181,7 @@ private struct CurrentPositionView: View {
                 Text(statusTitle)
                     .font(.system(.title2, design: .serif, weight: .semibold))
             }
-            Text(statusMessage)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.75))
+            statusDescription
             HStack(alignment: .top, spacing: 10) {
                 statusReading(statusMetricOne.label, statusMetricOne.value)
                 Divider().overlay(.white.opacity(0.18))
@@ -192,6 +199,72 @@ private struct CurrentPositionView: View {
         .padding(22)
         .foregroundStyle(.white)
         .background(Chartroom.ink, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    @ViewBuilder
+    private var statusDescription: some View {
+        if canEditDescription {
+            if isEditingDescription {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Description", text: $descriptionDraft, axis: .vertical)
+                        .lineLimit(1...8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(Chartroom.ink)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        .focused($descriptionIsFocused)
+                        .disabled(isSavingDescription)
+                        .onChange(of: descriptionDraft) { enforceDescriptionLimit() }
+
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Button("Cancel") { cancelDescriptionEditing() }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+                            .disabled(isSavingDescription)
+                        Button {
+                            Task { await saveDescription() }
+                        } label: {
+                            if isSavingDescription {
+                                ProgressView().tint(Chartroom.ink)
+                            } else {
+                                Text("Save")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.white)
+                        .foregroundStyle(Chartroom.ink)
+                        .disabled(isSavingDescription)
+                    }
+
+                    if let descriptionError {
+                        Text(descriptionError)
+                            .font(.caption)
+                            .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.65))
+                    }
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(statusMessage)
+                        .font(.subheadline)
+                    Image(systemName: "pencil")
+                        .font(.caption.bold())
+                }
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+                .onTapGesture { beginDescriptionEditing() }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Edit current stop description")
+            }
+        } else {
+            Text(statusMessage)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.75))
+        }
     }
 
     private var map: some View {
@@ -228,10 +301,7 @@ private struct CurrentPositionView: View {
             ForEach(plannedStops ?? []) { stop in
                 if let coordinate = stop.coordinate {
                     Annotation(stop.name, coordinate: coordinate) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .padding(8)
-                            .foregroundStyle(.white)
-                            .background(Chartroom.signal, in: Circle())
+                        plannedStopMarker(stop)
                     }
                 }
             }
@@ -242,6 +312,67 @@ private struct CurrentPositionView: View {
         .onChange(of: mapFocusKey, initial: true) {
             focusMapOnCurrentPosition()
         }
+    }
+
+    private func plannedStopMarker(_ stop: PlaceSummary) -> some View {
+        let index = (plannedStops?.firstIndex(where: { $0.id == stop.id }) ?? 0) + 1
+        let rating = stop.rating.map { min(5, max(1, $0)) }
+        let visits = max(0, stop.visitCount ?? 0)
+        return ZStack {
+            Circle()
+                .fill(Chartroom.ink)
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Image(systemName: stop.mooringSystemImage)
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                }
+                .overlay {
+                    Circle().stroke(
+                        Chartroom.signal,
+                        style: StrokeStyle(lineWidth: 3, dash: [4, 3])
+                    )
+                }
+                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+            Text("\(index)")
+                .font(.caption2.bold())
+                .foregroundStyle(.white)
+                .frame(width: 17, height: 17)
+                .background(Chartroom.signal, in: Circle())
+                .offset(x: -17, y: -17)
+            if visits > 1 {
+                Text(visits > 9 ? "9+" : "\(visits)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 17, minHeight: 17)
+                    .padding(.horizontal, visits > 9 ? 1 : 0)
+                    .background(Chartroom.ink, in: Capsule())
+                    .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                    .offset(x: 17, y: -17)
+            }
+            if let rating {
+                HStack(spacing: 1) {
+                    Image(systemName: "star.fill").font(.system(size: 7))
+                    Text("\(rating)")
+                }
+                .font(.caption2.bold())
+                .foregroundStyle(Color(red: 0.24, green: 0.18, blue: 0))
+                .padding(.horizontal, 4)
+                .frame(minHeight: 17)
+                .background(Color(red: 1, green: 0.83, blue: 0.35), in: Capsule())
+                .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                .offset(x: 16, y: 17)
+            }
+        }
+        .accessibilityLabel(
+            [
+                stop.name,
+                stop.mooringSummary,
+                rating.map { "\($0) out of 5 stars" },
+                visits > 0 ? "\(visits) \(visits == 1 ? "visit" : "visits")" : nil,
+                "planned stop \(index)",
+            ].compactMap { $0 }.joined(separator: ", ")
+        )
     }
 
     private var mapFocusKey: String {
@@ -403,12 +534,56 @@ private struct CurrentPositionView: View {
         }
         if let place = tracker.currentStatus?.current, tracker.currentStatus?.status == "arrived" {
             let firstParagraph = place.desc?.components(separatedBy: "\n\n").first?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return firstParagraph?.isEmpty == false ? firstParagraph! : "Skibidi’s last logged position in \(place.listName ?? "this area")."
+            return firstParagraph?.isEmpty == false ? firstParagraph! : "Add a description…"
         }
         if tracker.currentStatus?.status == "underway" {
             return "Live GPS is not available; the chart shows the logged passage."
         }
         return "Previous voyages and planned stops remain available."
+    }
+
+    private var canEditDescription: Bool {
+        tracker.currentJourney?.active != true &&
+            tracker.currentStatus?.status == "arrived" &&
+            tracker.currentStatus?.current != nil
+    }
+
+    private func beginDescriptionEditing() {
+        guard canEditDescription else { return }
+        descriptionDraft = tracker.currentStatus?.current?.desc ?? ""
+        descriptionError = nil
+        isEditingDescription = true
+        descriptionIsFocused = true
+    }
+
+    private func cancelDescriptionEditing() {
+        isEditingDescription = false
+        descriptionError = nil
+        descriptionIsFocused = false
+    }
+
+    private func enforceDescriptionLimit() {
+        while descriptionDraft.utf16.count > 16_384 {
+            descriptionDraft.removeLast()
+        }
+    }
+
+    @MainActor private func saveDescription() async {
+        guard let token = authentication.token else { return }
+        isSavingDescription = true
+        descriptionError = nil
+        defer { isSavingDescription = false }
+        do {
+            try await authentication.api.updateCurrentStopDescription(
+                descriptionDraft,
+                token: token
+            )
+            await tracker.refresh()
+            isEditingDescription = false
+            descriptionIsFocused = false
+        } catch {
+            descriptionError = error.localizedDescription
+        }
     }
 
     private var statusColor: Color {

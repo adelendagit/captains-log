@@ -488,6 +488,7 @@ struct PlanView: View {
     @State private var errorMessage: String?
     @State private var searchText = ""
     @State private var workingCardID: String?
+    @State private var selectedMapPlace: PlaceSummary?
 
     private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -536,6 +537,10 @@ struct PlanView: View {
             .searchable(text: $searchText, prompt: "Search places")
             .task { await load() }
             .refreshable { await load() }
+            .sheet(item: $selectedMapPlace) { place in
+                placeCard(place)
+                    .presentationDetents([.medium, .large])
+            }
         }
     }
 
@@ -571,7 +576,7 @@ struct PlanView: View {
         for place in data?.places ?? [] { byID[place.id] = place }
         for stop in data?.stops ?? [] { byID[stop.id] = stop }
         if let current = currentStatus?.current ?? currentStatus?.from {
-            byID[current.id] = current
+            if byID[current.id] == nil { byID[current.id] = current }
         }
         return byID.values
             .filter { $0.coordinate != nil }
@@ -599,7 +604,10 @@ struct PlanView: View {
             ForEach(mapPlaces) { place in
                 if let coordinate = place.coordinate {
                     Annotation(place.name, coordinate: coordinate) {
-                        mapMarker(for: place)
+                        Button { selectedMapPlace = place } label: {
+                            mapMarker(for: place)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -626,16 +634,24 @@ struct PlanView: View {
     private func mapMarker(for place: PlaceSummary) -> some View {
         let plannedIndex = plannedStops.firstIndex(where: { $0.id == place.id }).map { $0 + 1 }
         let rating = place.rating.map { min(5, max(1, $0)) }
-        return ZStack(alignment: .topTrailing) {
+        let visits = max(0, place.visitCount ?? 0)
+        let isCurrent = place.id == currentStatus?.current?.id || place.id == currentStatus?.from?.id
+        return ZStack {
             Circle()
-                .fill(markerColor(for: place, isPlanned: plannedIndex != nil))
-                .frame(width: 34, height: 34)
+                .fill(Chartroom.ink)
+                .frame(width: 38, height: 38)
                 .overlay {
-                    Image(systemName: rating == nil ? (plannedIndex == nil ? "mappin" : "mappin.and.ellipse") : "star.fill")
+                    Image(systemName: place.mooringSystemImage)
                         .font(.caption.bold())
-                        .foregroundStyle(markerForeground(for: rating))
+                        .foregroundStyle(.white)
                 }
-                .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 2))
+                .overlay {
+                    Circle()
+                        .stroke(
+                            isCurrent ? Color(red: 0.25, green: 0.78, blue: 0.73) : (plannedIndex == nil ? .white.opacity(0.9) : Chartroom.signal),
+                            style: StrokeStyle(lineWidth: isCurrent ? 4 : 3, dash: plannedIndex == nil || isCurrent ? [] : [4, 3])
+                        )
+                }
                 .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
             if let plannedIndex {
                 Text("\(plannedIndex)")
@@ -643,7 +659,30 @@ struct PlanView: View {
                     .foregroundStyle(.white)
                     .frame(width: 17, height: 17)
                     .background(Chartroom.signal, in: Circle())
-                    .offset(x: 6, y: -6)
+                    .offset(x: -17, y: -17)
+            }
+            if visits > 1 {
+                Text(visits > 9 ? "9+" : "\(visits)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 17, minHeight: 17)
+                    .padding(.horizontal, visits > 9 ? 1 : 0)
+                    .background(Chartroom.ink, in: Capsule())
+                    .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                    .offset(x: 17, y: -17)
+            }
+            if let rating {
+                HStack(spacing: 1) {
+                    Image(systemName: "star.fill").font(.system(size: 7))
+                    Text("\(rating)")
+                }
+                .font(.caption2.bold())
+                .foregroundStyle(Color(red: 0.24, green: 0.18, blue: 0))
+                .padding(.horizontal, 4)
+                .frame(minHeight: 17)
+                .background(Color(red: 1, green: 0.83, blue: 0.35), in: Capsule())
+                .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                .offset(x: 16, y: 17)
             }
         }
         .accessibilityLabel(markerAccessibilityLabel(for: place, plannedIndex: plannedIndex))
@@ -671,9 +710,93 @@ struct PlanView: View {
 
     private func markerAccessibilityLabel(for place: PlaceSummary, plannedIndex: Int?) -> String {
         var parts = [place.name]
+        if let mooring = place.mooringSummary { parts.append(mooring) }
         if let rating = place.rating { parts.append("\(rating) out of 5 stars") }
+        if let visits = place.visitCount, visits > 0 { parts.append("\(visits) \(visits == 1 ? "visit" : "visits")") }
         if let plannedIndex { parts.append("planned stop \(plannedIndex)") }
         return parts.joined(separator: ", ")
+    }
+
+    private func placeCard(_ place: PlaceSummary) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: place.mooringSystemImage)
+                            .font(.title2)
+                            .frame(width: 46, height: 46)
+                            .foregroundStyle(.white)
+                            .background(Chartroom.ink, in: Circle())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(place.name)
+                                .font(.system(.title2, design: .serif, weight: .semibold))
+                            if let listName = place.listName {
+                                Text(listName).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if let description = place.desc?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                        Text(description)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let rating = place.rating {
+                            Label("\(rating) out of 5 stars", systemImage: "star.fill")
+                        }
+                        if let mooring = place.mooringSummary {
+                            Label(mooring, systemImage: place.mooringSystemImage)
+                        }
+                        if let visits = place.visitCount, visits > 0 {
+                            Label("Visited \(visits) \(visits == 1 ? "time" : "times")", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                        }
+                        if let lastVisitedAt = place.lastVisitedAt {
+                            Label("Last visit \(lastVisitedAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
+                        }
+                        if let due = place.due {
+                            Label("Planned for \(due.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar.badge.clock")
+                        }
+                    }
+                    .foregroundStyle(Chartroom.ink)
+
+                    HStack(spacing: 16) {
+                        if let trelloUrl = place.trelloUrl { Link("Trello", destination: trelloUrl) }
+                        if let navilyUrl = place.navilyUrl { Link("Navily", destination: navilyUrl) }
+                    }
+
+                    if plannedStops.contains(where: { $0.id == place.id }) {
+                        Label("Already in your plan", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .foregroundStyle(Chartroom.sea)
+                            .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Button {
+                            Task {
+                                await plan(place)
+                                if workingCardID == nil && errorMessage == nil { selectedMapPlace = nil }
+                            }
+                        } label: {
+                            if workingCardID == place.id {
+                                ProgressView().frame(maxWidth: .infinity)
+                            } else {
+                                Label("Plan", systemImage: "plus").frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Chartroom.sea)
+                        .disabled(workingCardID != nil)
+                    }
+                }
+                .padding(22)
+            }
+            .background(Chartroom.paper)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { selectedMapPlace = nil }
+                }
+            }
+        }
     }
 
     private var routeSummary: some View {

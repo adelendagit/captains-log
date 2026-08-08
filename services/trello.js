@@ -14,6 +14,9 @@ const BOARD_CACHE_TTL_MS = 60_000;
 let boardCache = null;
 let boardCacheExpiresAt = 0;
 let boardRequest = null;
+let commentCache = null;
+let commentCacheExpiresAt = 0;
+let commentRequest = null;
 
 function filterCardsToOpenLists(board) {
   const openListIds = new Set(board.lists.map((list) => list.id));
@@ -64,6 +67,16 @@ async function fetchRecentComments(limit = 100) {
 }
 
 async function fetchAllComments() {
+  if (commentCache && Date.now() < commentCacheExpiresAt) return commentCache;
+  if (commentRequest) return commentRequest;
+
+  commentRequest = fetchAllCommentsUncached().finally(() => {
+    commentRequest = null;
+  });
+  return commentRequest;
+}
+
+async function fetchAllCommentsUncached() {
   let allActions = [];
   let before = null;
   let keepGoing = true;
@@ -83,7 +96,14 @@ async function fetchAllComments() {
       before = data[data.length - 1].id;
     }
   }
-  return allActions;
+  commentCache = allActions;
+  commentCacheExpiresAt = Date.now() + BOARD_CACHE_TTL_MS;
+  return commentCache;
+}
+
+function invalidateCommentCache() {
+  commentCache = null;
+  commentCacheExpiresAt = 0;
 }
 
 async function fetchCommentPage({ before = null, limit = 1000 } = {}) {
@@ -113,4 +133,5 @@ module.exports = {
   fetchCommentPage,
   fetchRecentComments,
   invalidateBoardCache,
+  invalidateCommentCache,
 };

@@ -50,6 +50,15 @@ final class APIClient: Sendable {
         try await send(path: "api/current-stop", token: token, cacheKey: "current-status")
     }
 
+    func updateCurrentStopDescription(_ description: String, token: String) async throws {
+        let _: CurrentStopDescriptionResponse = try await send(
+            path: "api/current-stop/description",
+            method: "PUT",
+            encodableBody: CurrentStopDescriptionBody(description: description),
+            token: token
+        )
+    }
+
     func cachedCurrentStatus() async -> CurrentStatusResponse? {
         guard let data = await responseCache.data(for: "current-status") else { return nil }
         return try? JSONDecoder.captainsLog.decode(CurrentStatusResponse.self, from: data)
@@ -425,6 +434,15 @@ private struct PositionAcceptedResponse: Codable {
 private struct PlanStopBody: Codable {
     let cardId: String
     let due: Date
+}
+
+private struct CurrentStopDescriptionBody: Codable {
+    let description: String
+}
+
+private struct CurrentStopDescriptionResponse: Codable {
+    let success: Bool
+    let description: String
 }
 
 private struct PlanningRouteBody: Codable, Sendable {

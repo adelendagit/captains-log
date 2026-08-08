@@ -926,6 +926,98 @@ function makeEditableStars(r, cardId) {
   return html;
 }
 
+function mooringLabelsForPlace(place) {
+  return (place.labels || []).filter(
+    (label) =>
+      label.trelloColor === "orange" ||
+      String(label.color || "").toLowerCase() === "#ff9f1a",
+  );
+}
+
+function mooringMarkerIcon(place) {
+  const text = mooringLabelsForPlace(place)
+    .map((label) => label.name)
+    .join(" ")
+    .toLowerCase();
+  if (/buoy|mooring/.test(text)) return "fa-life-ring";
+  if (/marina|berth|pontoon|quay|dock|harbou?r|port/.test(text))
+    return "fa-warehouse";
+  if (/anchor|anchorage/.test(text)) return "fa-anchor";
+  return "fa-location-dot";
+}
+
+function stopMarkerIcon(
+  place,
+  { isPlanned = false, isCurrent = false, plannedIndex = null } = {},
+) {
+  const rating = Number.isFinite(Number(place.rating))
+    ? Math.min(5, Math.max(1, Math.round(Number(place.rating))))
+    : null;
+  const visits = Math.max(0, Number(place.visitCount) || 0);
+  const stateClass = isCurrent
+    ? " stop-marker--current"
+    : isPlanned
+      ? " stop-marker--planned"
+      : "";
+  const plannedBadge = plannedIndex
+    ? `<span class="stop-marker__plan">${plannedIndex}</span>`
+    : "";
+  const visitBadge =
+    visits > 1
+      ? `<span class="stop-marker__visits">${visits > 9 ? "9+" : visits}</span>`
+      : "";
+  const ratingBadge = rating
+    ? `<span class="stop-marker__rating"><i class="fa-solid fa-star" aria-hidden="true"></i>${rating}</span>`
+    : "";
+  const mooring = mooringLabelsForPlace(place)
+    .map((label) => label.name)
+    .join(", ");
+  const description = [
+    place.name,
+    mooring || "Saved place",
+    rating ? `${rating} out of 5 stars` : null,
+    visits ? `${visits} ${visits === 1 ? "visit" : "visits"}` : null,
+    isCurrent ? "current stop" : isPlanned ? "planned stop" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return L.divIcon({
+    className: "stop-marker-container",
+    html: `<div class="stop-marker${stateClass}" role="img" aria-label="${escapeMarkup(description)}">
+      ${plannedBadge}${visitBadge}
+      <i class="fa-solid ${mooringMarkerIcon(place)} stop-marker__mooring" aria-hidden="true"></i>
+      ${ratingBadge}
+    </div>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    popupAnchor: [0, -20],
+    tooltipAnchor: [24, 0],
+  });
+}
+
+function placePopupFacts(place) {
+  const facts = [];
+  const moorings = mooringLabelsForPlace(place).map((label) => label.name);
+  if (moorings.length)
+    facts.push(
+      `<span><strong>Mooring:</strong> ${escapeMarkup(moorings.join(", "))}</span>`,
+    );
+  const visits = Math.max(0, Number(place.visitCount) || 0);
+  if (visits)
+    facts.push(
+      `<span><strong>Visited:</strong> ${visits} ${visits === 1 ? "time" : "times"}</span>`,
+    );
+  if (place.lastVisitedAt) {
+    facts.push(
+      `<span><strong>Last visit:</strong> ${new Date(place.lastVisitedAt).toLocaleDateString()}</span>`,
+    );
+  }
+  return facts.length
+    ? `<div class="place-popup__facts">${facts.join("")}</div>`
+    : "";
+}
+
 function labelsToHtml(labelsArr) {
   const html = labelsArr
     .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
@@ -1224,12 +1316,20 @@ function initMap(stops, places, logs = null) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
       highlightId = currentStatus.current.id;
       if (!mapStops.some((s) => s.id === highlightId)) {
-        mapStops.unshift(currentStatus.current);
+        const savedPlace = places.find((place) => place.id === highlightId);
+        mapStops.unshift({
+          ...savedPlace,
+          ...currentStatus.current,
+          visitCount: currentStatus.visitCount ?? savedPlace?.visitCount ?? 0,
+          lastVisitedAt:
+            currentStatus.arrivedAt ?? savedPlace?.lastVisitedAt ?? null,
+        });
       }
     } else if (currentStatus.status === "underway" && currentStatus.from) {
       highlightId = currentStatus.from.id;
       if (!mapStops.some((s) => s.id === highlightId)) {
-        mapStops.unshift(currentStatus.from);
+        const savedPlace = places.find((place) => place.id === highlightId);
+        mapStops.unshift({ ...savedPlace, ...currentStatus.from });
       }
     }
   }
@@ -1241,9 +1341,7 @@ function initMap(stops, places, logs = null) {
     const ll = [s.lat, s.lng];
     stopCoords.push(ll);
 
-    const color = getMarkerColor(s.rating, s.labels);
-
-    let popupHtml = `<strong>${s.name}</strong><br>`;
+    let popupHtml = `<strong>${escapeMarkup(s.name)}</strong><br>`;
     if (s.desc) {
       const escaped = s.desc
         .replace(/</g, "&lt;")
@@ -1259,6 +1357,7 @@ function initMap(stops, places, logs = null) {
       ? makeEditableStars(s.rating, s.id)
       : makeStars(s.rating);
     popupHtml += `Rating: ${starsHtml}<br>`;
+    popupHtml += placePopupFacts(s);
     const trelloLink = s.trelloUrl
       ? `<a href="${s.trelloUrl}" target="_blank" title="Open in Trello"><i class="fab fa-trello"></i></a>`
       : "";
@@ -1267,21 +1366,17 @@ function initMap(stops, places, logs = null) {
       : "";
     popupHtml += `${trelloLink} ${navilyLink}`;
     if (canPlan && s.due) {
-      popupHtml += `<br><button class="plan-btn" data-card-id="${s.id}">Plan</button>`;
-      popupHtml += `<button class="remove-btn" data-card-id="${s.id}">Remove</button>`;
+      popupHtml += `<br><button class="remove-btn" data-card-id="${s.id}">Remove from plan</button>`;
     }
 
     const isHighlight = highlightId && s.id === highlightId;
-    L.circleMarker(ll, {
-      radius: 14,
-      fillColor: color,
-      color: isHighlight ? "#0077cc" : "#cac8c8ff",
-      weight: isHighlight ? 4 : 3,
-      fillOpacity: 0.88,
-      opacity: 1,
-      className: isHighlight
-        ? "map-stop-marker map-current-marker"
-        : "map-stop-marker",
+    const plannedIndex = stops.findIndex((stop) => stop.id === s.id);
+    L.marker(ll, {
+      icon: stopMarkerIcon(s, {
+        isPlanned: plannedIndex >= 0,
+        isCurrent: isHighlight,
+        plannedIndex: plannedIndex >= 0 ? plannedIndex + 1 : null,
+      }),
     })
       .addTo(map)
       .bindPopup(popupHtml)
@@ -1312,50 +1407,47 @@ function initMap(stops, places, logs = null) {
   }, 0);
 
   // plot other places without changing zoom
-  places.forEach((p) => {
-    const ll = [p.lat, p.lng];
-    const color = getMarkerColor(p.rating, p.labels);
+  places
+    .filter((place) => !mapStops.some((stop) => stop.id === place.id))
+    .forEach((p) => {
+      const ll = [p.lat, p.lng];
+      let popupHtml = `<strong>${escapeMarkup(p.name)}</strong><br>`;
+      if (p.desc) {
+        const escaped = p.desc
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\n/g, "<br>");
+        popupHtml += `<div class="popup-desc collapsed">${escaped}</div>`;
+        popupHtml += `<button class="desc-toggle">Show more</button><br>`;
+      }
+      const starsHtml = canPlan
+        ? makeEditableStars(p.rating, p.id)
+        : makeStars(p.rating);
+      popupHtml += `Rating: ${starsHtml}<br>`;
+      popupHtml += placePopupFacts(p);
+      const trelloLink = p.trelloUrl
+        ? `<a href="${p.trelloUrl}" target="_blank" title="Open in Trello"><i class="fab fa-trello"></i></a>`
+        : "";
+      const navilyLink = p.navilyUrl
+        ? `<a href="${p.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
+        : "";
+      popupHtml += `${trelloLink} ${navilyLink}`;
+      if (canPlan) {
+        popupHtml += `<br><button class="plan-btn place-popup__plan" data-card-id="${p.id}"><i class="fa-solid fa-plus" aria-hidden="true"></i> Plan</button>`;
+      }
 
-    let popupHtml = `<strong>${p.name}</strong><br>`;
-    if (p.desc) {
-      const escaped = p.desc
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>");
-      popupHtml += `<div class="popup-desc collapsed">${escaped}</div>`;
-      popupHtml += `<button class="desc-toggle">Show more</button><br>`;
-    }
-    const starsHtml = canPlan
-      ? makeEditableStars(p.rating, p.id)
-      : makeStars(p.rating);
-    popupHtml += `Rating: ${starsHtml}<br>`;
-    const trelloLink = p.trelloUrl
-      ? `<a href="${p.trelloUrl}" target="_blank" title="Open in Trello"><i class="fab fa-trello"></i></a>`
-      : "";
-    const navilyLink = p.navilyUrl
-      ? `<a href="${p.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
-      : "";
-    popupHtml += `${trelloLink} ${navilyLink}`;
-    if (canPlan) {
-      popupHtml += `<br><button class="plan-btn" data-card-id="${p.id}">Plan</button>`;
-    }
-
-    L.circleMarker(ll, {
-      radius: 10,
-      fillColor: color,
-      color: "#ffffffff",
-      weight: 1,
-      fillOpacity: 0.5,
-    })
-      .addTo(map)
-      .bindPopup(popupHtml)
-      .bindTooltip(p.name, {
-        permanent: false,
-        direction: "right",
-        offset: [10, 0],
-        className: "map-label",
-      });
-  });
+      L.marker(ll, {
+        icon: stopMarkerIcon(p),
+      })
+        .addTo(map)
+        .bindPopup(popupHtml)
+        .bindTooltip(p.name, {
+          permanent: false,
+          direction: "right",
+          offset: [10, 0],
+          className: "map-label",
+        });
+    });
 
   // --- Log data layer ---
   // Use a LayerGroup so we can update log data without recreating the map
