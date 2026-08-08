@@ -181,6 +181,10 @@ private struct CurrentPositionView: View {
                 statusReading(statusMetricTwo.label, statusMetricTwo.value)
                 Divider().overlay(.white.opacity(0.18))
                 statusReading(statusMetricThree.label, statusMetricThree.value)
+                if tracker.currentJourney?.active != true && tracker.currentStatus?.status == "arrived" {
+                    Divider().overlay(.white.opacity(0.18))
+                    statusReading("Temperature", statusTemperature)
+                }
             }
             .frame(minHeight: 44)
         }
@@ -445,6 +449,10 @@ private struct CurrentPositionView: View {
             return ("Area", place.listName ?? "—")
         }
         return ("Position", tracker.currentStatus?.status == "underway" ? "Logged" : "—")
+    }
+
+    private var statusTemperature: String {
+        tracker.currentStatus?.temperature.map { String(format: "%g °C", $0) } ?? "—"
     }
 
     private func statusReading(_ label: String, _ value: String) -> some View {

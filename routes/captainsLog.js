@@ -35,6 +35,15 @@ function extractTimestamp(text, fallback, cardId) {
   return fallback;
 }
 
+function extractTemperature(text) {
+  const match = String(text || "").match(
+    /^temperature:\s*(-?\d+(?:\.\d+)?)\s*(?:°\s*C?)?\s*$/im,
+  );
+  if (!match) return null;
+  const temperature = Number(match[1]);
+  return Number.isFinite(temperature) ? temperature : null;
+}
+
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
   const def = boardCFs.find((f) => f.name === name);
@@ -170,6 +179,7 @@ function deriveCurrentStatus(cards, lists, customFields, comments) {
     );
     result.destination = plannedDestination;
     result.arrivedAt = lastArrived.ts;
+    result.temperature = extractTemperature(lastArrived.data.text);
     const currentCardId = lastArrived.data.card.id;
     result.visitCount = actions.filter(
       (action) =>
@@ -888,20 +898,30 @@ router.post("/api/log-entry", async (req, res, next) => {
       Number.isFinite(litresValue) &&
       litresValue >= 0;
     const temperatureValue = Number(temperature);
+    const temperatureWasSupplied =
+      temperature !== null && temperature !== undefined && temperature !== "";
+    const supportsTemperature = ["arrived", "temperature"].includes(
+      normalizedAction,
+    );
     const hasTemperature =
-      normalizedAction === "temperature" &&
-      temperature !== null &&
-      temperature !== undefined &&
-      temperature !== "" &&
+      supportsTemperature &&
+      temperatureWasSupplied &&
       Number.isFinite(temperatureValue);
     if (normalizedAction === "temperature" && !hasTemperature) {
       return res.status(400).json({ error: "Missing or invalid temperature" });
+    }
+    if (
+      normalizedAction === "arrived" &&
+      temperatureWasSupplied &&
+      !hasTemperature
+    ) {
+      return res.status(400).json({ error: "Invalid temperature" });
     }
 
     const headline =
       normalizedAction === "other"
         ? `Other: ${suppliedCustomText}`
-        : hasTemperature
+        : normalizedAction === "temperature" && hasTemperature
           ? `${temperatureValue}°`
           : hasLitres
             ? `${actionLabels[normalizedAction]} ${litresValue} litres`
@@ -919,6 +939,9 @@ router.post("/api/log-entry", async (req, res, next) => {
     }
     if (mooringLabel) {
       commentLines.push(`mooring: ${mooringLabel.name}`);
+    }
+    if (hasTemperature && normalizedAction === "arrived") {
+      commentLines.push(`temperature: ${temperatureValue}`);
     }
 
     const text = commentLines.join("\n");
@@ -1127,14 +1150,20 @@ router.post("/api/log-notification", async (req, res, next) => {
       return res.status(400).json({ error: "Custom log text is too long" });
     }
     const suppliedTemperature = Number(temperature);
+    const temperatureWasSupplied =
+      temperature !== null && temperature !== undefined && temperature !== "";
     if (
       action === "temperature" &&
-      (temperature === null ||
-        temperature === undefined ||
-        temperature === "" ||
-        !Number.isFinite(suppliedTemperature))
+      (!temperatureWasSupplied || !Number.isFinite(suppliedTemperature))
     ) {
       return res.status(400).json({ error: "Missing or invalid temperature" });
+    }
+    if (
+      action === "arrived" &&
+      temperatureWasSupplied &&
+      !Number.isFinite(suppliedTemperature)
+    ) {
+      return res.status(400).json({ error: "Invalid temperature" });
     }
     if (!cardId) {
       return res.status(400).json({ error: "Missing cardId" });
@@ -1213,7 +1242,9 @@ router.post("/api/log-notification", async (req, res, next) => {
           ? litresValue
           : null,
       temperature:
-        action === "temperature" && Number.isFinite(suppliedTemperature)
+        ["arrived", "temperature"].includes(action) &&
+        temperatureWasSupplied &&
+        Number.isFinite(suppliedTemperature)
           ? suppliedTemperature
           : null,
     });

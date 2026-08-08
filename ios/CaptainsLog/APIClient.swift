@@ -133,6 +133,72 @@ final class APIClient: Sendable {
         )
     }
 
+    func updateTodo(cardID: String, name: String, desc: String, token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "to-do/\(cardID)",
+            method: "PATCH",
+            encodableBody: UpdateTodoBody(name: name, desc: desc),
+            token: token
+        )
+    }
+
+    func reorderTodos(listID: String, cardIDs: [String], token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "to-do/reorder",
+            method: "POST",
+            encodableBody: ReorderTodosBody(listId: listID, cardIds: cardIDs),
+            token: token
+        )
+    }
+
+    func addTodoPhoto(
+        cardID: String,
+        imageData: Data,
+        filename: String,
+        token: String
+    ) async throws -> TodoAttachment {
+        let boundary = "CaptainsLog-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appending(path: "to-do/\(cardID)/attachments"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.httpBody = Self.multipartImageBody(
+            imageData,
+            filename: filename,
+            boundary: boundary
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = (try? JSONDecoder.captainsLog.decode(APIErrorResponse.self, from: data))?.error
+            throw APIClientError.server(message ?? "Photo upload failed (\(httpResponse.statusCode)).")
+        }
+        return try JSONDecoder.captainsLog.decode(TodoAttachmentResponse.self, from: data).attachment
+    }
+
+    func todoPhoto(cardID: String, attachmentID: String, token: String) async throws -> Data {
+        var request = URLRequest(
+            url: baseURL.appending(path: "to-do/\(cardID)/attachments/\(attachmentID)/image")
+        )
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw APIClientError.server("Photo download failed (\(httpResponse.statusCode)).")
+        }
+        return data
+    }
+
     func addLogEntry(
         action: String,
         cardID: String,
@@ -295,6 +361,23 @@ final class APIClient: Sendable {
         }
         return decoded
     }
+
+    private static func multipartImageBody(
+        _ imageData: Data,
+        filename: String,
+        boundary: String
+    ) -> Data {
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
+                .data(using: .utf8)!
+        )
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        return body
+    }
 }
 
 private actor ResponseCache {
@@ -343,9 +426,24 @@ private struct TodoCompletionBody: Codable {
     let complete: Bool
 }
 
+private struct UpdateTodoBody: Codable {
+    let name: String
+    let desc: String
+}
+
+private struct ReorderTodosBody: Codable {
+    let listId: String
+    let cardIds: [String]
+}
+
 private struct CreateTodoResponse: Codable {
     let success: Bool
     let cardId: String
+}
+
+private struct TodoAttachmentResponse: Codable {
+    let success: Bool
+    let attachment: TodoAttachment
 }
 
 private struct LogEntryBody: Codable {

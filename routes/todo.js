@@ -1,14 +1,22 @@
 const express = require("express");
+const multer = require("multer");
 const {
   DEFAULT_LIST_ID,
+  addTodoCardAttachment,
   createTodoCard,
+  downloadTodoCardAttachment,
   fetchTodoCards,
   fetchTodoLists,
   reorderTodoCards,
   setTodoCardCompletion,
+  updateTodoCard,
 } = require("../services/todo");
 
 const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+});
 
 async function getAvailableLists(user) {
   if (!user) return [{ id: DEFAULT_LIST_ID, name: "To-do" }];
@@ -92,6 +100,107 @@ router.post("/items", async (req, res, next) => {
     next(error);
   }
 });
+
+router.patch("/:cardId", async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(403).json({ error: "Not authenticated" });
+      return;
+    }
+
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const desc = typeof req.body.desc === "string" ? req.body.desc.trim() : "";
+    if (!name || name.length > 512) {
+      res
+        .status(400)
+        .json({ error: "Item name must be between 1 and 512 characters" });
+      return;
+    }
+    if (desc.length > 16384) {
+      res
+        .status(400)
+        .json({ error: "Item description must be 16,384 characters or fewer" });
+      return;
+    }
+
+    const lists = await getAvailableLists(req.user);
+    await updateTodoCard(
+      req.params.cardId,
+      name,
+      desc,
+      lists.map((list) => list.id),
+    );
+    res.json({ success: true });
+  } catch (error) {
+    if (error.status) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.post(
+  "/:cardId/attachments",
+  upload.single("file"),
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        res.status(403).json({ error: "Not authenticated" });
+        return;
+      }
+      if (!req.file || !req.file.mimetype.startsWith("image/")) {
+        res.status(400).json({ error: "An image file is required" });
+        return;
+      }
+
+      const lists = await getAvailableLists(req.user);
+      const attachment = await addTodoCardAttachment(
+        req.params.cardId,
+        {
+          buffer: req.file.buffer,
+          filename: req.file.originalname || "todo-photo.jpg",
+          mimeType: req.file.mimetype,
+        },
+        lists.map((list) => list.id),
+      );
+      res.status(201).json({ success: true, attachment });
+    } catch (error) {
+      if (error.status) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/:cardId/attachments/:attachmentId/image",
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        res.status(403).json({ error: "Not authenticated" });
+        return;
+      }
+      const lists = await getAvailableLists(req.user);
+      const attachment = await downloadTodoCardAttachment(
+        req.params.cardId,
+        req.params.attachmentId,
+        lists.map((list) => list.id),
+      );
+      res.set("Cache-Control", "private, max-age=3600");
+      res.type(attachment.mimeType || "application/octet-stream");
+      res.send(attachment.data);
+    } catch (error) {
+      if (error.status) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
 
 router.post("/:cardId/completion", async (req, res, next) => {
   try {

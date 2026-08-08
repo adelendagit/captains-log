@@ -70,6 +70,7 @@ struct CurrentStatusResponse: Codable {
     let departedAt: Date?
     let arrivedAt: Date?
     let visitCount: Int?
+    let temperature: Double?
 }
 
 struct PlanningResponse: Codable {
@@ -134,6 +135,23 @@ struct TodoCard: Codable, Identifiable {
     let desc: String?
     let due: Date?
     let dueComplete: Bool
+    let pos: Double?
+    let attachments: [TodoAttachment]?
+}
+
+struct TodoAttachment: Codable, Identifiable {
+    let id: String
+    let name: String
+    let url: String?
+    let mimeType: String?
+    let previews: [TodoAttachmentPreview]?
+}
+
+struct TodoAttachmentPreview: Codable, Identifiable {
+    var id: String { url }
+    let url: String
+    let width: Int?
+    let height: Int?
 }
 
 struct TodoList: Codable, Identifiable {

@@ -39,6 +39,8 @@ async function fetchTodoCards(listId = DEFAULT_LIST_ID) {
       ...credentials(),
       filter: "open",
       fields: "id,name,desc,due,dueComplete,labels,pos,shortUrl",
+      attachments: true,
+      attachment_fields: "id,name,url,mimeType,previews",
     },
   });
 
@@ -73,6 +75,76 @@ async function createTodoCard(listId, name) {
     },
   });
   return data;
+}
+
+async function updateTodoCard(cardId, name, desc, allowedListIds) {
+  const card = await fetchCard(cardId);
+  assertAllowedList(card.idList, allowedListIds);
+
+  if (card.closed) {
+    const error = new Error("Closed cards cannot be edited");
+    error.status = 400;
+    throw error;
+  }
+
+  const { data } = await axios.put(`${API_BASE}/cards/${cardId}`, null, {
+    params: { ...credentials(), name, desc },
+  });
+  return data;
+}
+
+async function addTodoCardAttachment(
+  cardId,
+  { buffer, filename, mimeType },
+  allowedListIds,
+) {
+  const card = await fetchCard(cardId);
+  assertAllowedList(card.idList, allowedListIds);
+
+  if (card.closed) {
+    const error = new Error("Closed cards cannot receive attachments");
+    error.status = 400;
+    throw error;
+  }
+
+  const form = new FormData();
+  form.append("key", credentials().key);
+  form.append("token", credentials().token);
+  form.append("name", filename);
+  form.append("file", new Blob([buffer], { type: mimeType }), filename);
+  const { data } = await axios.post(
+    `${API_BASE}/cards/${cardId}/attachments`,
+    form,
+  );
+  return data;
+}
+
+async function downloadTodoCardAttachment(cardId, attachmentId, allowedListIds) {
+  const card = await fetchCard(cardId);
+  assertAllowedList(card.idList, allowedListIds);
+
+  const { data: attachment } = await axios.get(
+    `${API_BASE}/cards/${cardId}/attachments/${attachmentId}`,
+    { params: credentials() },
+  );
+  const attachmentUrl = new URL(attachment.url);
+  if (
+    !attachment.mimeType?.startsWith("image/") ||
+    (attachmentUrl.hostname !== "trello.com" &&
+      !attachmentUrl.hostname.endsWith(".trello.com"))
+  ) {
+    const error = new Error("Attachment is not a Trello-hosted image");
+    error.status = 404;
+    throw error;
+  }
+  const response = await axios.get(attachment.url, {
+    params: credentials(),
+    responseType: "arraybuffer",
+  });
+  return {
+    data: response.data,
+    mimeType: attachment.mimeType || response.headers["content-type"],
+  };
 }
 
 async function setTodoCardCompletion(cardId, complete, allowedListIds) {
@@ -112,9 +184,12 @@ async function reorderTodoCards(listId, cardIds) {
 module.exports = {
   BOARD_ID,
   DEFAULT_LIST_ID,
+  addTodoCardAttachment,
   createTodoCard,
+  downloadTodoCardAttachment,
   fetchTodoCards,
   fetchTodoLists,
   reorderTodoCards,
   setTodoCardCompletion,
+  updateTodoCard,
 };

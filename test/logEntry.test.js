@@ -458,3 +458,128 @@ test("logs temperature in the historical degree format", async (t) => {
   });
   assert.equal(comments.length, 1);
 });
+
+test("adds an optional temperature to an arrival log", async (t) => {
+  const originalPost = axios.post;
+  const originalPut = axios.put;
+  const originalGet = axios.get;
+  const comments = [];
+
+  axios.post = async (_url, _body, options) => {
+    if (options?.params?.text) comments.push(options.params.text);
+    return { data: {} };
+  };
+  axios.put = async () => ({ data: {} });
+  axios.get = async () => ({ data: [] });
+  t.after(() => {
+    axios.post = originalPost;
+    axios.put = originalPut;
+    axios.get = originalGet;
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = {
+      id: "test-member",
+      token: "test-token",
+      tokenSecret: "test-token-secret",
+    };
+    next();
+  });
+  app.use(captainsLog);
+
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/log-entry`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "arrived",
+        temperature: 27.8,
+        cardId: "stop-card",
+        lat: 37.5205,
+        lng: 23.4113,
+        timestamp: "2026-08-05T09:00:00.000Z",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(comments[0], /^Arrived\n/);
+  assert.match(comments[0], /\ntemperature: 27\.8$/);
+});
+
+test("returns the latest arrival temperature in current stop status", async (t) => {
+  const originalGet = axios.get;
+  const board = {
+    lists: [{ id: "list-1", name: "Saronic Gulf" }],
+    cards: [
+      {
+        id: "stop-card",
+        idList: "list-1",
+        name: "Poros",
+        desc: "",
+        labels: [],
+        customFieldItems: [
+          { idCustomField: "latitude", value: { number: "37.5" } },
+          { idCustomField: "longitude", value: { number: "23.4" } },
+        ],
+      },
+    ],
+    customFields: [
+      { id: "latitude", name: "Latitude" },
+      { id: "longitude", name: "Longitude" },
+      { id: "rating", name: "⭐️" },
+      { id: "navily", name: "Navily" },
+    ],
+  };
+  const comments = [
+    {
+      type: "commentCard",
+      date: "2026-08-05T09:00:00.000Z",
+      data: {
+        card: { id: "stop-card" },
+        text: [
+          "Arrived",
+          "timestamp: 2026-08-05T09:00:00.000Z",
+          "lat: 37.5",
+          "lng: 23.4",
+          "temperature: 27.8",
+        ].join("\n"),
+      },
+    },
+  ];
+
+  axios.get = async (url) => ({
+    data: String(url).includes("/actions?") ? comments : board,
+  });
+  t.after(() => {
+    axios.get = originalGet;
+  });
+
+  const app = express();
+  app.use(captainsLog);
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/current-stop`,
+  );
+  const status = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(status.status, "arrived");
+  assert.equal(status.temperature, 27.8);
+});

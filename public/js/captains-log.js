@@ -115,6 +115,15 @@ function renderJourneyStatus() {
   const updatedLabel = document.getElementById("live-journey-updated-label");
   const speedLabel = document.getElementById("live-journey-speed-label");
   const courseLabel = document.getElementById("live-journey-course-label");
+  const temperatureReading = document.getElementById(
+    "live-journey-temperature-reading",
+  );
+  const temperature = document.getElementById("live-journey-temperature");
+
+  const showTemperature =
+    !currentJourney?.active && currentStatus?.status === "arrived";
+  panel.classList.toggle("has-temperature", showTemperature);
+  temperatureReading?.classList.toggle("hidden", !showTemperature);
 
   panel.classList.toggle("is-live", Boolean(currentJourney?.active));
   panel.classList.toggle("is-anchored", !currentJourney?.active && currentStatus?.status === "arrived");
@@ -155,6 +164,11 @@ function renderJourneyStatus() {
     const count = Math.max(1, Number(currentStatus.visitCount) || 1);
     speed.textContent = `${count} ${count === 1 ? "visit" : "visits"}`;
     course.textContent = place.listName || "—";
+    if (temperature) {
+      temperature.textContent = Number.isFinite(currentStatus.temperature)
+        ? `${currentStatus.temperature} °C`
+        : "—";
+    }
     return;
   }
 
@@ -304,10 +318,7 @@ async function loadHistoricalSeaRoute(markers) {
   if (!historicalSeaRouteCache.has(key)) {
     const request = fetch("/sea-route", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         points: markers.map(({ lat, lng }) => ({ lat, lng })),
       }),
@@ -417,7 +428,10 @@ async function loadPlanningRoute(sequence) {
   if (!planningRouteCache.has(key)) {
     const request = fetch("/planning-route", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({
         points: sequence.map(({ lat, lng }) => ({ lat, lng })),
       }),
@@ -2666,7 +2680,7 @@ function setupLogWizard() {
   const flowSteps = () => [
     "location",
     "action",
-    ...(wizardState.action === "arrived" ? ["mooring"] : []),
+    ...(wizardState.action === "arrived" ? ["mooring", "temperature"] : []),
     ...(wizardState.action === "departed" ? ["journey"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
     ...(wizardState.action === "temperature" ? ["temperature"] : []),
@@ -2761,8 +2775,13 @@ function setupLogWizard() {
     } else if (step === "litres") {
       nextBtn.textContent = litresInput.value ? "Continue" : "Skip";
     } else if (step === "temperature") {
-      nextBtn.textContent = "Continue";
-      nextBtn.disabled = temperatureInput.value === "";
+      const optionalArrivalTemperature = wizardState.action === "arrived";
+      nextBtn.textContent =
+        optionalArrivalTemperature && temperatureInput.value === ""
+          ? "Skip"
+          : "Continue";
+      nextBtn.disabled =
+        !optionalArrivalTemperature && temperatureInput.value === "";
     } else if (step === "journey") {
       nextBtn.textContent = "Continue";
     } else if (step === "mooring") {
@@ -2979,7 +2998,7 @@ function setupLogWizard() {
       payload.litres = litresInput.value;
     }
     if (
-      wizardState.action === "temperature" &&
+      ["arrived", "temperature"].includes(wizardState.action) &&
       temperatureInput.value !== ""
     ) {
       payload.temperature = temperatureInput.value;

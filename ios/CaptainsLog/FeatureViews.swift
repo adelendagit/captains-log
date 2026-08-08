@@ -1,5 +1,7 @@
 import MapKit
+import PhotosUI
 import SwiftUI
+import UIKit
 
 struct LogEntryIntent: Identifiable {
     let id = UUID()
@@ -136,8 +138,8 @@ struct AddLogEntryView: View {
                     }
                 }
 
-                if action == "temperature" {
-                    Section("Temperature") {
+                if action == "temperature" || action == "arrived" {
+                    Section(action == "arrived" ? "Temperature (optional)" : "Temperature") {
                         TextField("Degrees °C", text: $temperature)
                             .keyboardType(.decimalPad)
                     }
@@ -280,6 +282,7 @@ struct AddLogEntryView: View {
             (action != "arrived" || !selectedMooringLabelID.isEmpty) &&
             (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             && (action != "temperature" || parsedTemperature != nil)
+            && (action != "arrived" || temperature.isEmpty || parsedTemperature != nil)
     }
 
     private var logCoordinate: CLLocationCoordinate2D? {
@@ -1046,14 +1049,18 @@ struct LogbookView: View {
 
 struct TodoView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
+    @EnvironmentObject private var tracker: JourneyTracker
     @State private var lists: [TodoList] = []
     @State private var selectedListID = ""
     @State private var newItem = ""
     @State private var errorMessage: String?
     @State private var actionErrorMessage: String?
     @State private var pendingCardIDs: Set<String> = []
+    @State private var editingCard: TodoCard?
     @State private var isAdding = false
+    @State private var isReordering = false
     @State private var loading = true
+    @State private var keepAwakeTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -1074,6 +1081,7 @@ struct TodoView: View {
                             ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
                                 todoRow(card)
                             }
+                            .onMove(perform: moveOpenCards)
                         }
                         Section("Completed") {
                             ForEach(selectedList?.cards.filter(\.dueComplete) ?? []) { card in
@@ -1085,16 +1093,40 @@ struct TodoView: View {
             }
             .navigationTitle("To Do")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     if lists.count > 1 {
                         Picker("List", selection: $selectedListID) {
                             ForEach(lists) { Text($0.name).tag($0.id) }
                         }
+                        .disabled(isReordering)
+                    }
+                    if (selectedList?.cards.filter({ !$0.dueComplete }).count ?? 0) > 1 {
+                        EditButton()
                     }
                 }
             }
             .task { await load() }
             .refreshable { await load() }
+            .onAppear(perform: beginKeepAwakeWindow)
+            .onDisappear(perform: endKeepAwakeWindow)
+            .onChange(of: tracker.isUnderway) { _, isUnderway in
+                if keepAwakeTask != nil {
+                    UIApplication.shared.isIdleTimerDisabled = true
+                } else {
+                    UIApplication.shared.isIdleTimerDisabled = isUnderway
+                }
+            }
+            .sheet(item: $editingCard) { card in
+                TodoDetailView(
+                    card: card,
+                    onSave: { name, desc in
+                        await edit(card, name: name, desc: desc)
+                    },
+                    onAddPhoto: { imageData, filename in
+                        try await addPhoto(to: card, imageData: imageData, filename: filename)
+                    }
+                )
+            }
             .alert("Couldn’t update task", isPresented: actionErrorIsPresented) {
                 Button("OK", role: .cancel) { actionErrorMessage = nil }
             } message: {
@@ -1115,8 +1147,8 @@ struct TodoView: View {
     }
 
     private func todoRow(_ card: TodoCard) -> some View {
-        Button { Task { await toggle(card) } } label: {
-            HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
+            Button { Task { await toggle(card) } } label: {
                 if pendingCardIDs.contains(card.id) {
                     ProgressView()
                         .controlSize(.small)
@@ -1124,6 +1156,11 @@ struct TodoView: View {
                     Image(systemName: card.dueComplete ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(card.dueComplete ? Chartroom.sea : .secondary)
                 }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(card.dueComplete ? "Mark as open" : "Mark as completed")
+
+            Button { editingCard = card } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(card.name)
                         .strikethrough(card.dueComplete)
@@ -1132,10 +1169,18 @@ struct TodoView: View {
                         Text(desc).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(card.name)")
         }
-        .buttonStyle(.plain)
-        .disabled(pendingCardIDs.contains(card.id))
+        .disabled(pendingCardIDs.contains(card.id) || isReordering)
+        .swipeActions {
+            Button { editingCard = card } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(Chartroom.sea)
+        }
     }
 
     @MainActor private func load() async {
@@ -1162,7 +1207,9 @@ struct TodoView: View {
             name: name,
             desc: nil,
             due: nil,
-            dueComplete: false
+            dueComplete: false,
+            pos: (selectedList?.cards.compactMap(\.pos).max() ?? 0) + 16384,
+            attachments: []
         )
 
         isAdding = true
@@ -1176,7 +1223,15 @@ struct TodoView: View {
             let cardID = try await authentication.api.addTodo(name: name, listID: listID, token: token)
             replaceCard(
                 temporaryID,
-                with: TodoCard(id: cardID, name: name, desc: nil, due: nil, dueComplete: false)
+                with: TodoCard(
+                    id: cardID,
+                    name: name,
+                    desc: nil,
+                    due: nil,
+                    dueComplete: false,
+                    pos: temporaryCard.pos,
+                    attachments: []
+                )
             )
             pendingCardIDs.remove(temporaryID)
         } catch {
@@ -1193,7 +1248,8 @@ struct TodoView: View {
     }
 
     @MainActor private func toggle(_ card: TodoCard) async {
-        guard !pendingCardIDs.contains(card.id),
+        guard !isReordering,
+              !pendingCardIDs.contains(card.id),
               let token = authentication.token else { return }
         let complete = !card.dueComplete
 
@@ -1211,6 +1267,123 @@ struct TodoView: View {
             actionErrorMessage = error.localizedDescription
         }
         pendingCardIDs.remove(card.id)
+    }
+
+    @MainActor private func edit(_ card: TodoCard, name: String, desc: String) async -> Bool {
+        guard !isReordering,
+              !pendingCardIDs.contains(card.id),
+              let token = authentication.token else { return false }
+
+        pendingCardIDs.insert(card.id)
+        do {
+            try await authentication.api.updateTodo(
+                cardID: card.id,
+                name: name,
+                desc: desc,
+                token: token
+            )
+            let current = currentCard(withID: card.id) ?? card
+            replaceCard(
+                card.id,
+                with: TodoCard(
+                    id: card.id,
+                    name: name,
+                    desc: desc.isEmpty ? nil : desc,
+                    due: current.due,
+                    dueComplete: current.dueComplete,
+                    pos: current.pos,
+                    attachments: current.attachments
+                )
+            )
+            pendingCardIDs.remove(card.id)
+            return true
+        } catch {
+            pendingCardIDs.remove(card.id)
+            actionErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @MainActor private func addPhoto(
+        to card: TodoCard,
+        imageData: Data,
+        filename: String
+    ) async throws -> TodoAttachment {
+        guard let token = authentication.token else {
+            throw APIClientError.server("Not authenticated")
+        }
+        let attachment = try await authentication.api.addTodoPhoto(
+            cardID: card.id,
+            imageData: imageData,
+            filename: filename,
+            token: token
+        )
+        let current = currentCard(withID: card.id) ?? card
+        replaceCard(
+            card.id,
+            with: TodoCard(
+                id: current.id,
+                name: current.name,
+                desc: current.desc,
+                due: current.due,
+                dueComplete: current.dueComplete,
+                pos: current.pos,
+                attachments: (current.attachments ?? []) + [attachment]
+            )
+        )
+        return attachment
+    }
+
+    @MainActor private func moveOpenCards(from source: IndexSet, to destination: Int) {
+        guard !isReordering,
+              let list = selectedList,
+              let token = authentication.token else { return }
+
+        let previousCards = list.cards
+        var openCards = list.cards.filter { !$0.dueComplete }
+        openCards.move(fromOffsets: source, toOffset: destination)
+        let cardIDs = openCards.map(\.id)
+
+        isReordering = true
+        withAnimation {
+            updateCards(in: list.id) { cards in
+                openCards + cards.filter(\.dueComplete)
+            }
+        }
+
+        Task {
+            do {
+                try await authentication.api.reorderTodos(
+                    listID: list.id,
+                    cardIDs: cardIDs,
+                    token: token
+                )
+                updateCards(in: list.id) { cards in
+                    let positions = Dictionary(
+                        uniqueKeysWithValues: cardIDs.enumerated().map {
+                            ($0.element, Double(($0.offset + 1) * 16384))
+                        }
+                    )
+                    return cards.map { card in
+                        TodoCard(
+                            id: card.id,
+                            name: card.name,
+                            desc: card.desc,
+                            due: card.due,
+                            dueComplete: card.dueComplete,
+                            pos: positions[card.id] ?? card.pos,
+                            attachments: card.attachments
+                        )
+                    }
+                }
+            } catch {
+                withAnimation {
+                    updateCards(in: list.id) { _ in previousCards }
+                }
+                actionErrorMessage = error.localizedDescription
+            }
+            isReordering = false
+        }
     }
 
     private func updateCards(in listID: String, transform: ([TodoCard]) -> [TodoCard]) {
@@ -1237,6 +1410,10 @@ struct TodoView: View {
         )
     }
 
+    private func currentCard(withID cardID: String) -> TodoCard? {
+        lists.lazy.flatMap(\.cards).first { $0.id == cardID }
+    }
+
     private func setCompletion(cardID: String, complete: Bool) {
         guard let listIndex = lists.firstIndex(where: { list in
             list.cards.contains(where: { $0.id == cardID })
@@ -1253,9 +1430,281 @@ struct TodoView: View {
                     name: card.name,
                     desc: card.desc,
                     due: card.due,
-                    dueComplete: complete
+                    dueComplete: complete,
+                    pos: card.pos,
+                    attachments: card.attachments
                 )
             }
         )
+    }
+
+    private func beginKeepAwakeWindow() {
+        keepAwakeTask?.cancel()
+        UIApplication.shared.isIdleTimerDisabled = true
+        keepAwakeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(300))
+            guard !Task.isCancelled else { return }
+            keepAwakeTask = nil
+            UIApplication.shared.isIdleTimerDisabled = tracker.isUnderway
+        }
+    }
+
+    private func endKeepAwakeWindow() {
+        keepAwakeTask?.cancel()
+        keepAwakeTask = nil
+        UIApplication.shared.isIdleTimerDisabled = tracker.isUnderway
+    }
+}
+
+private struct TodoDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authentication: AuthenticationManager
+    @State private var name: String
+    @State private var desc: String
+    @State private var attachments: [TodoAttachment]
+    @State private var photoSelection: PhotosPickerItem?
+    @State private var isSaving = false
+    @State private var isUploadingPhoto = false
+    @State private var showingCamera = false
+    @State private var photoError: String?
+
+    let onSave: (String, String) async -> Bool
+    let onAddPhoto: (Data, String) async throws -> TodoAttachment
+    let cardID: String
+
+    init(
+        card: TodoCard,
+        onSave: @escaping (String, String) async -> Bool,
+        onAddPhoto: @escaping (Data, String) async throws -> TodoAttachment
+    ) {
+        _name = State(initialValue: card.name)
+        _desc = State(initialValue: card.desc ?? "")
+        _attachments = State(initialValue: card.attachments ?? [])
+        self.onSave = onSave
+        self.onAddPhoto = onAddPhoto
+        cardID = card.id
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Task") {
+                    TextField("Task name", text: $name, axis: .vertical)
+                }
+                Section("Description") {
+                    TextField("Optional notes", text: $desc, axis: .vertical)
+                        .lineLimit(3...10)
+                }
+                Section("Photos") {
+                    if !attachments.isEmpty {
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 12) {
+                                ForEach(attachments) { attachment in
+                                    attachmentPreview(attachment)
+                                }
+                            }
+                        }
+                        .scrollIndicators(.hidden)
+                    }
+
+                    PhotosPicker(selection: $photoSelection, matching: .images) {
+                        Label("Choose from Photo Library", systemImage: "photo.on.rectangle")
+                    }
+                    .disabled(isUploadingPhoto)
+
+                    Button { showingCamera = true } label: {
+                        Label("Take Photo", systemImage: "camera")
+                    }
+                    .disabled(isUploadingPhoto || !UIImagePickerController.isSourceTypeAvailable(.camera))
+
+                    if isUploadingPhoto {
+                        ProgressView("Adding photo to Trello…")
+                    }
+                }
+            }
+            .navigationTitle("Task Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            isSaving = true
+                            let saved = await onSave(
+                                name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                desc.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
+                            isSaving = false
+                            if saved { dismiss() }
+                        }
+                    }
+                    .disabled(
+                        isSaving ||
+                        name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        name.count > 512 ||
+                        desc.count > 16384
+                    )
+                }
+            }
+            .onChange(of: photoSelection) { _, item in
+                guard let item else { return }
+                Task {
+                    defer { photoSelection = nil }
+                    do {
+                        guard let data = try await item.loadTransferable(type: Data.self),
+                              let image = UIImage(data: data) else {
+                            throw APIClientError.server("That photo could not be read.")
+                        }
+                        await upload(image)
+                    } catch {
+                        photoError = error.localizedDescription
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showingCamera) {
+                TodoCameraPicker { image in
+                    showingCamera = false
+                    if let image {
+                        Task { await upload(image) }
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .alert("Couldn’t add photo", isPresented: photoErrorIsPresented) {
+                Button("OK", role: .cancel) { photoError = nil }
+            } message: {
+                Text(photoError ?? "Please try again.")
+            }
+            .interactiveDismissDisabled(isSaving || isUploadingPhoto)
+        }
+    }
+
+    private var photoErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { photoError != nil },
+            set: { if !$0 { photoError = nil } }
+        )
+    }
+
+    @ViewBuilder private func attachmentPreview(_ attachment: TodoAttachment) -> some View {
+        TodoAttachmentThumbnail(
+            cardID: cardID,
+            attachment: attachment,
+            api: authentication.api,
+            token: authentication.token
+        )
+    }
+
+    @MainActor private func upload(_ image: UIImage) async {
+        guard !isUploadingPhoto else { return }
+        guard let data = image.todoJPEGData(maxDimension: 2048, quality: 0.82) else {
+            photoError = "That photo could not be prepared for upload."
+            return
+        }
+
+        isUploadingPhoto = true
+        defer { isUploadingPhoto = false }
+        do {
+            let attachment = try await onAddPhoto(
+                data,
+                "todo-\(UUID().uuidString).jpg"
+            )
+            attachments.append(attachment)
+        } catch {
+            photoError = error.localizedDescription
+        }
+    }
+}
+
+private struct TodoAttachmentThumbnail: View {
+    let cardID: String
+    let attachment: TodoAttachment
+    let api: APIClient
+    let token: String?
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                VStack(spacing: 5) {
+                    Image(systemName: "photo")
+                    Text(attachment.name)
+                        .font(.caption2)
+                        .lineLimit(2)
+                }
+                .foregroundStyle(.secondary)
+                .padding(8)
+            }
+        }
+        .frame(width: 112, height: 84)
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .task(id: attachment.id) {
+            guard let token,
+                  let data = try? await api.todoPhoto(
+                    cardID: cardID,
+                    attachmentID: attachment.id,
+                    token: token
+                  ) else { return }
+            image = UIImage(data: data)
+        }
+    }
+}
+
+private struct TodoCameraPicker: UIViewControllerRepresentable {
+    let onFinish: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onFinish: onFinish)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onFinish: (UIImage?) -> Void
+
+        init(onFinish: @escaping (UIImage?) -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            onFinish(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onFinish(nil)
+        }
+    }
+}
+
+private extension UIImage {
+    func todoJPEGData(maxDimension: CGFloat, quality: CGFloat) -> Data? {
+        let scale = min(1, maxDimension / max(size.width, size.height))
+        guard scale < 1 else { return jpegData(compressionQuality: quality) }
+
+        let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resized = renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resized.jpegData(compressionQuality: quality)
     }
 }

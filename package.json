@@ -31,6 +31,7 @@
     "express-session": "^1.18.2",
     "helmet": "^7.0.0",
     "morgan": "^1.10.0",
+    "multer": "^2.2.0",
     "oauth-1.0a": "^2.2.6",
     "passport": "^0.7.0",
     "passport-trello": "^1.1.0",

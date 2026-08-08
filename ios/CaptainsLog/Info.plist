@@ -35,6 +35,8 @@
     <string>Captain’s Log shares Skibidi’s position during a journey you explicitly start.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Captain’s Log uses your position to record and publish Skibidi’s active journey.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Captain’s Log uses the camera to add photos to To Do items.</string>
     <key>UIBackgroundModes</key>
     <array><string>location</string></array>
     <key>UILaunchScreen</key>

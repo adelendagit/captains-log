@@ -1707,6 +1707,10 @@ body {
   border-radius: 0.9rem;
 }
 
+.live-journey.has-temperature .live-journey-readings {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .live-journey-readings div {
   min-width: 0;
   padding: 0.85rem;
