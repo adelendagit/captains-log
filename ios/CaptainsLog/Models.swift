@@ -101,6 +101,17 @@ struct PlanningResponse: Codable {
     let stops: [PlaceSummary]
     let places: [PlaceSummary]
     let boardLabels: [PlaceLabel]?
+    let placeLists: [PlaceListOption]?
+}
+
+struct PlaceListOption: Codable, Identifiable {
+    let id: String
+    let name: String
+}
+
+struct CreatePlaceResponse: Codable {
+    let success: Bool
+    let place: PlaceSummary
 }
 
 struct PlanningRoutePoint: Codable, Sendable {

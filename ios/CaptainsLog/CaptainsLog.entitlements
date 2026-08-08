@@ -5,6 +5,7 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
+		<string>$(AppIdentifierPrefix)co.uk.achilleas.CaptainsLog.shared</string>
 	</array>
 </dict>
 </plist>

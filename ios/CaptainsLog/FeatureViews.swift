@@ -80,7 +80,7 @@ struct AddLogEntryView: View {
                                             .frame(width: 24)
                                             .foregroundStyle(Chartroom.sea)
                                         Text(item.label)
-                                            .foregroundStyle(Chartroom.ink)
+                                            .foregroundStyle(.primary)
                                         Spacer()
                                         Image(systemName: "chevron.right")
                                             .font(.caption.bold())
@@ -241,9 +241,7 @@ struct AddLogEntryView: View {
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
             }
-            .task(id: action) {
-                if !action.isEmpty { await load() }
-            }
+            .task { await load() }
         }
     }
 
@@ -360,23 +358,41 @@ struct AddLogEntryView: View {
 
     @MainActor private func load() async {
         locator.locate()
+        seedKnownPlace()
         guard let token = authentication.token else { return }
+
+        if let cachedPlanning = await authentication.api.cachedPlanning() {
+            applyPlanning(cachedPlanning)
+        }
+
         do {
             let planning = try await authentication.api.planning(token: token)
-            boardLabels = planning.boardLabels ?? []
-            var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.id, $0) })
-            for stop in planning.stops { byID[stop.id] = stop }
-            if let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from {
-                byID[current.id] = current
-                selectedPlaceID = current.id
-            }
-            places = Array(byID.values).sorted { $0.name < $1.name }
-            updateSortedPlaces()
-            if selectedPlaceID.isEmpty { selectedPlaceID = sortedPlaces.first?.id ?? "" }
-            updateSuggestedJourneyName()
+            applyPlanning(planning)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func seedKnownPlace() {
+        guard let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from else { return }
+        places = [current]
+        sortedPlaces = [current]
+        selectedPlaceID = current.id
+        updateSuggestedJourneyName()
+    }
+
+    private func applyPlanning(_ planning: PlanningResponse) {
+        boardLabels = planning.boardLabels ?? []
+        var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.id, $0) })
+        for stop in planning.stops { byID[stop.id] = stop }
+        if let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from {
+            byID[current.id] = current
+            if selectedPlaceID.isEmpty { selectedPlaceID = current.id }
+        }
+        places = Array(byID.values).sorted { $0.name < $1.name }
+        updateSortedPlaces()
+        if selectedPlaceID.isEmpty { selectedPlaceID = sortedPlaces.first?.id ?? "" }
+        updateSuggestedJourneyName()
     }
 
     private func updateSuggestedJourneyName() {
@@ -489,6 +505,7 @@ struct PlanView: View {
     @State private var searchText = ""
     @State private var workingCardID: String?
     @State private var selectedMapPlace: PlaceSummary?
+    @State private var isAddingPlace = false
 
     private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -535,11 +552,34 @@ struct PlanView: View {
             }
             .navigationTitle("Planning")
             .searchable(text: $searchText, prompt: "Search places")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isAddingPlace = true
+                    } label: {
+                        Label("Add place", systemImage: "plus")
+                    }
+                }
+            }
             .task { await load() }
             .refreshable { await load() }
             .sheet(item: $selectedMapPlace) { place in
                 placeCard(place)
                     .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $isAddingPlace) {
+                if let token = authentication.token {
+                    AddPlaceView(
+                        api: authentication.api,
+                        token: token,
+                        initialCoordinate: visibleRegion?.center ?? currentMapCoordinate,
+                        onSaved: { _ in
+                            isAddingPlace = false
+                            Task { await load() }
+                        },
+                        onCancel: { isAddingPlace = false }
+                    )
+                }
             }
         }
     }

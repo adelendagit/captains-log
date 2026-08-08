@@ -20,8 +20,10 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>API_BASE_URL</key>
-    <string>https://where.is.achilleas.co.uk</string>
+	<key>API_BASE_URL</key>
+	<string>https://where.is.achilleas.co.uk</string>
+	<key>KEYCHAIN_ACCESS_GROUP</key>
+	<string>$(AppIdentifierPrefix)co.uk.achilleas.CaptainsLog.shared</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

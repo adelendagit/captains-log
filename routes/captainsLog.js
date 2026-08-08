@@ -55,14 +55,19 @@ function extractTemperature(text) {
 // existing number helper
 function getCFNumber(card, boardCFs, name) {
   const def = boardCFs.find((f) => f.name === name);
-  const item = card.customFieldItems.find((i) => i.idCustomField === def.id);
+  if (!def) return null;
+  const item = (card.customFieldItems || []).find(
+    (i) => i.idCustomField === def.id,
+  );
   return item?.value?.number ? Number(item.value.number) : null;
 }
 // updated text/dropdown helper:
 function getCFTextOrDropdown(card, boardCFs, name) {
   const def = boardCFs.find((f) => f.name === name);
   if (!def) return null;
-  const item = card.customFieldItems.find((i) => i.idCustomField === def.id);
+  const item = (card.customFieldItems || []).find(
+    (i) => i.idCustomField === def.id,
+  );
   if (!item) return null;
 
   // If it's a text field:
@@ -77,6 +82,44 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   }
 
   return null;
+}
+
+function normalizeNavilyUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || "").trim());
+  } catch (_error) {
+    return null;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (!["navily.com", "www.navily.com"].includes(hostname)) return null;
+  if (!["http:", "https:"].includes(parsed.protocol)) return null;
+  if (!parsed.pathname || parsed.pathname === "/") return null;
+  parsed.protocol = "https:";
+  parsed.hostname = "www.navily.com";
+  parsed.port = "";
+  parsed.search = "";
+  parsed.hash = "";
+  parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  return parsed.toString();
+}
+
+function isBoardMember(user, members = []) {
+  const userId = user?.id || user?.idMember || user?.profile?.id;
+  return members.some(
+    (member) =>
+      member.id === userId &&
+      (member.memberType === "admin" || member.memberType === "normal"),
+  );
+}
+
+function buildPlaceLists(lists = []) {
+  return lists
+    .filter(
+      (list) =>
+        !["trips", "journeys"].includes(list.name.trim().toLowerCase()),
+    )
+    .map((list) => ({ id: list.id, name: list.name }));
 }
 
 const colorMap = {
@@ -535,7 +578,13 @@ router.get("/api/data", async (req, res, next) => {
       );
     }
 
-    res.json({ stops, places, canPlan, boardLabels });
+    res.json({
+      stops,
+      places,
+      canPlan,
+      boardLabels,
+      placeLists: buildPlaceLists(lists),
+    });
   } catch (err) {
     next(err);
   }
@@ -1426,6 +1475,155 @@ router.get("/captains-log", (req, res) => {
   // Keep the initial HTML independent of Trello so the page shell can render
   // immediately. Chart, logbook, and voyage data are filled in asynchronously.
   res.render("captains-log", { user: req.user });
+});
+
+router.post("/api/places", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").replace(
+      /\r\n/g,
+      "\n",
+    );
+    const listId = String(req.body?.listId || "").trim();
+    const navilyUrl = normalizeNavilyUrl(req.body?.navilyUrl);
+    const hasLatitude =
+      req.body?.lat !== null &&
+      req.body?.lat !== undefined &&
+      req.body?.lat !== "";
+    const hasLongitude =
+      req.body?.lng !== null &&
+      req.body?.lng !== undefined &&
+      req.body?.lng !== "";
+    const lat = Number(req.body?.lat);
+    const lng = Number(req.body?.lng);
+
+    if (!name) return res.status(400).json({ error: "Missing place name" });
+    if (name.length > 256) {
+      return res
+        .status(400)
+        .json({ error: "Place name must be 256 characters or fewer" });
+    }
+    if (description.length > 16_384) {
+      return res
+        .status(400)
+        .json({ error: "Description must be 16,384 characters or fewer" });
+    }
+    if (!listId) return res.status(400).json({ error: "Missing listId" });
+    if (!navilyUrl) {
+      return res.status(400).json({ error: "Enter a valid Navily place URL" });
+    }
+    if (!hasLatitude || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+      return res.status(400).json({ error: "Latitude must be between -90 and 90" });
+    }
+    if (!hasLongitude || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+      return res
+        .status(400)
+        .json({ error: "Longitude must be between -180 and 180" });
+    }
+
+    const board = await fetchBoard();
+    const { cards, customFields, lists, members } = board;
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Not a board member" });
+    }
+
+    const availableLists = buildPlaceLists(lists);
+    const destinationList = availableLists.find((list) => list.id === listId);
+    if (!destinationList) {
+      return res.status(400).json({ error: "Select a valid place list" });
+    }
+
+    const latitudeField = customFields.find((field) => field.name === "Latitude");
+    const longitudeField = customFields.find(
+      (field) => field.name === "Longitude",
+    );
+    const navilyField = customFields.find((field) => field.name === "Navily");
+    if (!latitudeField || !longitudeField || !navilyField) {
+      return res.status(500).json({
+        error: "Latitude, Longitude, and Navily custom fields are required",
+      });
+    }
+
+    const duplicate = cards.find(
+      (card) =>
+        normalizeNavilyUrl(
+          getCFTextOrDropdown(card, customFields, "Navily"),
+        ) === navilyUrl,
+    );
+    if (duplicate) {
+      return res.status(409).json({
+        error: `This Navily place is already saved as ${duplicate.name}`,
+      });
+    }
+
+    const oauth1a = require("oauth-1.0a");
+    const crypto = require("crypto");
+    const oauthClient = oauth1a({
+      consumer: {
+        key: process.env.TRELLO_OAUTH_KEY,
+        secret: process.env.TRELLO_OAUTH_SECRET,
+      },
+      signature_method: "HMAC-SHA1",
+      hash_function(baseString, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(baseString)
+          .digest("base64");
+      },
+    });
+    const oauthToken = {
+      key: req.user.token,
+      secret: req.user.tokenSecret,
+    };
+    const signedHeaders = (url, method, data) =>
+      oauthClient.toHeader(
+        oauthClient.authorize({ url, method, data }, oauthToken),
+      );
+
+    const createUrl = "https://api.trello.com/1/cards";
+    const createParams = { name, desc: description, idList: listId };
+    const { data: card } = await axios.post(createUrl, null, {
+      params: createParams,
+      headers: signedHeaders(createUrl, "POST", createParams),
+    });
+
+    const customFieldUpdates = [
+      [latitudeField, { value: { number: String(lat) } }],
+      [longitudeField, { value: { number: String(lng) } }],
+      [navilyField, { value: { text: navilyUrl } }],
+    ];
+    for (const [field, payload] of customFieldUpdates) {
+      const url = `https://api.trello.com/1/cards/${card.id}/customField/${field.id}/item`;
+      await axios.put(url, payload, {
+        headers: signedHeaders(url, "PUT", payload),
+      });
+    }
+
+    invalidateBoardCache();
+    res.status(201).json({
+      success: true,
+      place: {
+        id: card.id,
+        name,
+        listName: destinationList.name,
+        due: null,
+        dueComplete: false,
+        lat,
+        lng,
+        rating: null,
+        desc: description,
+        labels: [],
+        trelloUrl: card.shortUrl || null,
+        navilyUrl,
+        visitCount: 0,
+        lastVisitedAt: null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post("/api/plan-stop", async (req, res, next) => {

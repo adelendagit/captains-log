@@ -244,21 +244,17 @@ private struct CurrentPositionView: View {
                     }
                 }
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(statusMessage)
-                        .font(.subheadline)
-                    Image(systemName: "pencil")
-                        .font(.caption.bold())
-                }
-                .foregroundStyle(.white.opacity(0.75))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(Rectangle())
-                .onTapGesture { beginDescriptionEditing() }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel("Edit current stop description")
+                Text(statusMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
+                    .onTapGesture { beginDescriptionEditing() }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Edit current stop description")
             }
         } else {
             Text(statusMessage)

@@ -132,6 +132,25 @@ when offline. Open the project in Xcode, select a development team for the
 `CaptainsLog` target, and run it on an iPhone. Background GPS should be verified on
 a physical device before relying on it for a voyage.
 
+## Adding Places from Navily
+
+Authenticated board members can create a place with `POST /api/places`. The
+request must include `name`, `listId`, `lat`, `lng`, and a `navilyUrl`; an
+optional `description` is stored on the Trello card. The endpoint validates the
+destination list, rejects duplicate canonical Navily links, creates the card,
+and populates the board's `Latitude`, `Longitude`, and `Navily` custom fields.
+
+The iOS Planning screen exposes the same flow through its Add Place button. A
+Navily link can be pasted into the form, and the place position can be entered
+as decimal coordinates or selected by tapping the map. The bundled “Add to
+Captain’s Log” Share Extension presents this same form for URLs shared by
+Navily or Safari. Shared text containing Navily's degrees-and-decimal-minutes
+coordinates is converted to decimal degrees automatically.
+
+The app and Share Extension share the mobile credential through the Keychain.
+Physical-device signing therefore requires the
+`co.uk.achilleas.CaptainsLog.shared` Keychain Sharing group on both targets.
+
 ## Public To-do Page
 
 `/to-do` lists open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Cards can be reordered, marked done, and restored without being archived. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can update cards in that list. Authenticated users can also add items and switch between the board's open lists, in Trello order, up to and including `Today`.

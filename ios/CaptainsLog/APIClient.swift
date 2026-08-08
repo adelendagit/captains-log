@@ -68,6 +68,11 @@ final class APIClient: Sendable {
         try await send(path: "api/data", token: token, cacheKey: "planning")
     }
 
+    func cachedPlanning() async -> PlanningResponse? {
+        guard let data = await responseCache.data(for: "planning") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(PlanningResponse.self, from: data)
+    }
+
     func planningRoute(points: [PlanningRoutePoint], token: String) async throws -> PlanningRouteResponse {
         try await send(
             path: "api/planning-route",
@@ -121,6 +126,31 @@ final class APIClient: Sendable {
             body: ["cardId": cardID],
             token: token
         )
+    }
+
+    func createPlace(
+        name: String,
+        description: String,
+        listID: String,
+        latitude: Double,
+        longitude: Double,
+        navilyURL: String,
+        token: String
+    ) async throws -> PlaceSummary {
+        let response: CreatePlaceResponse = try await send(
+            path: "api/places",
+            method: "POST",
+            encodableBody: CreatePlaceBody(
+                name: name,
+                description: description,
+                listId: listID,
+                lat: latitude,
+                lng: longitude,
+                navilyUrl: navilyURL
+            ),
+            token: token
+        )
+        return response.place
     }
 
     func addTodo(name: String, listID: String, token: String) async throws -> String {
@@ -434,6 +464,15 @@ private struct PositionAcceptedResponse: Codable {
 private struct PlanStopBody: Codable {
     let cardId: String
     let due: Date
+}
+
+private struct CreatePlaceBody: Codable {
+    let name: String
+    let description: String
+    let listId: String
+    let lat: Double
+    let lng: Double
+    let navilyUrl: String
 }
 
 private struct CurrentStopDescriptionBody: Codable {

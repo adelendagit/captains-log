@@ -1,6 +1,5 @@
 import AuthenticationServices
 import Foundation
-import Security
 import UIKit
 
 @MainActor
@@ -71,63 +70,5 @@ extension AuthenticationManager: ASWebAuthenticationPresentationContextProviding
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
             .first(where: \.isKeyWindow) ?? ASPresentationAnchor()
-    }
-}
-
-private enum KeychainStore {
-    static let service = "co.uk.achilleas.captains-log"
-    static let account = "mobile-api-token"
-#if targetEnvironment(simulator)
-    static let simulatorTokenKey = "simulator-mobile-api-token"
-#endif
-
-    static func save(_ token: String) throws {
-        delete()
-        let status = SecItemAdd([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecValueData: Data(token.utf8),
-            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ] as CFDictionary, nil)
-#if targetEnvironment(simulator)
-        if status == errSecMissingEntitlement {
-            UserDefaults.standard.set(token, forKey: simulatorTokenKey)
-            return
-        }
-#endif
-        guard status == errSecSuccess else {
-            throw APIClientError.server("Unable to store the login securely.")
-        }
-    }
-
-    static func read() -> String? {
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ] as CFDictionary, &result)
-        if status == errSecSuccess, let data = result as? Data {
-            return String(data: data, encoding: .utf8)
-        }
-#if targetEnvironment(simulator)
-        return UserDefaults.standard.string(forKey: simulatorTokenKey)
-#else
-        return nil
-#endif
-    }
-
-    static func delete() {
-        SecItemDelete([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-        ] as CFDictionary)
-#if targetEnvironment(simulator)
-        UserDefaults.standard.removeObject(forKey: simulatorTokenKey)
-#endif
     }
 }
