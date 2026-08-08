@@ -128,6 +128,7 @@ final class APIClient: Sendable {
         latitude: Double,
         longitude: Double,
         journeyName: String? = nil,
+        mooringLabelID: String? = nil,
         placeName: String? = nil,
         customText: String? = nil,
         timestamp: Date = Date(),
@@ -148,6 +149,7 @@ final class APIClient: Sendable {
                 litres: litres,
                 temperature: temperature,
                 journeyName: journeyName,
+                mooringLabelId: mooringLabelID,
                 placeName: placeName,
                 customText: customText
             ),
@@ -345,6 +347,7 @@ private struct LogEntryBody: Codable {
     let litres: Double?
     let temperature: Double?
     let journeyName: String?
+    let mooringLabelId: String?
     let placeName: String?
     let customText: String?
 }

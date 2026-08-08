@@ -37,7 +37,10 @@ struct AddLogEntryView: View {
     @StateObject private var locator = LogLocationProvider()
     @State private var places: [PlaceSummary] = []
     @State private var sortedPlaces: [PlaceSummary] = []
+    @State private var boardLabels: [PlaceLabel] = []
     @State private var selectedPlaceID = ""
+    @State private var selectedMooringLabelID = ""
+    @State private var showAllPlaces = false
     @State private var action: String
     @State private var journeyName = ""
     @State private var litres = ""
@@ -50,6 +53,8 @@ struct AddLogEntryView: View {
     @State private var errorMessage: String?
 
     private let initialAction: String?
+    private let nearbyPlaceLimit = 10
+    private let logTextLimit = 160
 
     init(initialAction: String?) {
         self.initialAction = initialAction
@@ -75,10 +80,16 @@ struct AddLogEntryView: View {
                         ProgressView("Finding nearby places…")
                     } else {
                         Picker("Place", selection: $selectedPlaceID) {
-                            ForEach(sortedPlaces) { place in
+                            ForEach(displayedPlaces) { place in
                                 Text(place.listName.map { "\(place.name) · \($0)" } ?? place.name)
                                     .tag(place.id)
                             }
+                        }
+                        if canToggleAllPlaces {
+                            Button(showAllPlaces ? "Show nearby only" : "Show all \(sortedPlaces.count) places") {
+                                showAllPlaces.toggle()
+                            }
+                            .font(.footnote)
                         }
                     }
                     if let coordinate = logCoordinate {
@@ -88,9 +99,30 @@ struct AddLogEntryView: View {
                     }
                 }
 
+                if action == "arrived" {
+                    Section("Mooring") {
+                        if mooringLabels.isEmpty {
+                            Label("No orange mooring labels are configured on the Trello board.", systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        } else {
+                            Picker("Mooring type", selection: $selectedMooringLabelID) {
+                                Text("Select a mooring type").tag("")
+                                ForEach(mooringLabels) { label in
+                                    Text(label.name).tag(label.id)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if action == "departed" {
                     Section("Journey") {
                         TextField("Journey name", text: $journeyName)
+                            .onChange(of: journeyName) { enforceLogTextLimit(on: $journeyName) }
+                        Text("\(journeyName.utf16.count)/\(logTextLimit)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Text("Saving the Departure entry starts live GPS tracking.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -114,6 +146,10 @@ struct AddLogEntryView: View {
                 if action == "other" {
                     Section("Details") {
                         TextField("What happened?", text: $customText)
+                            .onChange(of: customText) { enforceLogTextLimit(on: $customText) }
+                        Text("\(customText.utf16.count)/\(logTextLimit)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -159,9 +195,13 @@ struct AddLogEntryView: View {
                     .disabled(isSaving || (!logWasSaved && !canSave))
                 }
             }
-            .onChange(of: selectedPlaceID) { updateSuggestedJourneyName() }
+            .onChange(of: selectedPlaceID) {
+                selectedMooringLabelID = ""
+                updateSuggestedJourneyName()
+            }
             .onChange(of: locatorCoordinateKey) { updateSortedPlaces() }
             .onChange(of: action) {
+                if action != "arrived" { selectedMooringLabelID = "" }
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
             }
@@ -182,6 +222,8 @@ struct AddLogEntryView: View {
             ("diesel", "Diesel", "fuelpump"),
             ("temperature", "Temperature", "thermometer.medium"),
             ("bins", "Bins", "trash"),
+            ("bbq-gas-change", "BBQ Gas Change", "flame.fill"),
+            ("gas-tank-change", "Gas Tank Change", "cylinder.fill"),
             ("water-tank-change", "Water Tank Change", "drop.triangle.fill"),
             ("power", "Shore power", "bolt.fill"),
             ("boom", "Boom", "wrench.and.screwdriver"),
@@ -193,9 +235,32 @@ struct AddLogEntryView: View {
         places.first { $0.id == selectedPlaceID }
     }
 
+    private var mooringLabels: [PlaceLabel] {
+        boardLabels
+            .filter {
+                $0.trelloColor?.lowercased() == "orange" ||
+                    $0.color?.lowercased() == "#ff9f1a"
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var canToggleAllPlaces: Bool {
+        sortingOriginCoordinate != nil && sortedPlaces.count > nearbyPlaceLimit
+    }
+
+    private var displayedPlaces: [PlaceSummary] {
+        guard canToggleAllPlaces, !showAllPlaces else { return sortedPlaces }
+        var nearby = Array(sortedPlaces.prefix(nearbyPlaceLimit))
+        if let selectedPlace, !nearby.contains(where: { $0.id == selectedPlace.id }) {
+            nearby.append(selectedPlace)
+        }
+        return nearby
+    }
+
     private var canSave: Bool {
         selectedPlace != nil &&
             logCoordinate != nil &&
+            (action != "arrived" || !selectedMooringLabelID.isEmpty) &&
             (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             && (action != "temperature" || parsedTemperature != nil)
     }
@@ -212,8 +277,15 @@ struct AddLogEntryView: View {
         locator.coordinate.map { "\($0.latitude),\($0.longitude)" }
     }
 
+    private var sortingOriginCoordinate: CLLocationCoordinate2D? {
+        locator.coordinate ??
+            tracker.currentJourney?.position?.coordinate ??
+            tracker.currentStatus?.current?.coordinate ??
+            tracker.currentStatus?.from?.coordinate
+    }
+
     private func sortedByDistance(_ places: [PlaceSummary]) -> [PlaceSummary] {
-        guard let coordinate = locator.coordinate else { return places }
+        guard let coordinate = sortingOriginCoordinate else { return places }
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return places.sorted { left, right in
             distance(from: origin, to: left) < distance(from: origin, to: right)
@@ -234,6 +306,7 @@ struct AddLogEntryView: View {
         guard let token = authentication.token else { return }
         do {
             let planning = try await authentication.api.planning(token: token)
+            boardLabels = planning.boardLabels ?? []
             var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.id, $0) })
             for stop in planning.stops { byID[stop.id] = stop }
             if let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from {
@@ -255,6 +328,16 @@ struct AddLogEntryView: View {
         journeyName = destination.map { "\(place.name) → \($0)" } ?? "Journey from \(place.name)"
     }
 
+    private func enforceLogTextLimit(on text: Binding<String>) {
+        var limited = text.wrappedValue
+        while limited.utf16.count > logTextLimit {
+            limited.removeLast()
+        }
+        if limited != text.wrappedValue {
+            text.wrappedValue = limited
+        }
+    }
+
     @MainActor private func save() async {
         guard let token = authentication.token, let place = selectedPlace, let coordinate = logCoordinate else { return }
         isSaving = true
@@ -270,6 +353,7 @@ struct AddLogEntryView: View {
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
                 journeyName: action == "departed" ? journeyName : nil,
+                mooringLabelID: action == "arrived" ? selectedMooringLabelID : nil,
                 placeName: place.name,
                 customText: details,
                 timestamp: timestamp,

@@ -35,6 +35,7 @@ struct PlaceLabel: Codable, Identifiable {
     let id: String
     let name: String
     let color: String?
+    let trelloColor: String?
 }
 
 struct PlaceSummary: Codable, Identifiable {
@@ -74,6 +75,7 @@ struct CurrentStatusResponse: Codable {
 struct PlanningResponse: Codable {
     let stops: [PlaceSummary]
     let places: [PlaceSummary]
+    let boardLabels: [PlaceLabel]?
 }
 
 struct PlanningRoutePoint: Codable, Sendable {
