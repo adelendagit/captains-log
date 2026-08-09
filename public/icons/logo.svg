@@ -1,15 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
-  <!-- Sail -->
-  <path d="M35 65 L65 65 L50 30 Z" stroke="#0A2540" stroke-width="2" fill="none"/>
-
-  <!-- Location pin (integrated into sail) -->
-  <circle cx="50" cy="30" r="6" stroke="#0A2540" stroke-width="2" fill="none"/>
-  <path d="M50 36 L50 45" stroke="#0A2540" stroke-width="2"/>
-
-  <!-- Hull -->
-  <path d="M25 65 Q50 75 75 65" stroke="#0A2540" stroke-width="2" fill="none"/>
-
-  <!-- Water line -->
-  <path d="M35 72 Q50 78 65 72" stroke="#0A2540" stroke-width="2" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">Skibidi</title>
+  <desc id="desc">Stylised S sailboat mark</desc>
+  <rect width="100" height="100" rx="22" fill="#0A2540"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M55 18 C35 18 27 27 27 38 C27 48 34 54 46 54 H58 C69 54 76 60 76 70 C76 79 68 84 57 84" stroke="#F4F0E7" stroke-width="6"/>
+    <path d="M50 24 V60" stroke="#F4F0E7" stroke-width="5"/>
+    <path d="M53 31 L70 59 H53 Z" fill="#F4F0E7" stroke="none"/>
+    <path d="M49 60 H72 C70 72 62 79 50 80 C39 80 31 74 28 65 H49" stroke="#83C9C9" stroke-width="5"/>
+    <path d="M34 70 C40 66 44 74 50 70 C56 66 62 74 67 70" stroke="#83C9C9" stroke-width="3"/>
+    <path d="M50 9 V13 M50 87 V91 M9 50 H13 M87 50 H91" stroke="#83C9C9" stroke-width="3"/>
+  </g>
 </svg>
-
