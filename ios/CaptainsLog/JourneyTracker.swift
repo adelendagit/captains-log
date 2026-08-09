@@ -42,6 +42,11 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             }
         }
 
+        guard !authentication.isOffline else {
+            errorMessage = nil
+            return
+        }
+
         do {
             async let journey = authentication.api.currentJourney(token: authentication.token)
             async let status = authentication.api.currentStatus(token: authentication.token)
@@ -58,7 +63,9 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
                 stopLocationUpdates()
             }
         } catch {
-            errorMessage = error.localizedDescription
+            if currentJourney == nil && currentStatus == nil {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

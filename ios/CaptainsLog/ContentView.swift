@@ -21,7 +21,7 @@ struct ContentView: View {
             return true
         }
 #endif
-        return authentication.token != nil
+        return authentication.canOpenApp
     }
 }
 
@@ -66,6 +66,7 @@ private struct SignInView: View {
 }
 
 private struct ChartroomView: View {
+    @EnvironmentObject private var authentication: AuthenticationManager
     @State private var logEntryIntent: LogEntryIntent?
 
     var body: some View {
@@ -104,6 +105,30 @@ private struct ChartroomView: View {
         .sheet(item: $logEntryIntent) { intent in
             AddLogEntryView(initialAction: intent.action)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if authentication.isOffline || authentication.pendingMutationCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: authentication.isOffline ? "wifi.slash" : "arrow.trianglehead.2.clockwise.rotate.90")
+                    Text(connectionMessage)
+                        .font(.footnote.weight(.medium))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(Chartroom.ink)
+                .background(Chartroom.signal.opacity(0.92))
+            }
+        }
+    }
+
+    private var connectionMessage: String {
+        let count = authentication.pendingMutationCount
+        if authentication.isOffline {
+            return count == 0
+                ? "Offline — showing saved data."
+                : "Offline — showing saved data; \(count) plan change\(count == 1 ? "" : "s") queued."
+        }
+        return "Syncing \(count) queued plan change\(count == 1 ? "" : "s")…"
     }
 }
 
@@ -411,8 +436,9 @@ private struct CurrentPositionView: View {
     }
 
     @MainActor private func refreshMapData() async {
-        await tracker.refresh()
-        await refreshPlanningStatus()
+        async let trackerRefresh: Void = tracker.refresh()
+        async let planningRefresh: Void = refreshPlanningStatus()
+        _ = await (trackerRefresh, planningRefresh)
     }
 
     @MainActor private func refreshPlanningStatus() async {
@@ -422,7 +448,19 @@ private struct CurrentPositionView: View {
             return
         }
 #endif
-        guard let token = authentication.token else { return }
+        if plannedStops == nil, let cached = await authentication.api.cachedPlanning() {
+            plannedStops = cached.stops
+                .filter { $0.dueComplete != true }
+                .sorted {
+                    switch ($0.due, $1.due) {
+                    case let (left?, right?): left < right
+                    case (_?, nil): true
+                    case (nil, _?): false
+                    case (nil, nil): $0.name < $1.name
+                    }
+                }
+        }
+        guard let token = authentication.token, !authentication.isOffline else { return }
         do {
             let stops = try await authentication.api.planning(token: token).stops
                 .filter { $0.dueComplete != true }

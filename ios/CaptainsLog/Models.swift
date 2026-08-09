@@ -60,6 +60,26 @@ struct PlaceSummary: Codable, Identifiable {
         return CLLocationCoordinate2D(latitude: lat, longitude: lng)
     }
 
+    func withPlanningState(due: Date?, dueComplete: Bool? = nil) -> PlaceSummary {
+        PlaceSummary(
+            id: id,
+            name: name,
+            listName: listName,
+            due: due,
+            dueComplete: dueComplete ?? self.dueComplete,
+            lat: lat,
+            lng: lng,
+            rating: rating,
+            desc: desc,
+            labels: labels,
+            trelloUrl: trelloUrl,
+            navilyUrl: navilyUrl,
+            navilySnapshot: navilySnapshot,
+            visitCount: visitCount,
+            lastVisitedAt: lastVisitedAt
+        )
+    }
+
     var looksLikeAnchorage: Bool {
         let words = ([listName] + (labels ?? []).map(\.name)).compactMap { $0 }.joined(separator: " ")
         return words.range(of: "anchor|anchorage|bay|harbour|harbor|marina|port", options: .regularExpression) != nil

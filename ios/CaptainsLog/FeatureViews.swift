@@ -1134,7 +1134,24 @@ struct PlanView: View {
 
     @MainActor private func load() async {
         focusInitialMapIfNeeded()
-        guard let token = authentication.token else { return }
+        async let cachedPlanning = authentication.api.cachedPlanning()
+        async let cachedStatus = authentication.api.cachedCurrentStatus()
+        let (savedPlanning, savedStatus) = await (cachedPlanning, cachedStatus)
+        if let savedPlanning {
+            data = savedPlanning
+            plannedDueOverrides = [:]
+        }
+        if let savedStatus { currentStatus = savedStatus }
+        focusInitialMapIfNeeded()
+
+        if let savedPlanning {
+            await loadCachedRoute(for: savedPlanning)
+        }
+
+        guard let token = authentication.token, !authentication.isOffline else {
+            errorMessage = nil
+            return
+        }
         do {
             async let planningRequest = authentication.api.planning(token: token)
             async let statusRequest = authentication.api.currentStatus(token: token)
@@ -1146,8 +1163,26 @@ struct PlanView: View {
             focusInitialMapIfNeeded()
             await loadRoute(token: token)
         } catch {
-            errorMessage = error.localizedDescription
+            if data == nil { errorMessage = error.localizedDescription }
         }
+    }
+
+    @MainActor private func loadCachedRoute(for planning: PlanningResponse) async {
+        let previousData = data
+        data = planning
+        let points = routeStops.compactMap { stop -> PlanningRoutePoint? in
+            guard let lat = stop.lat, let lng = stop.lng else { return nil }
+            return PlanningRoutePoint(lat: lat, lng: lng)
+        }
+        data = previousData
+        guard points.count > 1,
+              let cached = await authentication.api.cachedPlanningRoute(points: points)
+        else { return }
+        route = cached
+        let sequence = routeStops
+        legByDestinationID = Dictionary(
+            uniqueKeysWithValues: zip(sequence.dropFirst(), cached.legs).map { ($0.id, $1) }
+        )
     }
 
     @MainActor private func focusInitialMapIfNeeded() {
@@ -1300,10 +1335,17 @@ struct PlanView: View {
             return
         }
         do {
-            try await authentication.api.reorderStops(updates: updates, token: token)
-            await load()
+            let queued = try await authentication.api.reorderStops(
+                updates: updates,
+                token: token,
+                queueImmediately: authentication.isOffline
+            )
+            await authentication.refreshPendingMutationCount()
+            if !queued { await load() }
             planningOrderFailed = false
-            planningOrderMessage = "Plan saved."
+            planningOrderMessage = queued
+                ? "Saved on this iPhone. The plan will sync when connected."
+                : "Plan saved."
         } catch {
             plannedDueOverrides = previousOverrides
             planningOrderFailed = true
@@ -1318,8 +1360,15 @@ struct PlanView: View {
         do {
             let lastDate = plannedStops.compactMap(\.due).max() ?? Date()
             let due = Calendar.current.date(byAdding: .day, value: 1, to: max(lastDate, Date())) ?? Date()
-            try await authentication.api.planStop(cardID: place.id, due: due, token: token)
+            let queued = try await authentication.api.planStop(
+                cardID: place.id,
+                due: due,
+                token: token,
+                queueImmediately: authentication.isOffline
+            )
+            await authentication.refreshPendingMutationCount()
             await load()
+            if queued { planningOrderMessage = "Stop queued and will sync when connected." }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1330,8 +1379,14 @@ struct PlanView: View {
         workingCardID = place.id
         defer { workingCardID = nil }
         do {
-            try await authentication.api.removeStop(cardID: place.id, token: token)
+            let queued = try await authentication.api.removeStop(
+                cardID: place.id,
+                token: token,
+                queueImmediately: authentication.isOffline
+            )
+            await authentication.refreshPendingMutationCount()
             await load()
+            if queued { planningOrderMessage = "Change queued and will sync when connected." }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1509,7 +1564,6 @@ struct LogbookView: View {
     }
 
     @MainActor private func load() async {
-        guard let token = authentication.token else { return }
         errorMessage = nil
 
         async let cachedLogs = authentication.api.cachedLogs()
@@ -1529,6 +1583,7 @@ struct LogbookView: View {
         }
 
         defer { loading = false }
+        guard let token = authentication.token, !authentication.isOffline else { return }
 
         async let freshLogs = authentication.api.logs(token: token)
         async let freshVoyages = authentication.api.voyages(token: token)
@@ -1688,9 +1743,18 @@ struct TodoView: View {
     }
 
     @MainActor private func load() async {
-        guard let token = authentication.token else { return }
         loading = lists.isEmpty
         defer { loading = false }
+        if lists.isEmpty, let cached = await authentication.api.cachedTodoData() {
+            lists = cached.lists
+            if !lists.contains(where: { $0.id == selectedListID }) {
+                selectedListID = lists.first?.id ?? ""
+            }
+        }
+        guard let token = authentication.token, !authentication.isOffline else {
+            errorMessage = nil
+            return
+        }
         do {
             lists = try await authentication.api.todoData(token: token).lists
             if !lists.contains(where: { $0.id == selectedListID }) { selectedListID = lists.first?.id ?? "" }

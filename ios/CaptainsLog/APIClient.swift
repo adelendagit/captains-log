@@ -15,6 +15,7 @@ enum APIClientError: LocalizedError {
 final class APIClient: Sendable {
     let baseURL: URL
     private let responseCache = ResponseCache()
+    private let mutationQueue = OfflineMutationQueue()
 
     init() {
         let configured = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
@@ -25,6 +26,30 @@ final class APIClient: Sendable {
         baseURL.appending(path: "auth/trello").appending(queryItems: [
             URLQueryItem(name: "client", value: "ios")
         ])
+    }
+
+    var hasCachedPlanning: Bool {
+        ResponseCache.hasData(for: "planning")
+    }
+
+    func pendingMutationCount() async -> Int {
+        await mutationQueue.count
+    }
+
+    func flushPendingMutations(token: String) async throws {
+        while let mutation = await mutationQueue.first {
+            do {
+                try await performMutation(
+                    path: mutation.path,
+                    method: mutation.method,
+                    data: mutation.body,
+                    token: token
+                )
+                try await mutationQueue.removeFirst(id: mutation.id)
+            } catch {
+                throw error
+            }
+        }
     }
 
     func exchange(code: String) async throws -> String {
@@ -74,13 +99,19 @@ final class APIClient: Sendable {
     }
 
     func planningRoute(points: [PlanningRoutePoint], token: String) async throws -> PlanningRouteResponse {
-        try await send(
+        let cacheKey = planningRouteCacheKey(points)
+        return try await send(
             path: "api/planning-route",
             method: "POST",
             encodableBody: PlanningRouteBody(points: points),
             token: token,
-            cacheKey: "planning-route-\(points.map { "\($0.lat),\($0.lng)" }.joined(separator: ";"))"
+            cacheKey: cacheKey
         )
+    }
+
+    func cachedPlanningRoute(points: [PlanningRoutePoint]) async -> PlanningRouteResponse? {
+        guard let data = await responseCache.data(for: planningRouteCacheKey(points)) else { return nil }
+        return try? JSONDecoder.captainsLog.decode(PlanningRouteResponse.self, from: data)
     }
 
     func voyages(token: String) async throws -> VoyagesResponse {
@@ -110,31 +141,76 @@ final class APIClient: Sendable {
         try await send(path: "to-do/api/data", token: token, cacheKey: "todo-data")
     }
 
-    func planStop(cardID: String, due: Date, token: String) async throws {
-        let _: SuccessResponse = try await send(
-            path: "api/plan-stop",
-            method: "POST",
-            encodableBody: PlanStopBody(cardId: cardID, due: due),
-            token: token
-        )
+    func cachedTodoData() async -> TodoDataResponse? {
+        guard let data = await responseCache.data(for: "todo-data") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(TodoDataResponse.self, from: data)
     }
 
-    func removeStop(cardID: String, token: String) async throws {
-        let _: SuccessResponse = try await send(
+    @discardableResult
+    func planStop(cardID: String, due: Date, token: String, queueImmediately: Bool = false) async throws -> Bool {
+        let queued = try await performOrQueue(
+            path: "api/plan-stop",
+            method: "POST",
+            body: PlanStopBody(cardId: cardID, due: due),
+            token: token,
+            queueImmediately: queueImmediately
+        )
+        await updateCachedPlanning { planning in
+            guard let place = (planning.stops + planning.places).first(where: { $0.id == cardID }) else {
+                return planning
+            }
+            let updated = place.withPlanningState(due: due, dueComplete: false)
+            return PlanningResponse(
+                stops: planning.stops.filter { $0.id != cardID } + [updated],
+                places: planning.places.map { $0.id == cardID ? updated : $0 },
+                boardLabels: planning.boardLabels,
+                placeLists: planning.placeLists
+            )
+        }
+        return queued
+    }
+
+    @discardableResult
+    func removeStop(cardID: String, token: String, queueImmediately: Bool = false) async throws -> Bool {
+        let queued = try await performOrQueue(
             path: "api/remove-stop",
             method: "POST",
             body: ["cardId": cardID],
-            token: token
+            token: token,
+            queueImmediately: queueImmediately
         )
+        await updateCachedPlanning { planning in
+            PlanningResponse(
+                stops: planning.stops.filter { $0.id != cardID },
+                places: planning.places,
+                boardLabels: planning.boardLabels,
+                placeLists: planning.placeLists
+            )
+        }
+        return queued
     }
 
-    func reorderStops(updates: [PlanningStopUpdate], token: String) async throws {
-        let _: SuccessResponse = try await send(
+    @discardableResult
+    func reorderStops(updates: [PlanningStopUpdate], token: String, queueImmediately: Bool = false) async throws -> Bool {
+        let queued = try await performOrQueue(
             path: "api/reorder-stops",
             method: "POST",
-            encodableBody: ReorderStopsBody(updates: updates),
-            token: token
+            body: ReorderStopsBody(updates: updates),
+            token: token,
+            queueImmediately: queueImmediately
         )
+        let dueByID = Dictionary(uniqueKeysWithValues: updates.map { ($0.cardId, $0.due) })
+        await updateCachedPlanning { planning in
+            PlanningResponse(
+                stops: planning.stops.map { stop in
+                    dueByID[stop.id].map { stop.withPlanningState(due: $0) } ?? stop
+                },
+                places: planning.places,
+                boardLabels: planning.boardLabels,
+                placeLists: planning.placeLists
+            )
+        }
+        return queued
     }
 
     func createPlace(
@@ -433,6 +509,73 @@ final class APIClient: Sendable {
         return decoded
     }
 
+    private func performOrQueue<Body: Encodable>(
+        path: String,
+        method: String,
+        body: Body,
+        token: String,
+        queueImmediately: Bool
+    ) async throws -> Bool {
+        let data = try JSONEncoder.captainsLog.encode(body)
+        if queueImmediately {
+            try await mutationQueue.append(path: path, method: method, body: data)
+            return true
+        }
+        do {
+            try await performMutation(path: path, method: method, data: data, token: token)
+            return false
+        } catch where Self.isConnectivityError(error) {
+            try await mutationQueue.append(path: path, method: method, body: data)
+            return true
+        }
+    }
+
+    private func planningRouteCacheKey(_ points: [PlanningRoutePoint]) -> String {
+        "planning-route-\(points.map { "\($0.lat),\($0.lng)" }.joined(separator: ";"))"
+    }
+
+    private func performMutation(path: String, method: String, data: Data, token: String) async throws {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = method
+        request.httpBody = data
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = (try? JSONDecoder.captainsLog.decode(APIErrorResponse.self, from: responseData))?.error
+            throw APIClientError.server(message ?? "Request failed (\(httpResponse.statusCode)).")
+        }
+    }
+
+    private func updateCachedPlanning(
+        _ update: @Sendable (PlanningResponse) -> PlanningResponse
+    ) async {
+        guard
+            let data = await responseCache.data(for: "planning"),
+            let planning = try? JSONDecoder.captainsLog.decode(PlanningResponse.self, from: data),
+            let updatedData = try? JSONEncoder.captainsLog.encode(update(planning))
+        else { return }
+        await responseCache.store(updatedData, for: "planning")
+    }
+
+    private static func isConnectivityError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        return [
+            .notConnectedToInternet,
+            .networkConnectionLost,
+            .cannotConnectToHost,
+            .cannotFindHost,
+            .dnsLookupFailed,
+            .timedOut,
+            .internationalRoamingOff,
+            .dataNotAllowed
+        ].contains(urlError.code)
+    }
+
     private static func multipartImageBody(
         _ imageData: Data,
         filename: String,
@@ -453,30 +596,93 @@ final class APIClient: Sendable {
 
 private actor ResponseCache {
     private let directory: URL
+    private let legacyDirectory: URL
 
     init() {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        directory = caches.appending(path: "CaptainsLogResponses", directoryHint: .isDirectory)
+        directory = Self.directory
+        legacyDirectory = Self.legacyDirectory
     }
 
     func data(for key: String) -> Data? {
-        try? Data(contentsOf: fileURL(for: key))
+        if let data = try? Data(contentsOf: Self.fileURL(for: key, in: directory)) { return data }
+        return try? Data(contentsOf: Self.fileURL(for: key, in: legacyDirectory))
     }
 
     func store(_ data: Data, for key: String) {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(to: fileURL(for: key), options: .atomic)
+            try data.write(to: Self.fileURL(for: key, in: directory), options: .atomic)
         } catch {
             // A cache write must never make an otherwise successful request fail.
         }
     }
 
-    private func fileURL(for key: String) -> URL {
+    nonisolated static func hasData(for key: String) -> Bool {
+        FileManager.default.fileExists(atPath: fileURL(for: key, in: directory).path) ||
+            FileManager.default.fileExists(atPath: fileURL(for: key, in: legacyDirectory).path)
+    }
+
+    private nonisolated static var directory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "CaptainsLogResponses", directoryHint: .isDirectory)
+    }
+
+    private nonisolated static var legacyDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "CaptainsLogResponses", directoryHint: .isDirectory)
+    }
+
+    private nonisolated static func fileURL(for key: String, in directory: URL) -> URL {
         let encoded = Data(key.utf8).base64EncodedString()
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "+", with: "-")
         return directory.appending(path: encoded).appendingPathExtension("json")
+    }
+}
+
+private struct OfflineMutation: Codable, Sendable {
+    let id: UUID
+    let path: String
+    let method: String
+    let body: Data
+    let createdAt: Date
+}
+
+private actor OfflineMutationQueue {
+    private var mutations: [OfflineMutation]
+    private let fileURL: URL
+
+    init() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        fileURL = directory.appending(path: "CaptainsLogPendingMutations.json")
+        if let data = try? Data(contentsOf: fileURL),
+           let saved = try? JSONDecoder.captainsLog.decode([OfflineMutation].self, from: data) {
+            mutations = saved
+        } else {
+            mutations = []
+        }
+    }
+
+    var count: Int { mutations.count }
+    var first: OfflineMutation? { mutations.first }
+
+    func append(path: String, method: String, body: Data) throws {
+        var updated = mutations
+        updated.append(OfflineMutation(id: UUID(), path: path, method: method, body: body, createdAt: Date()))
+        try persist(updated)
+        mutations = updated
+    }
+
+    func removeFirst(id: UUID) throws {
+        guard mutations.first?.id == id else { return }
+        let updated = Array(mutations.dropFirst())
+        try persist(updated)
+        mutations = updated
+    }
+
+    private func persist(_ mutations: [OfflineMutation]) throws {
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder.captainsLog.encode(mutations).write(to: fileURL, options: .atomic)
     }
 }
 
