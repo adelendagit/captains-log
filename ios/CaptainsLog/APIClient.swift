@@ -128,6 +128,15 @@ final class APIClient: Sendable {
         )
     }
 
+    func reorderStops(updates: [PlanningStopUpdate], token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "api/reorder-stops",
+            method: "POST",
+            encodableBody: ReorderStopsBody(updates: updates),
+            token: token
+        )
+    }
+
     func createPlace(
         name: String,
         description: String,
@@ -500,6 +509,10 @@ private struct CurrentStopDescriptionResponse: Codable {
 
 private struct PlanningRouteBody: Codable, Sendable {
     let points: [PlanningRoutePoint]
+}
+
+private struct ReorderStopsBody: Codable, Sendable {
+    let updates: [PlanningStopUpdate]
 }
 
 private struct TodoCompletionBody: Codable {

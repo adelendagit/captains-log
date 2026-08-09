@@ -151,6 +151,15 @@ The app and Share Extension share the mobile credential through the Keychain.
 Physical-device signing therefore requires the
 `co.uk.achilleas.CaptainsLog.shared` Keychain Sharing group on both targets.
 
+When a Navily page is shared from Safari, the extension also captures the page
+title, coordinates, summary, characteristics, seabed, and facilities that are
+visible in the browser. The user can review that import before creating the
+card. Existing places with a Navily link expose **Check Navily** in the Planning
+screen. It opens Navily in an embedded browser, previews the same structured
+fields, and saves the approved result as a versioned Trello comment through
+`POST /api/places/:cardId/navily-snapshots`. Captain's Log shows the most recent
+snapshot returned by `/api/data`; it does not scrape Navily from the server.
+
 ## Public To-do Page
 
 `/to-do` lists open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Cards can be reordered, marked done, and restored without being archived. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can update cards in that list. Authenticated users can also add items and switch between the board's open lists, in Trello order, up to and including `Today`.

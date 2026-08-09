@@ -133,6 +133,11 @@ struct PlanningResponse: Codable {
     let placeLists: [PlaceListOption]?
 }
 
+struct PlanningStopUpdate: Codable, Sendable {
+    let cardId: String
+    let due: Date
+}
+
 struct PlaceListOption: Codable, Identifiable {
     let id: String
     let name: String

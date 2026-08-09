@@ -512,6 +512,47 @@ private final class LogLocationProvider: NSObject, ObservableObject, @preconcurr
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }
 
+private enum PlanningPeriod: Int, CaseIterable, Identifiable {
+    case morning
+    case lunch
+    case lateAfternoon
+    case evening
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .morning: "Morning"
+        case .lunch: "Lunch time"
+        case .lateAfternoon: "Late afternoon"
+        case .evening: "Evening"
+        }
+    }
+
+    var hour: Int {
+        switch self {
+        case .morning: 8
+        case .lunch: 12
+        case .lateAfternoon: 16
+        case .evening: 20
+        }
+    }
+
+    static func period(for date: Date, calendar: Calendar = .current) -> PlanningPeriod {
+        switch calendar.component(.hour, from: date) {
+        case ..<11: .morning
+        case 11..<15: .lunch
+        case 15..<19: .lateAfternoon
+        default: .evening
+        }
+    }
+}
+
+private struct PlanningDay: Identifiable {
+    let date: Date
+    var id: Date { date }
+}
+
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @EnvironmentObject private var tracker: JourneyTracker
@@ -528,7 +569,12 @@ struct PlanView: View {
     @State private var searchText = ""
     @State private var workingCardID: String?
     @State private var selectedMapPlace: PlaceSummary?
+    @State private var checkingNavilyPlace: PlaceSummary?
     @State private var isAddingPlace = false
+    @State private var plannedDueOverrides: [String: Date] = [:]
+    @State private var planningOrderMessage: String?
+    @State private var planningOrderFailed = false
+    @State private var isSavingPlanningOrder = false
 
     private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -553,9 +599,41 @@ struct PlanView: View {
                         ProgressView("Loading planned stops…")
                     } else if plannedStops.isEmpty {
                         ContentUnavailableView("No stops planned", systemImage: "map", description: Text("Choose a place below to add the next stop."))
+                    } else {
+                        Label("Drag stops between days and rough times. Their order is the plan; times are approximate.", systemImage: "line.3.horizontal")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                    ForEach(plannedStops) { stop in
-                        placeRow(stop, isPlanned: true)
+                    if let planningOrderMessage {
+                        Text(planningOrderMessage)
+                            .font(.footnote)
+                            .foregroundStyle(planningOrderFailed ? .red : .secondary)
+                    }
+                }
+                ForEach(planningDays) { day in
+                    Section {
+                        ForEach(PlanningPeriod.allCases) { period in
+                            planningPeriodHeader(day: day.date, period: period)
+                            ForEach(plannedStops(on: day.date, in: period)) { stop in
+                                placeRow(stop, isPlanned: true)
+                                    .draggable(stop.id) {
+                                        Label(stop.name, systemImage: "mappin.and.ellipse")
+                                            .padding(10)
+                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    .dropDestination(for: String.self) { cardIDs, _ in
+                                        guard let cardID = cardIDs.first else { return false }
+                                        return movePlannedStop(
+                                            cardID: cardID,
+                                            to: day.date,
+                                            period: period,
+                                            before: stop.id
+                                        )
+                                    }
+                            }
+                        }
+                    } header: {
+                        Text(planningDayLabel(day.date))
                     }
                 }
                 Section("Places in map") {
@@ -611,13 +689,75 @@ struct PlanView: View {
         (data?.stops ?? [])
             .filter { $0.dueComplete != true }
             .sorted {
-                switch ($0.due, $1.due) {
+                switch (effectiveDue(for: $0), effectiveDue(for: $1)) {
                 case let (left?, right?): left < right
                 case (_?, nil): true
                 case (nil, _?): false
                 case (nil, nil): $0.name < $1.name
                 }
             }
+    }
+
+    private var planningDays: [PlanningDay] {
+        let calendar = Calendar.current
+        let dates = plannedStops.compactMap { effectiveDue(for: $0) }
+        guard let firstDue = dates.min(), let lastDue = dates.max() else { return [] }
+        var day = min(calendar.startOfDay(for: Date()), calendar.startOfDay(for: firstDue))
+        guard let finalDay = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: calendar.startOfDay(for: lastDue)
+        ) else { return [] }
+        var result: [PlanningDay] = []
+        while day <= finalDay {
+            result.append(PlanningDay(date: day))
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = nextDay
+        }
+        return result
+    }
+
+    private func effectiveDue(for stop: PlaceSummary) -> Date? {
+        plannedDueOverrides[stop.id] ?? stop.due
+    }
+
+    private func plannedStops(on day: Date, in period: PlanningPeriod) -> [PlaceSummary] {
+        let calendar = Calendar.current
+        return plannedStops.filter { stop in
+            guard let due = effectiveDue(for: stop) else { return false }
+            return calendar.isDate(due, inSameDayAs: day) &&
+                PlanningPeriod.period(for: due, calendar: calendar) == period
+        }
+    }
+
+    private func planningDayLabel(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInTomorrow(day) { return "Tomorrow" }
+        return day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    private func planningPeriodHeader(day: Date, period: PlanningPeriod) -> some View {
+        HStack {
+            Text(period.label.uppercased())
+                .font(.caption.bold())
+                .tracking(0.8)
+            Spacer()
+            Text("Drop here")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .foregroundStyle(Chartroom.sea)
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { cardIDs, _ in
+            guard let cardID = cardIDs.first else { return false }
+            return movePlannedStop(
+                cardID: cardID,
+                to: day,
+                period: period,
+                before: nil
+            )
+        }
     }
 
     private var routeStops: [PlaceSummary] {
@@ -819,12 +959,28 @@ struct PlanView: View {
                         if let due = place.due {
                             Label("Planned for \(due.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar.badge.clock")
                         }
+                        if let snapshot = place.navilySnapshot {
+                            Label(
+                                "Navily checked \(snapshot.checkedAt.formatted(date: .abbreviated, time: .omitted))",
+                                systemImage: "checkmark.icloud"
+                            )
+                        }
                     }
                     .foregroundStyle(Chartroom.ink)
 
                     HStack(spacing: 16) {
                         if let trelloUrl = place.trelloUrl { Link("Trello", destination: trelloUrl) }
                         if let navilyUrl = place.navilyUrl { Link("Navily", destination: navilyUrl) }
+                    }
+
+                    if place.navilyUrl != nil {
+                        Button {
+                            checkingNavilyPlace = place
+                        } label: {
+                            Label("Check Navily", systemImage: "arrow.trianglehead.2.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
                     }
 
                     if plannedStops.contains(where: { $0.id == place.id }) {
@@ -857,6 +1013,20 @@ struct PlanView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { selectedMapPlace = nil }
+                }
+            }
+            .sheet(item: $checkingNavilyPlace) { checkedPlace in
+                if let token = authentication.token {
+                    NavilyCheckView(
+                        place: checkedPlace,
+                        api: authentication.api,
+                        token: token,
+                        onSaved: { _ in
+                            checkingNavilyPlace = nil
+                            selectedMapPlace = nil
+                            Task { await load() }
+                        }
+                    )
                 }
             }
         }
@@ -929,7 +1099,7 @@ struct PlanView: View {
                 Text(place.name).font(.headline)
                 HStack(spacing: 6) {
                     if let listName = place.listName { Text(listName) }
-                    if let due = place.due { Text("· \(due.formatted(date: .abbreviated, time: .omitted))") }
+                    if let due = effectiveDue(for: place) { Text("· \(due.formatted(date: .abbreviated, time: .omitted))") }
                     if let rating = place.rating { Text("· \(rating)★") }
                 }
                 .font(.caption)
@@ -970,6 +1140,7 @@ struct PlanView: View {
             async let statusRequest = authentication.api.currentStatus(token: token)
             let (planning, status) = try await (planningRequest, statusRequest)
             data = planning
+            plannedDueOverrides = [:]
             currentStatus = status
             errorMessage = nil
             focusInitialMapIfNeeded()
@@ -1029,6 +1200,115 @@ struct PlanView: View {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         return hours > 0 ? "\(hours)h \(remainingMinutes)m" : "\(remainingMinutes)m"
+    }
+
+    @MainActor private func movePlannedStop(
+        cardID: String,
+        to day: Date,
+        period: PlanningPeriod,
+        before destinationCardID: String?
+    ) -> Bool {
+        guard !isSavingPlanningOrder,
+              let movedStop = plannedStops.first(where: { $0.id == cardID }),
+              destinationCardID != cardID,
+              let originalDue = effectiveDue(for: movedStop)
+        else { return false }
+
+        let calendar = Calendar.current
+        let sourceDay = calendar.startOfDay(for: originalDue)
+        let sourcePeriod = PlanningPeriod.period(for: originalDue, calendar: calendar)
+        let targetDay = calendar.startOfDay(for: day)
+        let sameSlot = calendar.isDate(sourceDay, inSameDayAs: targetDay) &&
+            sourcePeriod == period
+
+        func stops(in slotDay: Date, period slotPeriod: PlanningPeriod) -> [PlaceSummary] {
+            plannedStops.filter { stop in
+                guard stop.id != cardID, let due = effectiveDue(for: stop) else { return false }
+                return calendar.isDate(due, inSameDayAs: slotDay) &&
+                    PlanningPeriod.period(for: due, calendar: calendar) == slotPeriod
+            }
+        }
+
+        var targetStops = stops(in: targetDay, period: period)
+        if let destinationCardID,
+           let destinationIndex = targetStops.firstIndex(where: { $0.id == destinationCardID }) {
+            targetStops.insert(movedStop, at: destinationIndex)
+        } else {
+            targetStops.append(movedStop)
+        }
+
+        var slotStops: [(Date, PlanningPeriod, [PlaceSummary])] = [
+            (targetDay, period, targetStops)
+        ]
+        if !sameSlot {
+            slotStops.append((sourceDay, sourcePeriod, stops(in: sourceDay, period: sourcePeriod)))
+        }
+
+        var updates: [PlanningStopUpdate] = []
+        for (slotDay, slotPeriod, stops) in slotStops {
+            for (index, stop) in stops.enumerated() {
+                guard let due = planningDue(
+                    on: slotDay,
+                    period: slotPeriod,
+                    position: index,
+                    calendar: calendar
+                ) else { continue }
+                if effectiveDue(for: stop) != due {
+                    updates.append(PlanningStopUpdate(cardId: stop.id, due: due))
+                }
+            }
+        }
+        guard !updates.isEmpty else {
+            planningOrderFailed = false
+            planningOrderMessage = "Plan unchanged."
+            return false
+        }
+
+        let previousOverrides = plannedDueOverrides
+        for update in updates { plannedDueOverrides[update.cardId] = update.due }
+        planningOrderFailed = false
+        planningOrderMessage = "Saving plan…"
+        isSavingPlanningOrder = true
+        Task { await savePlanningOrder(updates, restoring: previousOverrides) }
+        return true
+    }
+
+    private func planningDue(
+        on day: Date,
+        period: PlanningPeriod,
+        position: Int,
+        calendar: Calendar
+    ) -> Date? {
+        guard let base = calendar.date(
+            bySettingHour: period.hour,
+            minute: 0,
+            second: 0,
+            of: day
+        ) else { return nil }
+        return calendar.date(byAdding: .minute, value: position * 5, to: base)
+    }
+
+    @MainActor private func savePlanningOrder(
+        _ updates: [PlanningStopUpdate],
+        restoring previousOverrides: [String: Date]
+    ) async {
+        defer { isSavingPlanningOrder = false }
+        guard let token = authentication.token else {
+            plannedDueOverrides = previousOverrides
+            planningOrderFailed = true
+            planningOrderMessage = "Sign in again to save the plan."
+            return
+        }
+        do {
+            try await authentication.api.reorderStops(updates: updates, token: token)
+            await load()
+            planningOrderFailed = false
+            planningOrderMessage = "Plan saved."
+        } catch {
+            plannedDueOverrides = previousOverrides
+            planningOrderFailed = true
+            planningOrderMessage = "The plan couldn’t be saved. Please try again."
+        }
     }
 
     @MainActor private func plan(_ place: PlaceSummary) async {
