@@ -118,11 +118,6 @@ app.use('/to-do', todo);
 app.use('/api/journeys', journeys);
 app.use('/', captainsLog);
 
-// **AFTER** the static middleware, **before** your 404 handler
-app.get('/', (req, res) => {
-  res.redirect('/captains-log');
-});
-
 
 // 404 handler
 app.use((req,res) => res.status(404).send('Not found'));

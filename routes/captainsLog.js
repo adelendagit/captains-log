@@ -1528,10 +1528,19 @@ router.post("/api/log-notification", async (req, res, next) => {
   }
 });
 
-router.get("/captains-log", (req, res) => {
+router.get("/", (req, res) => {
   // Keep the initial HTML independent of Trello so the page shell can render
   // immediately. Chart, logbook, and voyage data are filled in asynchronously.
-  res.render("captains-log", { user: req.user });
+  res.render("captains-log", { user: req.user, activePage: "planning" });
+});
+
+router.get("/logbook", (req, res) => {
+  res.render("captains-log", { user: req.user, activePage: "log" });
+});
+
+// Preserve old bookmarks while making the chart available at the site root.
+router.get("/captains-log", (req, res) => {
+  res.redirect(301, "/");
 });
 
 router.post("/api/places", async (req, res, next) => {

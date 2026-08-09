@@ -24,14 +24,14 @@
 
 <header class="site-header">
   <div class="site-title">
-    <a href="https://where.is.achilleas.co.uk" class="site-title-link">
+    <a href="/" class="site-title-link">
       <img src="/icons/logo.svg" alt="" class="site-logo">
       <span><small>Where is</small>Skibidi</span>
     </a>
   </div>
   <nav class="tab-nav" aria-label="Primary navigation">
-    <button data-tab="planning" class="active">Chart</button>
-    <button data-tab="log">Logbook</button>
+    <a href="/" data-tab="planning" <% if (activePage === "planning") { %>aria-current="page"<% } %>>Chart</a>
+    <a href="/logbook" data-tab="log" <% if (activePage === "log") { %>aria-current="page"<% } %>>Logbook</a>
     <% if (user) { %>
       <a href="/to-do" class="tab-nav-link">To Do</a>
     <% } %>
@@ -54,7 +54,7 @@
   </div>
 </header>
 
-<section id="planning" class="tab-content">
+<section id="planning" class="tab-content<%= activePage === "planning" ? "" : " hidden" %>">
   <section id="live-journey" class="live-journey" aria-live="polite">
     <div class="live-journey-copy">
       <p id="live-journey-eyebrow" class="chartroom-eyebrow">Current position</p>
@@ -129,7 +129,7 @@
   </div>
 </section>
 
-<section id="log" class="tab-content hidden">
+<section id="log" class="tab-content<%= activePage === "log" ? "" : " hidden" %>">
   <div class="log-layout">
     <div class="log-left">
       <details id="voyage-filter" class="voyage-filter-panel">

@@ -3061,11 +3061,6 @@ function setupLogTab() {
   const btn = document.querySelector(tabSelector);
   if (!btn) return;
 
-  btn.addEventListener("click", () => {
-    preloadAllLogs();
-    renderFilteredLogs(stops);
-  });
-
   const showAll = document.getElementById("voyage-filter-all");
   if (showAll) {
     showAll.addEventListener("change", () => {
@@ -3600,64 +3595,6 @@ function setupLogWizard() {
   });
 }
 
-function initTabs() {
-  document.querySelectorAll(".tab-nav button").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document
-        .querySelectorAll(".tab-nav button")
-        .forEach((b) => b.classList.remove("active"));
-      document
-        .querySelectorAll(".tab-content")
-        .forEach((s) => s.classList.add("hidden"));
-      btn.classList.add("active");
-      document.getElementById(btn.dataset.tab).classList.remove("hidden");
-
-      // Hide planned map when not on planning tab
-      const mapDiv = document.getElementById("map");
-      if (btn.dataset.tab !== "planning" && mapDiv) {
-        mapDiv.style.display = "none";
-        if (leafletMap) {
-          leafletMap.remove();
-          leafletMap = null;
-        }
-        if (underwayInterval) {
-          clearInterval(underwayInterval);
-          underwayInterval = null;
-        }
-        underwayMarker = null;
-      } else if (btn.dataset.tab === "planning" && mapDiv) {
-        mapDiv.style.display = "";
-        // Re-initialize the map if needed
-        if (!leafletMap) {
-          // You must call the same function you use in init() to render the map
-          // For example:
-          const speed =
-            parseFloat(document.getElementById("speed-input").value) || 0;
-          const plannedOnlyToggle = document.getElementById(
-            "planned-only-toggle",
-          );
-          // You need to have stops and places in scope; if not, store them globally in init()
-          renderMapWithToggle();
-        }
-      }
-
-      if (btn.dataset.tab === "log") {
-        // Render the map now that the container is visible
-        setTimeout(() => {
-          // Use the logs that were last filtered
-          if (window._lastLogMapData) {
-            renderLogMap(
-              window._lastLogMapData,
-              stops,
-              window._lastLogMapRange,
-            );
-          }
-        }, 0);
-      }
-    });
-  });
-}
-
 async function loadVoyages() {
   try {
     const response = await fetch("/api/voyages");
@@ -3720,7 +3657,6 @@ async function init() {
   setupLogTab();
   setupLogWizard();
   setupCurrentStopDescriptionEditor();
-  initTabs();
 
   // Start independent requests together. None of these need to hold up the
   // cached chart or the navigation becoming interactive.

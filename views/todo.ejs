@@ -14,11 +14,15 @@
     <div class="page">
       <header class="site-header">
         <div class="site-title">
-          <a href="https://where.is.achilleas.co.uk" class="site-title-link">Where is ...</a>
+          <a href="/" class="site-title-link">Where is ...</a>
         </div>
+        <nav class="tab-nav" aria-label="Primary navigation">
+          <a href="/">Chart</a>
+          <a href="/logbook">Logbook</a>
+          <a href="/to-do" aria-current="page">To Do</a>
+        </nav>
         <div class="site-user">
           <% if (user) { %>
-            <a href="/to-do" class="user-btn header-todo-link" aria-current="page">To Do</a>
             <div class="user-menu">
               <button class="user-btn logged-in" id="user-menu-btn" type="button">
                 <img src="<%= user._json.avatarUrl %>/170.png" alt="avatar" class="user-avatar">
