@@ -7,6 +7,7 @@ let lastLoadedLogs = null;
 
 let allLogsCache = null; // Store all logs here
 let voyagesCache = [];
+let journeyHistoryCache = [];
 let selectedVoyageIds = new Set();
 let voyageSelectionInitialized = false;
 
@@ -474,7 +475,6 @@ async function loadHistoricalSeaRoute(markers) {
 }
 
 function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
-  if (markers.length < 2) return;
   const key = historicalRouteKey(markers);
   let version;
   if (routeContext === "planning") {
@@ -485,6 +485,7 @@ function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
     logbookHistoricalRouteKey = key;
     version = ++logbookHistoricalRouteVersion;
   }
+  if (markers.length < 2) return;
 
   loadHistoricalSeaRoute(markers).then((route) => {
     const isCurrent =
@@ -499,6 +500,67 @@ function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
     if (!isCurrent || route.segments.length === 0) return;
     L.polyline(route.segments, pathOptions).addTo(target);
   });
+}
+
+function journeyHistoryInRange(journey, range) {
+  const startedAt = new Date(journey.startedAt);
+  const endedAt = new Date(journey.endedAt || journey.startedAt);
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+    return false;
+  }
+  const rangeStart = range?.start ? new Date(range.start) : null;
+  const rangeEnd = range?.end ? new Date(range.end) : null;
+  return (
+    (!rangeStart || endedAt >= rangeStart) &&
+    (!rangeEnd || startedAt <= rangeEnd)
+  );
+}
+
+function renderHistoricalRoutes(
+  markers,
+  target,
+  pathOptions,
+  routeContext,
+  range = null,
+) {
+  const journeys = journeyHistoryCache.filter(
+    (journey) =>
+      journeyHistoryInRange(journey, range) &&
+      Array.isArray(journey.track) &&
+      journey.track.length > 1,
+  );
+
+  const recordedCoordinates = [];
+  journeys.forEach((journey) => {
+    const coordinates = journey.track
+      .map((point) => [point.lat, point.lng])
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+    if (coordinates.length < 2) return;
+    L.polyline(coordinates, {
+      ...pathOptions,
+      dashArray: null,
+      opacity: Math.max(pathOptions.opacity || 0, 0.85),
+    })
+      .addTo(target)
+      .bindTooltip(journey.name);
+    recordedCoordinates.push(...coordinates);
+  });
+
+  const isCoveredByRecordedJourney = (marker) => {
+    const timestamp = new Date(marker.date);
+    if (Number.isNaN(timestamp.getTime())) return false;
+    return journeys.some((journey) => {
+      const startedAt = new Date(journey.startedAt);
+      const endedAt = new Date(journey.endedAt || journey.startedAt);
+      return timestamp >= startedAt && timestamp <= endedAt;
+    });
+  };
+  const fallbackMarkers =
+    journeys.length > 0
+      ? markers.filter((marker) => !isCoveredByRecordedJourney(marker))
+      : markers;
+  renderHistoricalSeaRoute(fallbackMarkers, target, pathOptions, routeContext);
+  return recordedCoordinates;
 }
 
 function planningStartStop(plannedStops) {
@@ -1242,6 +1304,7 @@ function writeLogbookSnapshot() {
         logs: allLogsCache || [],
         mostRecentTripRange,
         voyages: voyagesCache,
+        journeys: journeyHistoryCache,
       }),
     );
   } catch (_error) {
@@ -1254,6 +1317,10 @@ function writeLogbookSnapshot() {
           logs: (allLogsCache || []).slice(0, 500),
           mostRecentTripRange,
           voyages: voyagesCache,
+          journeys: journeyHistoryCache.slice(-20).map((journey) => ({
+            ...journey,
+            track: journey.track.slice(-500),
+          })),
         }),
       );
     } catch (_fallbackError) {
@@ -1542,7 +1609,7 @@ function initMap(stops, places, logs = null) {
       }))
       .filter((m) => typeof m.lat === "number" && typeof m.lng === "number");
 
-    renderHistoricalSeaRoute(
+    renderHistoricalRoutes(
       logMarkers,
       logLayerGroup,
       {
@@ -1552,6 +1619,7 @@ function initMap(stops, places, logs = null) {
         dashArray: "4 6",
       },
       "planning",
+      mostRecentTripRange,
     );
     logMarkers.forEach((m) => {
       const color = getMarkerColor(m.rating);
@@ -2673,7 +2741,7 @@ function renderBrokenItems(logs = []) {
 }
 
 // Render historical map (only arrived unique places). Uses window.histMap to cleanup.
-function renderLogMap(logs = [], stops = []) {
+function renderLogMap(logs = [], stops = [], range = null) {
   console.log(
     "Rendering historical map with",
     logs.length,
@@ -2772,12 +2840,14 @@ function renderLogMap(logs = [], stops = []) {
   });
 
   const historicalMap = window.histMap;
-  renderHistoricalSeaRoute(
+  const recordedCoordinates = renderHistoricalRoutes(
     markers,
     historicalMap,
     { color: "#555", weight: 2 },
     "logbook",
+    range,
   );
+  bounds.push(...recordedCoordinates);
 
   // if (plannedCoords.length > 1) {
   //   L.polyline(plannedCoords, { color: "#999", weight: 1, dashArray: "4 4" }).addTo(window.histMap);
@@ -2943,10 +3013,10 @@ function renderFilteredLogs(stops = []) {
     return;
   }
   let logsToShow = allLogsCache;
+  const selectedVoyages = voyagesCache.filter((voyage) =>
+    selectedVoyageIds.has(voyage.id),
+  );
   if (selectedVoyageIds.size > 0) {
-    const selectedVoyages = voyagesCache.filter((voyage) =>
-      selectedVoyageIds.has(voyage.id),
-    );
     logsToShow = allLogsCache.filter((log) =>
       selectedVoyages.some((voyage) =>
         isDateInRange(log.timestamp, voyage.start, voyage.end),
@@ -2958,10 +3028,31 @@ function renderFilteredLogs(stops = []) {
   renderDieselInfo(logsToShow);
   renderBrokenItems(logsToShow);
   window._lastLogMapData = logsToShow;
+  window._lastLogMapRange =
+    selectedVoyages.length > 0
+      ? {
+          start: selectedVoyages.reduce(
+            (earliest, voyage) =>
+              !earliest || (voyage.start && voyage.start < earliest)
+                ? voyage.start
+                : earliest,
+            null,
+          ),
+          end: selectedVoyages.some((voyage) => !voyage.end)
+            ? null
+            : selectedVoyages.reduce(
+                (latest, voyage) =>
+                  !latest || (voyage.end && voyage.end > latest)
+                    ? voyage.end
+                    : latest,
+                null,
+              ),
+        }
+      : null;
 
   // --- ADD THIS: update the map if the log tab is visible ---
   if (isLogTabActive()) {
-    renderLogMap(logsToShow, stops);
+    renderLogMap(logsToShow, stops, window._lastLogMapRange);
   }
 }
 
@@ -3555,7 +3646,11 @@ function initTabs() {
         setTimeout(() => {
           // Use the logs that were last filtered
           if (window._lastLogMapData) {
-            renderLogMap(window._lastLogMapData, stops);
+            renderLogMap(
+              window._lastLogMapData,
+              stops,
+              window._lastLogMapRange,
+            );
           }
         }, 0);
       }
@@ -3577,6 +3672,21 @@ async function loadVoyages() {
     console.warn(error.message);
     initializeVoyageSelection(true);
     renderVoyageFilter();
+  }
+}
+
+async function loadJourneyHistory() {
+  try {
+    const response = await fetch("/api/journeys/history");
+    if (!response.ok)
+      throw new Error("Unable to load recorded journey history");
+    const { journeys = [] } = await response.json();
+    journeyHistoryCache = journeys;
+    if (allLogsCache !== null) writeLogbookSnapshot();
+    renderMapWithToggle();
+    if (isLogTabActive()) renderFilteredLogs(stops);
+  } catch (error) {
+    console.warn(error.message);
   }
 }
 
@@ -3602,6 +3712,9 @@ async function init() {
     voyagesCache = Array.isArray(logbookSnapshot.voyages)
       ? logbookSnapshot.voyages
       : [];
+    journeyHistoryCache = Array.isArray(logbookSnapshot.journeys)
+      ? logbookSnapshot.journeys
+      : [];
   }
 
   setupLogTab();
@@ -3615,6 +3728,7 @@ async function init() {
   refreshCurrentJourney();
   refreshCurrentStatus();
   loadVoyages();
+  loadJourneyHistory();
 
   try {
     const data = await dataPromise;

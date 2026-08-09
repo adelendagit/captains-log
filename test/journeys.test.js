@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildJourneyHistory,
   buildPositionComment,
   parseJourneyDescription,
   parsePositionComment,
@@ -61,6 +62,64 @@ test("rejects malformed position comments", () => {
     ),
     null,
   );
+});
+
+test("builds a chronological historical track from journey comments", () => {
+  const card = {
+    id: "journey-1",
+    name: "Poros → Hydra",
+    desc: [
+      "captains-log-journey: 1",
+      "status: ended",
+      "startedAt: 2026-08-03T09:00:00.000Z",
+      "startedBy: member-1",
+      "endedAt: 2026-08-03T11:00:00.000Z",
+    ].join("\n"),
+  };
+  const actions = [
+    {
+      data: {
+        text: "position\ntimestamp: 2026-08-03T09:02:00.000Z\nlat: 37.5\nlng: 23.4",
+      },
+    },
+    { data: { text: "not a position" } },
+    {
+      data: {
+        text: "position\ntimestamp: 2026-08-03T09:01:00.000Z\nlat: 37.4\nlng: 23.3",
+      },
+    },
+  ];
+
+  assert.deepEqual(buildJourneyHistory(card, actions), {
+    id: "journey-1",
+    name: "Poros → Hydra",
+    startedAt: "2026-08-03T09:00:00.000Z",
+    endedAt: "2026-08-03T11:00:00.000Z",
+    track: [
+      {
+        timestamp: "2026-08-03T09:01:00.000Z",
+        lat: 37.4,
+        lng: 23.3,
+        accuracy: null,
+        speedKts: null,
+        course: null,
+        altitude: null,
+        sampleId: null,
+        source: null,
+      },
+      {
+        timestamp: "2026-08-03T09:02:00.000Z",
+        lat: 37.5,
+        lng: 23.4,
+        accuracy: null,
+        speedKts: null,
+        course: null,
+        altitude: null,
+        sampleId: null,
+        source: null,
+      },
+    ],
+  });
 });
 
 test("exchanges a pairing code once for an encrypted mobile token", () => {

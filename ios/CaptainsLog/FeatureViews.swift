@@ -575,6 +575,11 @@ struct PlanView: View {
     @State private var planningOrderMessage: String?
     @State private var planningOrderFailed = false
     @State private var isSavingPlanningOrder = false
+    @State private var isRefiningPlan = false
+    @State private var scheduleDraft = Date()
+    @State private var isSavingSchedule = false
+    @State private var scheduleMessage: String?
+    @State private var scheduleSaveFailed = false
 
     private let initialMapRadiusMeters: CLLocationDistance = 1_000
 
@@ -599,41 +604,47 @@ struct PlanView: View {
                         ProgressView("Loading planned stops…")
                     } else if plannedStops.isEmpty {
                         ContentUnavailableView("No stops planned", systemImage: "map", description: Text("Choose a place below to add the next stop."))
-                    } else {
+                    } else if isRefiningPlan {
                         Label("Drag stops between days and rough times. Their order is the plan; times are approximate.", systemImage: "line.3.horizontal")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(plannedStops) { stop in
+                            placeRow(stop, isPlanned: true)
+                        }
                     }
-                    if let planningOrderMessage {
+                    if isRefiningPlan, let planningOrderMessage {
                         Text(planningOrderMessage)
                             .font(.footnote)
                             .foregroundStyle(planningOrderFailed ? .red : .secondary)
                     }
                 }
-                ForEach(planningDays) { day in
-                    Section {
-                        ForEach(PlanningPeriod.allCases) { period in
-                            planningPeriodHeader(day: day.date, period: period)
-                            ForEach(plannedStops(on: day.date, in: period)) { stop in
-                                placeRow(stop, isPlanned: true)
-                                    .draggable(stop.id) {
-                                        Label(stop.name, systemImage: "mappin.and.ellipse")
-                                            .padding(10)
-                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                if isRefiningPlan {
+                    ForEach(planningDays) { day in
+                        Section {
+                            ForEach(PlanningPeriod.allCases) { period in
+                                planningPeriodHeader(day: day.date, period: period)
+                                ForEach(plannedStops(on: day.date, in: period)) { stop in
+                                    placeRow(stop, isPlanned: true)
+                                        .draggable(stop.id) {
+                                            Label(stop.name, systemImage: "mappin.and.ellipse")
+                                                .padding(10)
+                                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                        }
+                                        .dropDestination(for: String.self) { cardIDs, _ in
+                                            guard let cardID = cardIDs.first else { return false }
+                                            return movePlannedStop(
+                                                cardID: cardID,
+                                                to: day.date,
+                                                period: period,
+                                                before: stop.id
+                                            )
+                                        }
                                     }
-                                    .dropDestination(for: String.self) { cardIDs, _ in
-                                        guard let cardID = cardIDs.first else { return false }
-                                        return movePlannedStop(
-                                            cardID: cardID,
-                                            to: day.date,
-                                            period: period,
-                                            before: stop.id
-                                        )
-                                    }
-                            }
+                                }
+                            } header: {
+                                Text(planningDayLabel(day.date))
                         }
-                    } header: {
-                        Text(planningDayLabel(day.date))
                     }
                 }
                 Section("Places in map") {
@@ -654,7 +665,13 @@ struct PlanView: View {
             .navigationTitle("Planning")
             .searchable(text: $searchText, prompt: "Search places")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !plannedStops.isEmpty {
+                        Button(isRefiningPlan ? "Done" : "Refine") {
+                            isRefiningPlan.toggle()
+                        }
+                        .disabled(isSavingPlanningOrder)
+                    }
                     Button {
                         isAddingPlace = true
                     } label: {
@@ -807,7 +824,7 @@ struct PlanView: View {
             ForEach(mapPlaces) { place in
                 if let coordinate = place.coordinate {
                     Annotation(place.name, coordinate: coordinate) {
-                        Button { selectedMapPlace = place } label: {
+                        Button { selectPlace(place) } label: {
                             mapMarker(for: place)
                         }
                         .buttonStyle(.plain)
@@ -920,6 +937,28 @@ struct PlanView: View {
         return parts.joined(separator: ", ")
     }
 
+    private var scheduleTimeBinding: Binding<Date> {
+        Binding(
+            get: { scheduleDraft },
+            set: { scheduleDraft = nearestHour(to: $0) }
+        )
+    }
+
+    private func nearestHour(to date: Date) -> Date {
+        let calendar = Calendar.current
+        guard let hour = calendar.dateInterval(of: .hour, for: date)?.start else { return date }
+        return date.timeIntervalSince(hour) >= 30 * 60
+            ? calendar.date(byAdding: .hour, value: 1, to: hour) ?? hour
+            : hour
+    }
+
+    private func selectPlace(_ place: PlaceSummary) {
+        scheduleDraft = nearestHour(to: effectiveDue(for: place) ?? Date())
+        scheduleMessage = nil
+        scheduleSaveFailed = false
+        selectedMapPlace = place
+    }
+
     private func placeCard(_ place: PlaceSummary) -> some View {
         NavigationStack {
             ScrollView {
@@ -956,8 +995,8 @@ struct PlanView: View {
                         if let lastVisitedAt = place.lastVisitedAt {
                             Label("Last visit \(lastVisitedAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
                         }
-                        if let due = place.due {
-                            Label("Planned for \(due.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar.badge.clock")
+                        if let due = effectiveDue(for: place) {
+                            Label("Planned for \(due.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar.badge.clock")
                         }
                         if let snapshot = place.navilySnapshot {
                             Label(
@@ -984,11 +1023,43 @@ struct PlanView: View {
                     }
 
                     if plannedStops.contains(where: { $0.id == place.id }) {
-                        Label("Already in your plan", systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .foregroundStyle(Chartroom.sea)
-                            .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 14))
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Already in your plan", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(Chartroom.sea)
+                            DatePicker(
+                                "Date",
+                                selection: $scheduleDraft,
+                                displayedComponents: .date
+                            )
+                            DatePicker(
+                                "Time",
+                                selection: scheduleTimeBinding,
+                                displayedComponents: .hourAndMinute
+                            )
+                            Text("The time is saved to the nearest hour.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let scheduleMessage {
+                                Text(scheduleMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(scheduleSaveFailed ? .red : .secondary)
+                            }
+                            Button {
+                                Task { await saveSchedule(for: place) }
+                            } label: {
+                                if isSavingSchedule {
+                                    ProgressView().frame(maxWidth: .infinity)
+                                } else {
+                                    Label("Save date and time", systemImage: "calendar.badge.checkmark")
+                                        .frame(maxWidth: .infinity)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Chartroom.sea)
+                            .disabled(isSavingSchedule || !scheduleHasChanges(for: place))
+                        }
+                        .padding()
+                        .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 14))
                     } else {
                         Button {
                             Task {
@@ -1092,28 +1163,33 @@ struct PlanView: View {
 
     private func placeRow(_ place: PlaceSummary, isPlanned: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: place.rating == nil ? (isPlanned ? "mappin.and.ellipse" : "mappin") : "star.circle.fill")
-                .foregroundStyle(markerColor(for: place, isPlanned: isPlanned))
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(place.name).font(.headline)
-                HStack(spacing: 6) {
-                    if let listName = place.listName { Text(listName) }
-                    if let due = effectiveDue(for: place) { Text("· \(due.formatted(date: .abbreviated, time: .omitted))") }
-                    if let rating = place.rating { Text("· \(rating)★") }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                if isPlanned, let leg = legByDestinationID[place.id] {
-                    HStack(spacing: 8) {
-                        Label(distanceText(leg.distanceNm), systemImage: "ruler")
-                        Label(durationText(for: leg.distanceNm), systemImage: "clock")
+            Button { selectPlace(place) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: place.rating == nil ? (isPlanned ? "mappin.and.ellipse" : "mappin") : "star.circle.fill")
+                        .foregroundStyle(markerColor(for: place, isPlanned: isPlanned))
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(place.name).font(.headline)
+                        HStack(spacing: 6) {
+                            if let listName = place.listName { Text(listName) }
+                            if let due = effectiveDue(for: place) { Text("· \(due.formatted(date: .abbreviated, time: .omitted))") }
+                            if let rating = place.rating { Text("· \(rating)★") }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        if isPlanned, let leg = legByDestinationID[place.id] {
+                            HStack(spacing: 8) {
+                                Label(distanceText(leg.distanceNm), systemImage: "ruler")
+                                Label(durationText(for: leg.distanceNm), systemImage: "clock")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(Chartroom.sea)
+                        }
                     }
-                    .font(.caption)
-                    .foregroundStyle(Chartroom.sea)
+                    Spacer()
                 }
             }
-            Spacer()
+            .buttonStyle(.plain)
             if workingCardID == place.id {
                 ProgressView()
             } else if isPlanned {
@@ -1235,6 +1311,51 @@ struct PlanView: View {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         return hours > 0 ? "\(hours)h \(remainingMinutes)m" : "\(remainingMinutes)m"
+    }
+
+    private func scheduleHasChanges(for place: PlaceSummary) -> Bool {
+        guard let due = effectiveDue(for: place) else { return false }
+        return nearestHour(to: due) != nearestHour(to: scheduleDraft)
+    }
+
+    @MainActor private func saveSchedule(for place: PlaceSummary) async {
+        guard let token = authentication.token else {
+            scheduleSaveFailed = true
+            scheduleMessage = "Sign in again to save this stop."
+            return
+        }
+        let due = nearestHour(to: scheduleDraft)
+        let previousOverride = plannedDueOverrides[place.id]
+        plannedDueOverrides[place.id] = due
+        scheduleDraft = due
+        scheduleSaveFailed = false
+        scheduleMessage = "Saving…"
+        isSavingSchedule = true
+        defer { isSavingSchedule = false }
+
+        do {
+            let queued = try await authentication.api.planStop(
+                cardID: place.id,
+                due: due,
+                token: token,
+                queueImmediately: authentication.isOffline
+            )
+            await authentication.refreshPendingMutationCount()
+            if !queued {
+                await load()
+                if let refreshedPlace = plannedStops.first(where: { $0.id == place.id }) {
+                    selectedMapPlace = refreshedPlace
+                }
+            }
+            scheduleSaveFailed = false
+            scheduleMessage = queued
+                ? "Saved on this iPhone. The change will sync when connected."
+                : "Date and time saved."
+        } catch {
+            plannedDueOverrides[place.id] = previousOverride
+            scheduleSaveFailed = true
+            scheduleMessage = "The date and time couldn’t be saved. Please try again."
+        }
     }
 
     @MainActor private func movePlannedStop(

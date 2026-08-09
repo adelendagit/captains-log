@@ -1,8 +1,13 @@
 const express = require("express");
-const { fetchBoard } = require("../services/trello");
+const {
+  fetchAllComments,
+  fetchBoard,
+  invalidateCommentCache,
+} = require("../services/trello");
 const { mobileBearerAuthentication } = require("../services/mobileAuth");
 const {
   appendJourneyComment,
+  buildJourneyHistory,
   buildPositionComment,
   createJourney,
   endJourney,
@@ -137,7 +142,49 @@ router.get("/current", async (req, res, next) => {
       track,
     });
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ error: error.message });
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.get("/history", async (req, res, next) => {
+  try {
+    const [cards, comments] = await Promise.all([
+      fetchJourneyCards(),
+      fetchAllComments(),
+    ]);
+    const endedCards = cards.filter((card) => {
+      const metadata = parseJourneyDescription(card.desc);
+      return metadata?.status === "ended" && metadata.startedAt;
+    });
+    const commentsByCard = new Map();
+    comments.forEach((comment) => {
+      const cardId = comment.data?.card?.id;
+      if (!cardId) return;
+      if (!commentsByCard.has(cardId)) commentsByCard.set(cardId, []);
+      commentsByCard.get(cardId).push(comment);
+    });
+    const journeys = endedCards
+      .map((card) => buildJourneyHistory(card, commentsByCard.get(card.id)))
+      .filter((journey) => journey?.track.length > 0)
+      .map((journey) => ({
+        ...journey,
+        track: journey.track.map(({ timestamp, lat, lng }) => ({
+          timestamp,
+          lat,
+          lng,
+        })),
+      }));
+
+    journeys.sort(
+      (left, right) => new Date(left.startedAt) - new Date(right.startedAt),
+    );
+    res.set("Cache-Control", "public, max-age=60");
+    res.json({ journeys });
+  } catch (error) {
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
     next(error);
   }
 });
@@ -179,10 +226,15 @@ router.post("/start", async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      journey: { id: card.id, name: card.name, startedAt: startedAt.toISOString() },
+      journey: {
+        id: card.id,
+        name: card.name,
+        startedAt: startedAt.toISOString(),
+      },
     });
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ error: error.message });
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
     next(error);
   }
 });
@@ -206,7 +258,8 @@ router.post("/:cardId/positions", async (req, res, next) => {
     const startedAt = new Date(metadata.startedAt);
     if (
       !Number.isNaN(startedAt.getTime()) &&
-      new Date(position.timestamp) < new Date(startedAt.getTime() - 15 * 60 * 1000)
+      new Date(position.timestamp) <
+        new Date(startedAt.getTime() - 15 * 60 * 1000)
     ) {
       return res.status(400).json({ error: "Position predates this journey" });
     }
@@ -216,9 +269,11 @@ router.post("/:cardId/positions", async (req, res, next) => {
       card.id,
       buildPositionComment(position),
     );
+    invalidateCommentCache();
     res.status(201).json({ success: true, position, acceptedBy: memberId });
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ error: error.message });
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
     next(error);
   }
 });
@@ -251,9 +306,11 @@ router.post("/:cardId/end", async (req, res, next) => {
       endedAt: endedAt.toISOString(),
       endedBy: memberId,
     });
+    invalidateCommentCache();
     res.json({ success: true, endedAt: endedAt.toISOString() });
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ error: error.message });
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
     next(error);
   }
 });

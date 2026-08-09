@@ -116,6 +116,26 @@ function parsePositionComment(text = "") {
   };
 }
 
+function buildJourneyHistory(card, actions = []) {
+  const metadata = parseJourneyDescription(card?.desc);
+  if (!card || !metadata?.startedAt) return null;
+
+  const track = actions
+    .map((action) => parsePositionComment(action.data?.text))
+    .filter(Boolean)
+    .sort(
+      (left, right) => new Date(left.timestamp) - new Date(right.timestamp),
+    );
+
+  return {
+    id: card.id,
+    name: card.name,
+    startedAt: metadata.startedAt,
+    endedAt: metadata.endedAt,
+    track,
+  };
+}
+
 function createOAuthClient(user) {
   const consumerKey = process.env.TRELLO_OAUTH_KEY;
   const consumerSecret = process.env.TRELLO_OAUTH_SECRET;
@@ -236,6 +256,7 @@ async function endJourney(user, card, { endedAt, endedBy }) {
 module.exports = {
   JOURNEYS_LIST_ID,
   appendJourneyComment,
+  buildJourneyHistory,
   buildPositionComment,
   createJourney,
   endJourney,
