@@ -41,6 +41,7 @@ struct AddLogEntryView: View {
     @State private var sortedPlaces: [PlaceSummary] = []
     @State private var boardLabels: [PlaceLabel] = []
     @State private var selectedPlaceID = ""
+    @State private var hasManuallySelectedPlace = false
     @State private var selectedMooringLabelID = ""
     @State private var showAllPlaces = false
     @State private var action: String
@@ -102,7 +103,7 @@ struct AddLogEntryView: View {
                             if places.isEmpty {
                                 ProgressView("Finding nearby places…")
                             } else {
-                                Picker("Place", selection: $selectedPlaceID) {
+                                Picker("Place", selection: placeSelection) {
                                     ForEach(displayedPlaces) { place in
                                         Text(place.listName.map { "\(place.name) · \($0)" } ?? place.name)
                                             .tag(place.id)
@@ -238,6 +239,7 @@ struct AddLogEntryView: View {
             .onChange(of: locatorCoordinateKey) { updateSortedPlaces() }
             .onChange(of: action) {
                 if action != "arrived" { selectedMooringLabelID = "" }
+                selectClosestPlaceForArrival()
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
             }
@@ -287,6 +289,16 @@ struct AddLogEntryView: View {
 
     private var selectedPlace: PlaceSummary? {
         places.first { $0.id == selectedPlaceID }
+    }
+
+    private var placeSelection: Binding<String> {
+        Binding(
+            get: { selectedPlaceID },
+            set: { placeID in
+                hasManuallySelectedPlace = true
+                selectedPlaceID = placeID
+            }
+        )
     }
 
     private var mooringLabels: [PlaceLabel] {
@@ -349,6 +361,17 @@ struct AddLogEntryView: View {
 
     private func updateSortedPlaces() {
         sortedPlaces = sortedByDistance(places)
+        selectClosestPlaceForArrival()
+    }
+
+    private func selectClosestPlaceForArrival() {
+        guard
+            action == "arrived",
+            !hasManuallySelectedPlace,
+            sortingOriginCoordinate != nil,
+            let closestPlace = sortedPlaces.first(where: { $0.coordinate != nil })
+        else { return }
+        selectedPlaceID = closestPlace.id
     }
 
     private func distance(from origin: CLLocation, to place: PlaceSummary) -> CLLocationDistance {

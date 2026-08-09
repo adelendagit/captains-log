@@ -51,6 +51,7 @@ struct PlaceSummary: Codable, Identifiable {
     let labels: [PlaceLabel]?
     let trelloUrl: URL?
     let navilyUrl: URL?
+    let navilySnapshot: NavilySnapshot?
     let visitCount: Int?
     let lastVisitedAt: Date?
 
@@ -83,6 +84,34 @@ struct PlaceSummary: Codable, Identifiable {
         if text.range(of: "anchor|anchorage", options: .regularExpression) != nil { return "anchor" }
         return "mappin"
     }
+}
+
+struct NavilySnapshot: Codable {
+    let checkedAt: Date
+    let sourceUrl: URL
+    let name: String?
+    let lat: Double?
+    let lng: Double?
+    let summary: String
+    let characteristics: [String]
+    let seabed: [String]
+    let facilities: [String]
+}
+
+struct NavilySnapshotResponse: Codable {
+    let success: Bool
+    let snapshot: NavilySnapshot
+}
+
+struct NavilySnapshotDraft: Codable {
+    let sourceUrl: URL
+    let name: String?
+    let lat: Double?
+    let lng: Double?
+    let summary: String
+    let characteristics: [String]
+    let seabed: [String]
+    let facilities: [String]
 }
 
 struct CurrentStatusResponse: Codable {

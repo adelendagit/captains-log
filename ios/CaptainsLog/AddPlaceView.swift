@@ -12,7 +12,22 @@ struct NavilyShareSeed {
     }
 
     var suggestedName: String? {
-        NavilyShareParser.suggestedName(from: url)
+        let capturedTitle = text?
+            .components(separatedBy: .newlines)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let capturedTitle,
+           !capturedTitle.isEmpty,
+           capturedTitle.count <= 100,
+           !capturedTitle.lowercased().hasPrefix("http") {
+            return capturedTitle
+        }
+        return NavilyShareParser.suggestedName(from: url)
+    }
+
+    var suggestedDescription: String {
+        guard let url, let text else { return "" }
+        return NavilyPageParser.draft(url: url, title: suggestedName, text: text).summary
     }
 }
 
@@ -88,6 +103,115 @@ enum NavilyShareParser {
     }
 }
 
+enum NavilyPageParser {
+    private static let headings: [[String]] = [
+        ["characteristics", "caractéristiques"],
+        ["seabed types", "types de fond"],
+        ["reachable by dinghy", "accessible en annexe"],
+        ["mooring field information", "informations sur le champ de bouées"],
+        ["weather and protection", "météo & protection", "weather & protection"],
+        ["shops nearby", "commerces à proximité"],
+        ["the community's opinion", "l'avis de la communauté"],
+        ["anchorages close", "marinas close", "mouillages à proximité", "ports à proximité"],
+    ]
+
+    static func draft(url: URL, title: String?, text: String) -> NavilySnapshotDraft {
+        let lines = normalizedLines(text)
+        let characteristics = merged(
+            section(aliases: headings[0], lines: lines),
+            section(aliases: headings[3], lines: lines)
+        )
+        let seabed = section(aliases: headings[1], lines: lines)
+        let facilities = merged(
+            section(aliases: headings[2], lines: lines),
+            section(aliases: headings[5], lines: lines)
+        )
+        let name = cleanTitle(title) ?? NavilyShareParser.suggestedName(from: url)
+        let coordinate = NavilyShareParser.coordinate(in: text)
+        let parts = [
+            characteristics.isEmpty ? nil : "Characteristics: \(characteristics.joined(separator: ", ")).",
+            seabed.isEmpty ? nil : "Seabed: \(seabed.joined(separator: ", ")).",
+            facilities.isEmpty ? nil : "Facilities: \(facilities.joined(separator: ", ")).",
+        ].compactMap { $0 }
+        return NavilySnapshotDraft(
+            sourceUrl: url,
+            name: name,
+            lat: coordinate?.latitude,
+            lng: coordinate?.longitude,
+            summary: parts.joined(separator: " "),
+            characteristics: characteristics,
+            seabed: seabed,
+            facilities: facilities
+        )
+    }
+
+    private static func normalizedLines(_ text: String) -> [String] {
+        var result: [String] = []
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine
+                .replacingOccurrences(of: " ", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, result.last?.localizedCaseInsensitiveCompare(line) != .orderedSame else {
+                continue
+            }
+            result.append(line)
+        }
+        return result
+    }
+
+    private static func section(aliases: [String], lines: [String]) -> [String] {
+        guard let start = lines.firstIndex(where: { line in
+            aliases.contains { line.localizedCaseInsensitiveContains($0) }
+        }) else { return [] }
+        var values: [String] = []
+        for line in lines.dropFirst(start + 1) {
+            if isHeading(line) { break }
+            let lower = line.lowercased()
+            guard line.count <= 100,
+                  !lower.hasPrefix("here "),
+                  !lower.hasPrefix("you'll "),
+                  !lower.hasPrefix("you will "),
+                  !lower.hasPrefix("vous "),
+                  !lower.hasPrefix("voici "),
+                  !lower.hasPrefix("weather"),
+                  !lower.hasPrefix("protection"),
+                  !lower.hasPrefix("image"),
+                  !lower.contains("not available for this time"),
+                  !aliases.contains(where: { lower.contains($0) }) else { continue }
+            if !values.contains(where: { $0.localizedCaseInsensitiveCompare(line) == .orderedSame }) {
+                values.append(line)
+            }
+            if values.count == 12 { break }
+        }
+        return values
+    }
+
+    private static func merged(_ lists: [String]...) -> [String] {
+        lists.flatMap { $0 }.reduce(into: []) { result, value in
+            if !result.contains(where: { $0.localizedCaseInsensitiveCompare(value) == .orderedSame }) {
+                result.append(value)
+            }
+        }
+    }
+
+    private static func isHeading(_ line: String) -> Bool {
+        let lower = line.lowercased()
+        return headings.flatMap { $0 }.contains { lower.contains($0) }
+    }
+
+    private static func cleanTitle(_ title: String?) -> String? {
+        guard var title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return nil
+        }
+        for separator in [" on Navily", " sur Navily", " | Navily", " - Navily"] {
+            if let range = title.range(of: separator, options: .caseInsensitive) {
+                title = String(title[..<range.lowerBound])
+            }
+        }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 struct AddPlaceView: View {
     private let api: APIClient
     private let token: String
@@ -95,7 +219,7 @@ struct AddPlaceView: View {
     private let onCancel: () -> Void
 
     @State private var name: String
-    @State private var description = ""
+    @State private var description: String
     @State private var navilyURL: String
     @State private var latitude: String
     @State private var longitude: String
@@ -121,6 +245,7 @@ struct AddPlaceView: View {
         let importedCoordinate = seed.coordinate
         let center = importedCoordinate ?? initialCoordinate ?? CLLocationCoordinate2D(latitude: 38, longitude: 23)
         _name = State(initialValue: seed.suggestedName ?? "")
+        _description = State(initialValue: seed.suggestedDescription)
         _navilyURL = State(initialValue: seed.url?.absoluteString ?? "")
         _latitude = State(initialValue: importedCoordinate.map { Self.coordinateText($0.latitude) } ?? "")
         _longitude = State(initialValue: importedCoordinate.map { Self.coordinateText($0.longitude) } ?? "")

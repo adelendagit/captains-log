@@ -13,6 +13,21 @@ final class ShareViewController: UIViewController {
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? [])
             .flatMap { $0.attachments ?? [] }
         if let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier)
+        }) {
+            provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier) { [weak self] item, _ in
+                let outer = item as? [String: Any]
+                let results = outer?["NSExtensionJavaScriptPreprocessingResultsKey"] as? [String: Any]
+                let url = (results?["url"] as? String).flatMap(URL.init(string:))
+                let title = results?["title"] as? String
+                let text = results?["text"] as? String
+                DispatchQueue.main.async {
+                    self?.showForm(seed: NavilyShareSeed(url: url, text: text), capturedTitle: title)
+                }
+            }
+            return
+        }
+        if let provider = providers.first(where: {
             $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
         }) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] item, _ in
@@ -36,7 +51,7 @@ final class ShareViewController: UIViewController {
         showMessage("Share a Navily place link to add it to Captain’s Log.")
     }
 
-    private func showForm(seed: NavilyShareSeed) {
+    private func showForm(seed: NavilyShareSeed, capturedTitle: String? = nil) {
         guard let url = seed.url, NavilyShareParser.isNavilyURL(url) else {
             showMessage("The shared item does not contain a Navily place link.")
             return
@@ -48,7 +63,12 @@ final class ShareViewController: UIViewController {
         let root = AddPlaceView(
             api: APIClient(),
             token: token,
-            seed: seed,
+            seed: NavilyShareSeed(
+                url: seed.url,
+                text: seed.text.map { text in
+                    capturedTitle.map { "\($0)\n\(text)" } ?? text
+                }
+            ),
             onSaved: { [weak self] _ in self?.finish() },
             onCancel: { [weak self] in self?.finish() }
         )

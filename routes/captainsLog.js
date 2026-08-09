@@ -199,6 +199,60 @@ function buildVisitStats(comments) {
   return stats;
 }
 
+function parseNavilySnapshot(text) {
+  if (!/^navily snapshot\s*$/im.test(String(text || "").split("\n")[0])) {
+    return null;
+  }
+  const values = {};
+  for (const line of String(text).split("\n").slice(1)) {
+    const separator = line.indexOf(":");
+    if (separator === -1) continue;
+    values[line.slice(0, separator).trim().toLowerCase()] = line
+      .slice(separator + 1)
+      .trim();
+  }
+  const checkedAt = new Date(values["checked-at"] || "");
+  const lat = Number(values.lat);
+  const lng = Number(values.lng);
+  if (!values.source || Number.isNaN(checkedAt.getTime())) return null;
+  const splitList = (value) =>
+    value ? value.split(" | ").map((item) => item.trim()).filter(Boolean) : [];
+  return {
+    checkedAt: checkedAt.toISOString(),
+    sourceUrl: values.source,
+    name: values.name || null,
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    summary: values.summary || "",
+    characteristics: splitList(values.characteristics),
+    seabed: splitList(values.seabed),
+    facilities: splitList(values.facilities),
+  };
+}
+
+function buildNavilySnapshots(comments) {
+  const snapshots = new Map();
+  for (const action of comments || []) {
+    const cardId = action?.data?.card?.id;
+    const snapshot = parseNavilySnapshot(action?.data?.text);
+    if (!cardId || !snapshot) continue;
+    const current = snapshots.get(cardId);
+    if (!current || new Date(snapshot.checkedAt) > new Date(current.checkedAt)) {
+      snapshots.set(cardId, snapshot);
+    }
+  }
+  return snapshots;
+}
+
+function cleanSnapshotList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").replace(/[\r\n|]+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((item) => item.slice(0, 120));
+}
+
 function deriveCurrentStatus(cards, lists, customFields, comments) {
   const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
   const tripsList = lists.find((l) => l.name === "Trips");
@@ -490,6 +544,7 @@ router.get("/api/data", async (req, res, next) => {
       labels: boardLabelsRaw,
     } = board;
     const visitStats = buildVisitStats(allComments);
+    const navilySnapshots = buildNavilySnapshots(allComments);
 
     const tripsListId = lists.find((l) => l.name === "Trips").id;
 
@@ -521,6 +576,7 @@ router.get("/api/data", async (req, res, next) => {
           navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
           desc: c.desc,
           labels,
+          navilySnapshot: navilySnapshots.get(c.id) || null,
           ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
         };
       })
@@ -553,6 +609,7 @@ router.get("/api/data", async (req, res, next) => {
           navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
           desc: c.desc,
           labels,
+          navilySnapshot: navilySnapshots.get(c.id) || null,
           ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
         };
       });
@@ -1619,6 +1676,126 @@ router.post("/api/places", async (req, res, next) => {
         navilyUrl,
         visitCount: 0,
         lastVisitedAt: null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/places/:cardId/navily-snapshots", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+
+    const board = await fetchBoard();
+    const { cards, customFields, members } = board;
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Not a board member" });
+    }
+    const card = cards.find((item) => item.id === req.params.cardId);
+    if (!card) return res.status(404).json({ error: "Place not found" });
+
+    const savedUrl = normalizeNavilyUrl(
+      getCFTextOrDropdown(card, customFields, "Navily"),
+    );
+    const sourceUrl = normalizeNavilyUrl(req.body?.sourceUrl);
+    if (!savedUrl || !sourceUrl || savedUrl !== sourceUrl) {
+      return res
+        .status(400)
+        .json({ error: "Snapshot URL does not match this place" });
+    }
+
+    const name = String(req.body?.name || "")
+      .replace(/[\r\n]+/g, " ")
+      .trim()
+      .slice(0, 256);
+    const summary = String(req.body?.summary || "")
+      .replace(/[\r\n]+/g, " ")
+      .trim()
+      .slice(0, 2_000);
+    const characteristics = cleanSnapshotList(req.body?.characteristics);
+    const seabed = cleanSnapshotList(req.body?.seabed);
+    const facilities = cleanSnapshotList(req.body?.facilities);
+    const hasLatitude = req.body?.lat !== null && req.body?.lat !== undefined;
+    const hasLongitude = req.body?.lng !== null && req.body?.lng !== undefined;
+    const lat = hasLatitude ? Number(req.body.lat) : null;
+    const lng = hasLongitude ? Number(req.body.lng) : null;
+    if (
+      hasLatitude !== hasLongitude ||
+      (hasLatitude && (!Number.isFinite(lat) || lat < -90 || lat > 90)) ||
+      (hasLongitude && (!Number.isFinite(lng) || lng < -180 || lng > 180))
+    ) {
+      return res.status(400).json({ error: "Invalid snapshot coordinates" });
+    }
+    if (
+      !summary &&
+      characteristics.length === 0 &&
+      seabed.length === 0 &&
+      facilities.length === 0
+    ) {
+      return res.status(400).json({ error: "Snapshot contains no place details" });
+    }
+
+    const checkedAt = new Date().toISOString();
+    const commentLines = [
+      "navily snapshot",
+      "version: 1",
+      `checked-at: ${checkedAt}`,
+      `source: ${sourceUrl}`,
+    ];
+    if (name) commentLines.push(`name: ${name}`);
+    if (lat != null && lng != null) {
+      commentLines.push(`lat: ${lat}`, `lng: ${lng}`);
+    }
+    if (summary) commentLines.push(`summary: ${summary}`);
+    if (characteristics.length) {
+      commentLines.push(`characteristics: ${characteristics.join(" | ")}`);
+    }
+    if (seabed.length) commentLines.push(`seabed: ${seabed.join(" | ")}`);
+    if (facilities.length) {
+      commentLines.push(`facilities: ${facilities.join(" | ")}`);
+    }
+    const text = commentLines.join("\n");
+
+    const oauth1a = require("oauth-1.0a");
+    const crypto = require("crypto");
+    const oauthClient = oauth1a({
+      consumer: {
+        key: process.env.TRELLO_OAUTH_KEY,
+        secret: process.env.TRELLO_OAUTH_SECRET,
+      },
+      signature_method: "HMAC-SHA1",
+      hash_function(baseString, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(baseString)
+          .digest("base64");
+      },
+    });
+    const url = `https://api.trello.com/1/cards/${card.id}/actions/comments`;
+    const requestData = { url, method: "POST", data: { text } };
+    const headers = oauthClient.toHeader(
+      oauthClient.authorize(requestData, {
+        key: req.user.token,
+        secret: req.user.tokenSecret,
+      }),
+    );
+    await axios.post(url, null, { params: { text }, headers });
+    invalidateBoardCache();
+    invalidateCommentCache();
+
+    res.status(201).json({
+      success: true,
+      snapshot: {
+        checkedAt,
+        sourceUrl,
+        name: name || null,
+        lat,
+        lng,
+        summary,
+        characteristics,
+        seabed,
+        facilities,
       },
     });
   } catch (error) {

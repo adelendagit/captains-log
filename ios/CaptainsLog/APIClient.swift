@@ -153,6 +153,20 @@ final class APIClient: Sendable {
         return response.place
     }
 
+    func saveNavilySnapshot(
+        cardID: String,
+        draft: NavilySnapshotDraft,
+        token: String
+    ) async throws -> NavilySnapshot {
+        let response: NavilySnapshotResponse = try await send(
+            path: "api/places/\(cardID)/navily-snapshots",
+            method: "POST",
+            encodableBody: draft,
+            token: token
+        )
+        return response.snapshot
+    }
+
     func addTodo(name: String, listID: String, token: String) async throws -> String {
         let response: CreateTodoResponse = try await send(
             path: "to-do/items",

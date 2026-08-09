@@ -190,3 +190,83 @@ test("requires both place coordinates", async (t) => {
     error: "Latitude must be between -90 and 90",
   });
 });
+
+test("saves a structured Navily snapshot comment", async (t) => {
+  invalidateBoardCache();
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  let savedComment;
+  axios.get = async () => ({
+    data: {
+      cards: [
+        {
+          id: "agios-card",
+          name: "Agios Nikolaos",
+          idList: "greece",
+          customFieldItems: [
+            {
+              idCustomField: "navily-field",
+              value: {
+                text: "https://www.navily.com/mouillage/agios-nikolaos/12345",
+              },
+            },
+          ],
+        },
+      ],
+      lists: [{ id: "greece", name: "Greece" }],
+      customFields: [{ id: "navily-field", name: "Navily", type: "text" }],
+      members: [{ id: "captain", memberType: "normal" }],
+      labels: [],
+    },
+  });
+  axios.post = async (url, _body, options) => {
+    assert.equal(
+      url,
+      "https://api.trello.com/1/cards/agios-card/actions/comments",
+    );
+    savedComment = options.params.text;
+    return { data: {} };
+  };
+  t.after(() => {
+    axios.get = originalGet;
+    axios.post = originalPost;
+    invalidateBoardCache();
+  });
+
+  const server = await startTestServer({
+    id: "captain",
+    token: "member-token",
+    tokenSecret: "member-secret",
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/places/agios-card/navily-snapshots`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceUrl:
+          "https://navily.com/mouillage/agios-nikolaos/12345?from=share",
+        name: "Agios Nikolaos",
+        lat: 37.1234,
+        lng: 23.5678,
+        summary: "Anchor allowed. Sand seabed.",
+        characteristics: ["Anchor allowed"],
+        seabed: ["Sand"],
+        facilities: ["Beach"],
+      }),
+    },
+  );
+  const result = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(result.snapshot.name, "Agios Nikolaos");
+  assert.match(savedComment, /^navily snapshot\nversion: 1\n/);
+  assert.match(
+    savedComment,
+    /source: https:\/\/www\.navily\.com\/mouillage\/agios-nikolaos\/12345/,
+  );
+  assert.match(savedComment, /characteristics: Anchor allowed/);
+  assert.match(savedComment, /seabed: Sand/);
+  assert.match(savedComment, /facilities: Beach/);
+});
