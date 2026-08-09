@@ -1518,10 +1518,12 @@ struct LogbookView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @State private var logs: [LogEntry] = []
     @State private var voyages: [VoyageSummary] = []
+    @State private var journeyHistory: [JourneyHistory] = []
     @State private var selectedVoyageIDs: Set<String> = []
     @State private var hasInitialVoyageSelection = false
     @State private var errorMessage: String?
     @State private var loading = true
+    @State private var mapCamera: MapCameraPosition = .automatic
 
     var body: some View {
         NavigationStack {
@@ -1534,6 +1536,12 @@ struct LogbookView: View {
                             Section("Voyage") {
                                 voyageSelector
                             }
+                        }
+
+                        Section("Map") {
+                            logbookMap
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
                         }
 
                         if filteredLogs.isEmpty {
@@ -1573,6 +1581,39 @@ struct LogbookView: View {
             .task { await load() }
             .refreshable { await load() }
         }
+    }
+
+    private var logbookMap: some View {
+        Map(position: $mapCamera) {
+            ForEach(filteredJourneyHistory) { journey in
+                if journey.track.count > 1 {
+                    MapPolyline(coordinates: journey.track.map(\.coordinate))
+                        .stroke(Chartroom.route, lineWidth: 3)
+                }
+            }
+
+            ForEach(historicalMapEntries) { marker in
+                Annotation(marker.entry.cardName, coordinate: marker.coordinate) {
+                    Circle()
+                        .fill(marker.entry.type.caseInsensitiveCompare("Departed") == .orderedSame
+                            ? Chartroom.signal
+                            : Chartroom.sea)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(.white, lineWidth: 2))
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                        .accessibilityLabel(
+                            "\(marker.entry.cardName), \(marker.entry.type), \(marker.entry.timestamp.formatted(date: .abbreviated, time: .omitted))"
+                        )
+                }
+            }
+        }
+        .mapStyle(.standard(elevation: .realistic))
+        .frame(height: 300)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .onChange(of: mapContentKey, initial: true) {
+            mapCamera = .automatic
+        }
+        .accessibilityLabel("Logbook map")
     }
 
     private var voyageSelector: some View {
@@ -1625,9 +1666,63 @@ struct LogbookView: View {
         }
     }
 
+    private var filteredJourneyHistory: [JourneyHistory] {
+        guard !selectedVoyageIDs.isEmpty else { return journeyHistory }
+        return journeyHistory.filter { journey in
+            selectedVoyages.contains { voyage in
+                overlaps(
+                    start: journey.startedAt,
+                    end: journey.endedAt ?? journey.startedAt,
+                    voyage: voyage
+                )
+            }
+        }
+    }
+
+    private var historicalMapEntries: [LogbookMapMarker] {
+        let ordered = filteredLogs.sorted { $0.timestamp < $1.timestamp }
+        var seenCardIDs = Set<String>()
+        var markers = ordered.compactMap { entry -> LogbookMapMarker? in
+            guard ["arrived", "visited"].contains(entry.type.lowercased()),
+                  let lat = entry.lat, let lng = entry.lng,
+                  seenCardIDs.insert(entry.cardId).inserted else { return nil }
+            return LogbookMapMarker(
+                id: "visit-\(entry.cardId)",
+                entry: entry,
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            )
+        }
+
+        if let departure = ordered.first(where: {
+            $0.type.caseInsensitiveCompare("Departed") == .orderedSame && $0.lat != nil && $0.lng != nil
+        }), let lat = departure.lat, let lng = departure.lng {
+            markers.insert(
+                LogbookMapMarker(
+                    id: "departure-\(departure.id)",
+                    entry: departure,
+                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)
+                ),
+                at: 0
+            )
+        }
+        return markers
+    }
+
+    private var mapContentKey: String {
+        let markers = historicalMapEntries.map(\.id).joined(separator: ",")
+        let tracks = filteredJourneyHistory.map(\.id).joined(separator: ",")
+        return "\(markers)|\(tracks)"
+    }
+
     private func includes(_ entry: LogEntry, in voyage: VoyageSummary) -> Bool {
         if let start = voyage.start, entry.timestamp < start { return false }
         if let end = voyage.end, entry.timestamp > end { return false }
+        return true
+    }
+
+    private func overlaps(start: Date, end: Date, voyage: VoyageSummary) -> Bool {
+        if let voyageStart = voyage.start, end < voyageStart { return false }
+        if let voyageEnd = voyage.end, start > voyageEnd { return false }
         return true
     }
 
@@ -1689,7 +1784,12 @@ struct LogbookView: View {
 
         async let cachedLogs = authentication.api.cachedLogs()
         async let cachedVoyages = authentication.api.cachedVoyages()
-        let (savedLogs, savedVoyages) = await (cachedLogs, cachedVoyages)
+        async let cachedJourneyHistory = authentication.api.cachedJourneyHistory()
+        let (savedLogs, savedVoyages, savedJourneyHistory) = await (
+            cachedLogs,
+            cachedVoyages,
+            cachedJourneyHistory
+        )
 
         if logs.isEmpty, let savedLogs {
             logs = savedLogs.logs
@@ -1703,17 +1803,28 @@ struct LogbookView: View {
             if !voyages.isEmpty { selectCurrentVoyageIfNeeded() }
         }
 
+        if journeyHistory.isEmpty, let savedJourneyHistory {
+            journeyHistory = savedJourneyHistory.journeys
+        }
+
         defer { loading = false }
         guard let token = authentication.token, !authentication.isOffline else { return }
 
         async let freshLogs = authentication.api.logs(token: token)
         async let freshVoyages = authentication.api.voyages(token: token)
+        async let freshJourneyHistory = authentication.api.journeyHistory(token: token)
 
         do {
             voyages = try await freshVoyages.voyages
             selectCurrentVoyageIfNeeded(allowAll: true)
         } catch {
             // Voyage metadata is optional; the complete logbook remains useful.
+        }
+
+        do {
+            journeyHistory = try await freshJourneyHistory.journeys
+        } catch {
+            // Recorded tracks are optional; mapped log entries remain useful.
         }
 
         do {
@@ -1725,6 +1836,12 @@ struct LogbookView: View {
             }
         }
     }
+}
+
+private struct LogbookMapMarker: Identifiable {
+    let id: String
+    let entry: LogEntry
+    let coordinate: CLLocationCoordinate2D
 }
 
 struct TodoView: View {

@@ -218,6 +218,18 @@ struct LogsResponse: Codable {
     let logs: [LogEntry]
 }
 
+struct JourneyHistory: Codable, Identifiable {
+    let id: String
+    let name: String
+    let startedAt: Date
+    let endedAt: Date?
+    let track: [PositionPoint]
+}
+
+struct JourneyHistoryResponse: Codable {
+    let journeys: [JourneyHistory]
+}
+
 struct TodoCard: Codable, Identifiable {
     let id: String
     let name: String

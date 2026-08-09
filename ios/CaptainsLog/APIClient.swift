@@ -137,6 +137,19 @@ final class APIClient: Sendable {
         return try? JSONDecoder.captainsLog.decode(LogsResponse.self, from: data)
     }
 
+    func journeyHistory(token: String) async throws -> JourneyHistoryResponse {
+        try await send(
+            path: "api/journeys/history",
+            token: token,
+            cacheKey: "journey-history"
+        )
+    }
+
+    func cachedJourneyHistory() async -> JourneyHistoryResponse? {
+        guard let data = await responseCache.data(for: "journey-history") else { return nil }
+        return try? JSONDecoder.captainsLog.decode(JourneyHistoryResponse.self, from: data)
+    }
+
     func todoData(token: String) async throws -> TodoDataResponse {
         try await send(path: "to-do/api/data", token: token, cacheKey: "todo-data")
     }
