@@ -63,6 +63,48 @@ const LOCATION_LOG_ACTIONS = {
   boom: "Boom",
   other: "Other",
 };
+const PLANNING_PERIODS = [
+  { key: "morning", label: "Morning", hour: 8 },
+  { key: "lunch", label: "Lunch time", hour: 12 },
+  { key: "late-afternoon", label: "Late afternoon", hour: 16 },
+  { key: "evening", label: "Evening", hour: 20 },
+];
+
+function planningPeriodForDue(due) {
+  const hour = new Date(due).getHours();
+  if (hour < 11) return "morning";
+  if (hour < 15) return "lunch";
+  if (hour < 19) return "late-afternoon";
+  return "evening";
+}
+
+function localDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function addCalendarDays(dateString, amount) {
+  const date = new Date(`${dateString}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function dueForPlanningPosition(day, periodKey, position) {
+  const period =
+    PLANNING_PERIODS.find((candidate) => candidate.key === periodKey) ||
+    PLANNING_PERIODS[0];
+  const due = new Date(`${day}T${String(period.hour).padStart(2, "0")}:00:00`);
+  due.setMinutes(due.getMinutes() + position * 5);
+  return due.toISOString();
+}
 
 function formatPositionAge(timestamp) {
   if (!timestamp) return "No position yet";
@@ -652,11 +694,11 @@ function formatDurationRounded(h) {
 
 function getDateRange(startDate, endDate) {
   const dates = [];
-  let current = new Date(startDate);
-  const end = new Date(endDate);
+  let current = startDate;
+  const end = endDate;
   while (current <= end) {
-    dates.push(current.toISOString().slice(0, 10));
-    current.setDate(current.getDate() + 1);
+    dates.push(current);
+    current = addCalendarDays(current, 1);
   }
   return dates;
 }
@@ -1928,27 +1970,33 @@ function renderTable(stops, speed) {
   // Group all future stops by date only
   const future = stops.filter((s) => !s.dueComplete && s.due);
   const byDay = future.reduce((acc, s) => {
-    const day = s.due.slice(0, 10);
+    const day = localDateKey(s.due);
     (acc[day] ??= []).push(s);
     return acc;
   }, {});
 
   // --- Compute full date range ---
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const allDueDates = future.map((s) => s.due.slice(0, 10)).sort();
+  const todayStr = localDateKey(new Date());
+  const allDueDates = future.map((s) => localDateKey(s.due)).sort();
   const firstDate = allDueDates.length
     ? todayStr < allDueDates[0]
       ? todayStr
       : allDueDates[0]
     : todayStr;
-  const lastDate = allDueDates.length
+  const lastPlannedDate = allDueDates.length
     ? allDueDates[allDueDates.length - 1]
     : todayStr;
+  // Keep one open day after the plan so the final stop can be extended without
+  // first creating another stop.
+  const lastDate = canPlan
+    ? addCalendarDays(lastPlannedDate, 1)
+    : lastPlannedDate;
   const dateRange = getDateRange(firstDate, lastDate);
 
   let prevStop = current || departed;
   dateRange.forEach((dayKey) => {
     const stopsForDay = byDay[dayKey] || [];
+    stopsForDay.sort((a, b) => new Date(a.due) - new Date(b.due));
 
     // Only render the day if:
     // - there are stops for this day, or
@@ -2008,44 +2056,60 @@ function renderTable(stops, speed) {
       tbody.appendChild(dayRow);
       dayRows.push(dayRow);
 
-      // Sort stops by time
-      stopsForDay.sort((a, b) => new Date(a.due) - new Date(b.due));
+      PLANNING_PERIODS.forEach((period) => {
+        const periodRow = document.createElement("tr");
+        periodRow.className = "time-period-row";
+        periodRow.dataset.day = dayKey;
+        periodRow.dataset.period = period.key;
+        periodRow.innerHTML = `<td colspan="6">${period.label}${canPlan ? '<span class="time-period-hint">drop here</span>' : ""}</td>`;
+        tbody.appendChild(periodRow);
+        dayRows.push(periodRow);
 
-      // Now render the rest of the stops for this day
-      stopsForDay.forEach((s, idx) => {
-        let nm = "",
-          eta = "";
-        if (prevStop) {
-          const [lat1, lng1] = getLatLng(prevStop);
-          const [lat2, lng2] = getLatLng(s);
-          if (
-            typeof lat1 === "number" &&
-            typeof lng1 === "number" &&
-            typeof lat2 === "number" &&
-            typeof lng2 === "number"
-          ) {
-            const leg = plannedRouteReady ? getPlanningLeg(prevStop, s) : null;
-            if (Number.isFinite(leg?.distanceNm)) {
-              const nmValue = leg.distanceNm;
-              nm =
-                nmValue >= 1
-                  ? Math.round(nmValue).toString()
-                  : nmValue.toFixed(1);
-              eta = speed > 0 ? formatDurationRounded(nmValue / speed) : "—";
-            } else {
-              nm = plannedRouteReady ? "—" : "…";
-              eta = plannedRouteReady ? "Route unavailable" : "Calculating…";
+        const periodStops = stopsForDay.filter(
+          (stop) => planningPeriodForDue(stop.due) === period.key,
+        );
+        if (periodStops.length === 0 && !canPlan) {
+          periodRow.remove();
+          dayRows.pop();
+          return;
+        }
+
+        periodStops.forEach((s) => {
+          let nm = "",
+            eta = "";
+          if (prevStop) {
+            const [lat1, lng1] = getLatLng(prevStop);
+            const [lat2, lng2] = getLatLng(s);
+            if (
+              typeof lat1 === "number" &&
+              typeof lng1 === "number" &&
+              typeof lat2 === "number" &&
+              typeof lng2 === "number"
+            ) {
+              const leg = plannedRouteReady
+                ? getPlanningLeg(prevStop, s)
+                : null;
+              if (Number.isFinite(leg?.distanceNm)) {
+                const nmValue = leg.distanceNm;
+                nm =
+                  nmValue >= 1
+                    ? Math.round(nmValue).toString()
+                    : nmValue.toFixed(1);
+                eta = speed > 0 ? formatDurationRounded(nmValue / speed) : "—";
+              } else {
+                nm = plannedRouteReady ? "—" : "…";
+                eta = plannedRouteReady ? "Route unavailable" : "Calculating…";
+              }
             }
           }
-        }
-        const stars = canPlan
-          ? makeEditableStars(s.rating, s.id)
-          : makeStars(s.rating);
-        const removeBtn =
-          canPlan && s.due
-            ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
-            : "";
-        const links = `
+          const stars = canPlan
+            ? makeEditableStars(s.rating, s.id)
+            : makeStars(s.rating);
+          const removeBtn =
+            canPlan && s.due
+              ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
+              : "";
+          const links = `
           <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
             <i class="fab fa-trello"></i>
           </a>
@@ -2060,45 +2124,56 @@ function renderTable(stops, speed) {
           }
           ${removeBtn}
         `;
-        const labels = Array.isArray(s.labels)
-          ? `<div class="labels-wrap">` +
-            s.labels
-              .map((l) => {
-                const bg = l.color || "#888";
-                const fg = badgeTextColor(bg);
-                return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
-              })
-              .join("") +
-            `</div>`
-          : "";
-        const markerColor = getMarkerColor(s.rating, s.labels);
-        const tr = document.createElement("tr");
-        tr.setAttribute("data-card-id", s.id);
-        tr.className = "sortable-stop-row";
-        tr.setAttribute("data-day", dayKey);
-        tr.style.borderLeft = `4px solid ${markerColor}`;
-        tr.innerHTML = `
-          <td>${s.name}</td>
+          const labels = Array.isArray(s.labels)
+            ? `<div class="labels-wrap">` +
+              s.labels
+                .map((l) => {
+                  const bg = l.color || "#888";
+                  const fg = badgeTextColor(bg);
+                  return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+                })
+                .join("") +
+              `</div>`
+            : "";
+          const markerColor = getMarkerColor(s.rating, s.labels);
+          const tr = document.createElement("tr");
+          tr.setAttribute("data-card-id", s.id);
+          tr.className = "sortable-stop-row";
+          tr.setAttribute("data-day", dayKey);
+          tr.setAttribute("data-period", period.key);
+          tr.style.borderLeft = `4px solid ${markerColor}`;
+          tr.innerHTML = `
+          <td class="stop-name-cell">
+            ${
+              canPlan
+                ? `<span class="stop-drag-handle" title="Drag to change day, time or order" aria-label="Drag stop"><i class="fa-solid fa-grip-lines" aria-hidden="true"></i></span>`
+                : ""
+            }
+            <span>${s.name}</span>
+          </td>
           <td>${labels}</td>
           <td>${stars}</td>
           <td>${nm === "—" || nm === "…" ? nm : `${nm} NM`}</td>
           <td>${eta}</td>
           <td>${links}</td>
         `;
-        tbody.appendChild(tr);
-        dayRows.push(tr);
-        prevStop = s;
-      });
+          tbody.appendChild(tr);
+          dayRows.push(tr);
+          prevStop = s;
+        });
 
-      // If no stops for this day, add an empty row for drag-and-drop (only for logged-in users)
-      if (stopsForDay.length === 0 && canPlan) {
-        const tr = document.createElement("tr");
-        tr.className = "sortable-stop-row empty-drop-row";
-        tr.setAttribute("data-day", dayKey);
-        tr.innerHTML = `<td colspan="6" style="text-align:center; color:#bbb; font-style:italic;">No plans...</td>`;
-        tbody.appendChild(tr);
-        dayRows.push(tr);
-      }
+        // Sortable needs a draggable sibling as a target when a period is
+        // empty. Without a handle this row cannot itself be picked up.
+        if (periodStops.length === 0 && canPlan) {
+          const dropRow = document.createElement("tr");
+          dropRow.className = "sortable-stop-row empty-period-drop-row";
+          dropRow.dataset.day = dayKey;
+          dropRow.dataset.period = period.key;
+          dropRow.innerHTML = `<td colspan="6">Drop a stop here</td>`;
+          tbody.appendChild(dropRow);
+          dayRows.push(dropRow);
+        }
+      });
 
       const lastRow = dayRows[dayRows.length - 1];
       if (lastRow) lastRow.classList.add("day-end-row");
@@ -2131,13 +2206,13 @@ function renderTable(stops, speed) {
 
   function formatDayLabel(dateStr) {
     if (!dateStr || dateStr === "No Date") return "No Date";
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T12:00:00`);
     const today = new Date();
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
 
     function ymd(d) {
-      return d.toISOString().slice(0, 10);
+      return localDateKey(d);
     }
     if (ymd(date) === ymd(today)) return "Today";
     if (ymd(date) === ymd(tomorrow)) return "Tomorrow";
@@ -2164,55 +2239,78 @@ function initTableDragAndDrop() {
   if (!canPlan) return;
 
   tbody._sortable = Sortable.create(tbody, {
-    handle: "td",
+    handle: ".stop-drag-handle",
     animation: 150,
-    filter: ".day-header-row,.current-stop-row",
+    filter: ".day-header-row,.time-period-row,.current-stop-row",
     draggable: ".sortable-stop-row",
     // Delay drag start on touch devices so the page can scroll normally
     delay: 200,
     delayOnTouchOnly: true,
     touchStartThreshold: 10,
-    onEnd: async function (evt) {
-      // Walk through all rows, updating data-day for each stop row to match the most recent day header above it
+    onEnd: async function (event) {
+      const status = document.getElementById("planning-order-status");
+      if (status) {
+        status.classList.remove("error");
+        status.textContent = "Saving plan…";
+      }
+
+      // A stop inherits the most recent day and rough-time header above it.
       const rows = Array.from(tbody.querySelectorAll("tr"));
       let currentDay = null;
-      const updatesByDay = {};
+      let currentPeriod = PLANNING_PERIODS[0].key;
+      const updatesBySlot = {};
+      const originalSlot = `${event.item.dataset.day}:${event.item.dataset.period}`;
 
       rows.forEach((row) => {
         if (row.classList.contains("day-header-row")) {
           currentDay = row.getAttribute("data-day");
+          currentPeriod = PLANNING_PERIODS[0].key;
+        } else if (row.classList.contains("time-period-row")) {
+          currentPeriod = row.getAttribute("data-period");
         } else if (row.classList.contains("sortable-stop-row")) {
           if (currentDay) {
             row.setAttribute("data-day", currentDay);
-            if (!updatesByDay[currentDay]) updatesByDay[currentDay] = [];
-            updatesByDay[currentDay].push(row);
+            row.setAttribute("data-period", currentPeriod);
+            const slot = `${currentDay}:${currentPeriod}`;
+            if (!updatesBySlot[slot]) updatesBySlot[slot] = [];
+            updatesBySlot[slot].push(row);
           }
         }
       });
 
-      // For each day, assign new due dates in order (e.g., 08:00, 09:00, ...)
+      // Due times are an implementation detail: broad periods are fixed and
+      // five-minute offsets preserve order without presenting false precision.
       const updates = [];
-      Object.entries(updatesByDay).forEach(([day, rows]) => {
-        const baseDate = new Date(day + "T08:00:00");
-        rows.forEach((row, i) => {
-          const cardId = row.getAttribute("data-card-id");
-          if (!cardId) return; // <-- skip empty placeholder rows
-          const due = new Date(
-            baseDate.getTime() + i * 60 * 60 * 1000,
-          ).toISOString();
-          updates.push({ cardId, due });
-        });
+      const destinationSlot = `${event.item.dataset.day}:${event.item.dataset.period}`;
+      const affectedSlots = new Set([originalSlot, destinationSlot]);
+      const existingDueByCardId = new Map(
+        stops.map((stop) => [stop.id, new Date(stop.due).getTime()]),
+      );
+      Object.entries(updatesBySlot).forEach(([slot, rows]) => {
+        if (!affectedSlots.has(slot)) return;
+        const separator = slot.indexOf(":");
+        const day = slot.slice(0, separator);
+        const period = slot.slice(separator + 1);
+        rows
+          .filter((row) => row.getAttribute("data-card-id"))
+          .forEach((row, i) => {
+            const cardId = row.getAttribute("data-card-id");
+            const due = dueForPlanningPosition(day, period, i);
+            if (existingDueByCardId.get(cardId) !== new Date(due).getTime()) {
+              updates.push({ cardId, due });
+            }
+          });
       });
 
-      // Send to backend
       if (updates.length) {
-        await fetch("/api/reorder-stops", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ updates }),
-        });
-        // Add a short delay to allow Trello to update
-        setTimeout(async () => {
+        try {
+          const response = await fetch("/api/reorder-stops", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ updates }),
+          });
+          if (!response.ok) throw new Error("Unable to save the plan");
+
           const data = await fetchData();
           stops = data.stops;
           places = data.places;
@@ -2223,7 +2321,23 @@ function initTableDragAndDrop() {
             stops,
             parseFloat(document.getElementById("speed-input").value),
           );
-        }, 1000);
+          const refreshedStatus = document.getElementById(
+            "planning-order-status",
+          );
+          if (refreshedStatus) refreshedStatus.textContent = "Plan saved.";
+        } catch {
+          if (status) {
+            status.classList.add("error");
+            status.textContent =
+              "The plan could not be saved. Please try again.";
+          }
+          renderTable(
+            stops,
+            parseFloat(document.getElementById("speed-input").value),
+          );
+        }
+      } else if (status) {
+        status.textContent = "Plan unchanged.";
       }
     },
   });

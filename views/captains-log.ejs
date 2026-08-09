@@ -117,6 +117,13 @@
         </section>
       <% } %>
       <div id="planning-summary" class="summary-panel"></div>
+      <% if (user) { %>
+        <p class="planning-help">
+          <i class="fa-solid fa-grip-lines" aria-hidden="true"></i>
+          Drag stops between days and rough times. Their order is the plan; times are approximate.
+        </p>
+        <p id="planning-order-status" class="planning-order-status" role="status" aria-live="polite"></p>
+      <% } %>
       <table id="planning-table" class="planning-table"></table>
     </div>
   </div>
