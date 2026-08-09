@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 88" role="img" aria-labelledby="title desc">
+  <title id="title">Skibidi</title>
+  <desc id="desc">Skibidi sailboat S mark and wordmark</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- S / sail mark -->
+    <path d="M48 12 C28 12 20 22 20 34 C20 44 27 50 39 50 H54 C65 50 72 56 72 66 C72 75 64 80 53 80" stroke="#F4F0E7" stroke-width="6"/>
+    <path d="M48 18 V58" stroke="#F4F0E7" stroke-width="5"/>
+    <path d="M51 25 L68 56 H51 Z" fill="#F4F0E7" stroke="none"/>
+    <path d="M50 58 H71 C69 69 61 75 50 76 C39 76 31 71 28 63 H50" stroke="#83C9C9" stroke-width="5"/>
+    <path d="M34 67 C39 63 44 71 50 67 C56 63 61 71 66 67" stroke="#83C9C9" stroke-width="3"/>
+  </g>
+  <g fill="#0A2540" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+    <text x="96" y="31" font-size="12" font-weight="700" letter-spacing="4">WHERE IS</text>
+    <text x="94" y="66" font-size="38" font-weight="500" letter-spacing="8">SKIBIDI</text>
+  </g>
+</svg>
