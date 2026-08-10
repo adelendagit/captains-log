@@ -2506,3 +2506,190 @@ summary:focus-visible {
     border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   }
 }
+
+/* Compact itinerary cards inside the stacked planning table. */
+.planning-table .sortable-stop-row:not(.empty-period-drop-row) {
+  padding: 0;
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.planning-table .sortable-stop-row:not(.empty-period-drop-row):hover {
+  z-index: 1;
+  box-shadow: 0 12px 30px rgba(11, 41, 54, 0.11);
+  transform: translateY(-1px);
+}
+
+.planning-table .stop-card-cell {
+  padding: 0;
+  border: 0;
+}
+
+.stop-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem 0.8rem;
+}
+
+.stop-card-header,
+.stop-card-heading,
+.stop-card-footer,
+.stop-card-metrics,
+.stop-card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.stop-card-header,
+.stop-card-footer {
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.stop-card-heading {
+  min-width: 0;
+  gap: 0.55rem;
+}
+
+.stop-card-heading h3 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--chart-ink);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-sequence {
+  display: inline-grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 1.55rem;
+  place-items: center;
+  color: #fff;
+  background: var(--chart-sea);
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.stop-card .stop-drag-handle {
+  margin-left: -0.3rem;
+  padding: 0.2rem;
+}
+
+.stop-card-rating {
+  flex: 0 0 auto;
+  color: #f39c12;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.stop-card-labels {
+  gap: 0.35rem;
+  min-height: 0;
+}
+
+.stop-card-labels .label {
+  margin: 0;
+  padding: 0.18rem 0.42rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.planning-label-extra[hidden] {
+  display: none;
+}
+
+.planning-label-toggle {
+  min-height: 1.35rem;
+  padding: 0.12rem 0.45rem;
+  color: var(--chart-muted);
+  background: rgba(11, 41, 54, 0.06);
+  border: 1px solid rgba(11, 41, 54, 0.1);
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.stop-card-footer {
+  min-height: 2rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(217, 209, 194, 0.62);
+}
+
+.stop-card-metrics {
+  flex-wrap: wrap;
+  gap: 0.45rem 0.9rem;
+  color: var(--chart-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.stop-card-metrics span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.stop-card-metrics i {
+  color: var(--chart-teal);
+}
+
+.stop-card-actions {
+  flex: 0 0 auto;
+  gap: 0.15rem;
+}
+
+.planning-table .stop-card-actions a,
+.planning-table .stop-card-actions button {
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.planning-table .stop-card-actions a:hover {
+  background: rgba(11, 41, 54, 0.06);
+}
+
+.planning-table .stop-card-actions .stop-card-remove {
+  color: #b42318;
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.82rem;
+}
+
+.planning-table .stop-card-actions .stop-card-remove:hover {
+  color: #8f1c13;
+  background: #fff0f0;
+  border-color: #f5c2c7;
+}
+
+@media (max-width: 420px) {
+  .stop-card {
+    padding-inline: 0.75rem;
+  }
+
+  .stop-card-header {
+    align-items: flex-start;
+  }
+
+  .stop-card-rating {
+    padding-top: 0.2rem;
+    font-size: 0.78rem;
+  }
+}

@@ -2175,35 +2175,50 @@ function renderTable(stops, speed) {
             : makeStars(s.rating);
           const removeBtn =
             canPlan && s.due
-              ? `<button class="remove-btn" data-card-id="${s.id}" title="Remove planned stop" style="margin-left:0.5em;">Remove</button>`
+              ? `<button class="remove-btn stop-card-remove" data-card-id="${s.id}" title="Remove planned stop" aria-label="Remove ${escapeMarkup(s.name)} from the plan"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>`
               : "";
           const links = `
-          <a href="${s.trelloUrl}" target="_blank" title="Open in Trello">
-            <i class="fab fa-trello"></i>
+          <a href="${s.trelloUrl}" target="_blank" title="Open in Trello" aria-label="Open ${escapeMarkup(s.name)} in Trello">
+            <i class="fab fa-trello" aria-hidden="true"></i>
           </a>
           ${
             s.navilyUrl
               ? `
-            <a href="${s.navilyUrl}" target="_blank" title="Open in Navily">
-              <i class="fa-solid fa-anchor"></i>
+            <a href="${s.navilyUrl}" target="_blank" title="Open in Navily" aria-label="Open ${escapeMarkup(s.name)} in Navily">
+              <i class="fa-solid fa-anchor" aria-hidden="true"></i>
             </a>
           `
               : ""
           }
           ${removeBtn}
         `;
-          const labels = Array.isArray(s.labels)
-            ? `<div class="labels-wrap">` +
-              s.labels
-                .map((l) => {
+          const planningLabels = Array.isArray(s.labels)
+            ? s.labels.filter((label) => label.name)
+            : [];
+          const visibleLabelCount = 4;
+          const hiddenLabelCount = Math.max(
+            planningLabels.length - visibleLabelCount,
+            0,
+          );
+          const labels = planningLabels.length
+            ? `<div class="labels-wrap stop-card-labels">` +
+              planningLabels
+                .map((l, labelIndex) => {
                   const bg = l.color || "#888";
                   const fg = badgeTextColor(bg);
-                  return `<span class="label" style="background:${bg};color:${fg}">${l.name}</span>`;
+                  const hidden = labelIndex >= visibleLabelCount;
+                  return `<span class="label${hidden ? " planning-label-extra" : ""}" style="background:${bg};color:${fg}"${hidden ? " hidden" : ""}>${escapeMarkup(l.name)}</span>`;
                 })
                 .join("") +
+              (hiddenLabelCount
+                ? `<button type="button" class="planning-label-toggle" aria-expanded="false" data-hidden-count="${hiddenLabelCount}">+${hiddenLabelCount}</button>`
+                : "") +
               `</div>`
             : "";
           const markerColor = getMarkerColor(s.rating, s.labels);
+          const stopNumber = stops.findIndex((stop) => stop.id === s.id) + 1;
+          const distanceText =
+            nm === "" ? "" : nm === "—" || nm === "…" ? nm : `${nm} NM`;
           const tr = document.createElement("tr");
           tr.setAttribute("data-card-id", s.id);
           tr.className = "sortable-stop-row";
@@ -2211,19 +2226,30 @@ function renderTable(stops, speed) {
           tr.setAttribute("data-period", period.key);
           tr.style.borderLeft = `4px solid ${markerColor}`;
           tr.innerHTML = `
-          <td class="stop-name-cell">
-            ${
-              canPlan
-                ? `<span class="stop-drag-handle" title="Drag to change day, time or order" aria-label="Drag stop"><i class="fa-solid fa-grip-lines" aria-hidden="true"></i></span>`
-                : ""
-            }
-            <span>${s.name}</span>
+          <td colspan="6" class="stop-card-cell">
+            <article class="stop-card">
+              <header class="stop-card-header">
+                <div class="stop-card-heading">
+                  ${
+                    canPlan
+                      ? `<span class="stop-drag-handle" title="Drag to change day, time or order" aria-label="Drag ${escapeMarkup(s.name)}"><i class="fa-solid fa-grip-lines" aria-hidden="true"></i></span>`
+                      : ""
+                  }
+                  ${stopNumber > 0 ? `<span class="stop-sequence" aria-label="Stop ${stopNumber}">${stopNumber}</span>` : ""}
+                  <h3>${escapeMarkup(s.name)}</h3>
+                </div>
+                ${stars ? `<div class="stop-card-rating" aria-label="Rating">${stars}</div>` : ""}
+              </header>
+              ${labels}
+              <footer class="stop-card-footer">
+                <div class="stop-card-metrics">
+                  ${distanceText ? `<span title="Distance from previous stop"><i class="fa-solid fa-route" aria-hidden="true"></i>${distanceText}</span>` : ""}
+                  ${eta ? `<span title="Travel time"><i class="fa-solid fa-clock" aria-hidden="true"></i>${eta}</span>` : ""}
+                </div>
+                <div class="stop-card-actions">${links}</div>
+              </footer>
+            </article>
           </td>
-          <td>${labels}</td>
-          <td>${stars}</td>
-          <td>${nm === "—" || nm === "…" ? nm : `${nm} NM`}</td>
-          <td>${eta}</td>
-          <td>${links}</td>
         `;
           tbody.appendChild(tr);
           dayRows.push(tr);
@@ -2290,6 +2316,23 @@ function renderTable(stops, speed) {
       day: "numeric",
     });
   }
+  document.querySelectorAll(".planning-label-toggle").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      const nextExpanded = !expanded;
+      button.setAttribute("aria-expanded", String(nextExpanded));
+      button
+        .closest(".stop-card-labels")
+        ?.querySelectorAll(".planning-label-extra")
+        .forEach((label) => {
+          label.hidden = !nextExpanded;
+        });
+      button.textContent = nextExpanded
+        ? "Show less"
+        : `+${button.dataset.hiddenCount}`;
+    });
+  });
   handleRemoveButtonClicks();
   initTableDragAndDrop();
 }
