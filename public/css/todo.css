@@ -260,3 +260,165 @@ h1 {
     padding-top: 1.5rem;
   }
 }
+
+/* Chartroom treatment shared with the chart and logbook */
+.todo-page {
+  width: min(780px, 100%);
+  padding-top: clamp(1.5rem, 5vw, 3rem);
+}
+
+.todo-header {
+  align-items: center;
+  margin-bottom: 1.75rem;
+  padding: clamp(1.35rem, 4vw, 2rem);
+  color: #eaf3f2;
+  background:
+    radial-gradient(circle at 90% 14%, rgba(97, 198, 185, 0.2), transparent 13rem),
+    linear-gradient(115deg, rgba(11, 41, 54, 0.99), rgba(25, 91, 100, 0.95));
+  border-radius: 1.35rem;
+  box-shadow: 0 18px 50px rgba(11, 41, 54, 0.16);
+}
+
+.todo-header .eyebrow {
+  color: #9fc5c5;
+}
+
+.todo-header h1 {
+  color: #fffdf8;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.todo-intro {
+  max-width: 34rem;
+  margin: 0.75rem 0 0;
+  color: #c1d6d5;
+  line-height: 1.5;
+}
+
+.todo-count {
+  flex: 0 0 auto;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.list-switcher {
+  gap: 0.55rem;
+  scrollbar-width: thin;
+}
+
+.list-button {
+  color: var(--chart-muted);
+  background: rgba(255, 253, 248, 0.78);
+  border-color: var(--chart-line);
+}
+
+.list-button:hover,
+.list-button.active {
+  color: var(--chart-ink);
+  background: rgba(45, 140, 136, 0.12);
+  border-color: var(--chart-teal);
+}
+
+.add-item-form {
+  padding: 0.65rem;
+  background: rgba(255, 253, 248, 0.82);
+  border: 1px solid var(--chart-line);
+  border-radius: 1rem;
+}
+
+.add-item-form input {
+  background: var(--chart-card);
+  border-color: var(--chart-line);
+}
+
+.add-item-form input:focus {
+  border-color: var(--chart-teal);
+  outline-color: rgba(45, 140, 136, 0.2);
+}
+
+.add-item-form button {
+  color: #fff;
+  background: var(--chart-teal);
+  border-color: var(--chart-teal);
+}
+
+.todo-card {
+  padding: 1.1rem;
+  background: var(--chart-card);
+  border-color: var(--chart-line);
+  border-radius: 1rem;
+  box-shadow: 0 9px 28px rgba(11, 41, 54, 0.07);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.todo-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 13px 34px rgba(11, 41, 54, 0.1);
+}
+
+.todo-card h2 {
+  color: var(--chart-ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.16rem;
+  font-weight: 600;
+}
+
+.todo-description,
+.todo-status,
+.done-empty {
+  color: var(--chart-muted);
+}
+
+.todo-count,
+.todo-label,
+.todo-meta time,
+.done-section summary span {
+  color: var(--chart-ink);
+  background: rgba(31, 112, 133, 0.09);
+}
+
+.done-checkbox {
+  accent-color: var(--chart-teal);
+}
+
+.drag-handle {
+  color: #8b9d9f;
+}
+
+.is-done {
+  background: rgba(255, 253, 248, 0.56);
+  box-shadow: none;
+}
+
+.todo-empty {
+  background: rgba(255, 253, 248, 0.45);
+  border-color: var(--chart-line);
+}
+
+.done-section {
+  border-color: var(--chart-line);
+}
+
+.done-section summary {
+  color: var(--chart-ink);
+}
+
+@media (max-width: 560px) {
+  .todo-header {
+    align-items: flex-start;
+    flex-direction: column;
+    border-radius: 1rem;
+  }
+
+  .todo-count {
+    align-self: flex-start;
+  }
+
+  .add-item-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -14,7 +14,10 @@
     <div class="page">
       <header class="site-header">
         <div class="site-title">
-          <a href="/" class="site-title-link">Where is ...</a>
+          <a href="/" class="site-title-link">
+            <img src="/icons/logo.svg" alt="" class="site-logo">
+            <span><small>Where is</small>Skibidi</span>
+          </a>
         </div>
         <nav class="tab-nav" aria-label="Primary navigation">
           <a href="/">Chart</a>
@@ -42,8 +45,9 @@
     <main class="todo-page" data-list-id="<%= selectedList.id %>">
       <header class="todo-header">
         <div>
-          <p class="eyebrow">Skibidi</p>
+          <p class="eyebrow">Ship's worklist</p>
           <h1><%= selectedList.name %></h1>
+          <p class="todo-intro">Keep the next jobs visible and the completed ones safely in the wake.</p>
         </div>
         <span id="todo-count" class="todo-count"><%= openCards.length %> open</span>
       </header>
