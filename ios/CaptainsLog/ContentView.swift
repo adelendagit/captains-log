@@ -35,7 +35,7 @@ private struct SignInView: View {
                 .font(.system(size: 58))
                 .foregroundStyle(Chartroom.sea)
             VStack(spacing: 8) {
-                Text("Captain’s Log")
+                Text("Skibidi")
                     .font(.system(.largeTitle, design: .serif, weight: .semibold))
                     .foregroundStyle(Chartroom.ink)
                 Text("The private onboard companion for Skibidi.")

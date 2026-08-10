@@ -48,7 +48,7 @@ final class ShareViewController: UIViewController {
             }
             return
         }
-        showMessage("Share a Navily place link to add it to Captain’s Log.")
+        showMessage("Share a Navily place link to add it to Skibidi.")
     }
 
     private func showForm(seed: NavilyShareSeed, capturedTitle: String? = nil) {
@@ -57,7 +57,7 @@ final class ShareViewController: UIViewController {
             return
         }
         guard let token = KeychainStore.read() else {
-            showMessage("Open Captain’s Log and sign in to Trello before using the share action.")
+            showMessage("Open Skibidi and sign in to Trello before using the share action.")
             return
         }
         let root = AddPlaceView(

@@ -7,7 +7,7 @@
     <key>KEYCHAIN_ACCESS_GROUP</key>
     <string>$(AppIdentifierPrefix)co.uk.achilleas.CaptainsLog.shared</string>
     <key>CFBundleDisplayName</key>
-    <string>Add to Captain’s Log</string>
+    <string>Add to Skibidi</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>

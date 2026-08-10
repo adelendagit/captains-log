@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Captain’s Log</string>
+    <string>Skibidi</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -34,11 +34,11 @@
         </dict>
     </array>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Captain’s Log shares Skibidi’s position during a journey you explicitly start.</string>
+    <string>Skibidi shares the boat’s position during a journey you explicitly start.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Captain’s Log uses your position to record and publish Skibidi’s active journey.</string>
+    <string>Skibidi uses your position to record and publish the boat’s active journey.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Captain’s Log uses the camera to add photos to To Do items.</string>
+    <string>Skibidi uses the camera to add photos to To Do items.</string>
     <key>UIBackgroundModes</key>
     <array><string>location</string></array>
     <key>UILaunchScreen</key>
