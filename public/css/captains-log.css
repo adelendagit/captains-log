@@ -3723,3 +3723,76 @@ body {
     padding-inline: 1rem;
   }
 }
+
+/* Compact planned stops act as map controls; detail lives in the map popup. */
+#planning .map-overlay .stop-card-map-link {
+  gap: 0.4rem;
+  margin: 0.2rem 0;
+  padding: 0.6rem 0.5rem;
+  border-radius: 0.65rem;
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+#planning .map-overlay .stop-card-map-link:hover {
+  background: var(--sk-glass-100);
+}
+
+#planning .map-overlay .stop-card-map-link:focus-visible {
+  outline: 3px solid rgba(67, 143, 154, 0.28);
+  outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px var(--sk-sea-500);
+}
+
+#planning .map-overlay .stop-card-map-link .stop-card-header {
+  align-items: center;
+  gap: 0.65rem;
+}
+
+#planning .map-overlay .stop-card-map-link .stop-card-heading {
+  flex: 1 1 auto;
+}
+
+#planning .map-overlay .stop-card-map-link .stop-card-heading h3 {
+  font-size: 0.88rem;
+}
+
+#planning .map-overlay .stop-card-map-link .stop-sequence {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex-basis: 1.4rem;
+  font-size: 0.66rem;
+}
+
+.stop-card-compact-metrics {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  color: var(--sk-muted);
+  font-size: 0.68rem;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+.stop-card-compact-metrics span + span::before {
+  margin-right: 0.4rem;
+  content: "·";
+}
+
+.stop-card-compact-metrics i {
+  margin-left: 0.15rem;
+  color: var(--sk-sea-600);
+  font-size: 0.62rem;
+}
+
+#planning .map-overlay .stop-card-map-link .stop-card-labels {
+  gap: 0.25rem;
+  padding-left: 1.95rem;
+}
+
+#planning .map-overlay .stop-card-map-link .stop-card-labels .label,
+#planning .map-overlay .stop-card-map-link .planning-label-toggle {
+  padding: 0.12rem 0.34rem;
+  font-size: 0.6rem;
+}

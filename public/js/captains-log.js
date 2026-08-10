@@ -17,6 +17,8 @@ let plannedOnlyToggle = null;
 
 let logLayerGroup = null;
 let planningRouteLayerGroup = null;
+let planningStopLayerGroup = null;
+const planningStopMarkers = new Map();
 
 let mostRecentTripRange = null;
 let logRenderScheduled = false;
@@ -936,6 +938,8 @@ function resetPlanningMap() {
   journeyLayerGroup = null;
   logLayerGroup = null;
   planningRouteLayerGroup = null;
+  planningStopLayerGroup = null;
+  planningStopMarkers.clear();
   underwayMarker = null;
   planningMapViewportSource = null;
 }
@@ -1499,6 +1503,13 @@ function initMap(stops, places, logs = null) {
 
   const stopCoords = [];
 
+  if (planningStopLayerGroup) {
+    planningStopLayerGroup.clearLayers();
+  } else {
+    planningStopLayerGroup = L.layerGroup().addTo(map);
+  }
+  planningStopMarkers.clear();
+
   // plot planned stops only
   mapStops.forEach((s) => {
     const ll = [s.lat, s.lng];
@@ -1534,14 +1545,14 @@ function initMap(stops, places, logs = null) {
 
     const isHighlight = highlightId && s.id === highlightId;
     const plannedIndex = stops.findIndex((stop) => stop.id === s.id);
-    L.marker(ll, {
+    const marker = L.marker(ll, {
       icon: stopMarkerIcon(s, {
         isPlanned: plannedIndex >= 0,
         isCurrent: isHighlight,
         plannedIndex: plannedIndex >= 0 ? plannedIndex + 1 : null,
       }),
     })
-      .addTo(map)
+      .addTo(planningStopLayerGroup)
       .bindPopup(popupHtml)
       .bindTooltip(s.name, {
         permanent: true,
@@ -1549,6 +1560,7 @@ function initMap(stops, places, logs = null) {
         offset: [10, 0],
         className: "map-label",
       });
+    planningStopMarkers.set(s.id, marker);
   });
 
   if (planningRouteLayerGroup) {
@@ -2233,32 +2245,10 @@ function renderTable(stops, speed) {
               }
             }
           }
-          const stars = canPlan
-            ? makeEditableStars(s.rating, s.id)
-            : makeStars(s.rating);
-          const removeBtn =
-            canPlan && s.due
-              ? `<button class="remove-btn stop-card-remove" data-card-id="${s.id}" title="Remove planned stop" aria-label="Remove ${escapeMarkup(s.name)} from the plan"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>`
-              : "";
-          const links = `
-          <a href="${s.trelloUrl}" target="_blank" title="Open in Trello" aria-label="Open ${escapeMarkup(s.name)} in Trello">
-            <i class="fab fa-trello" aria-hidden="true"></i>
-          </a>
-          ${
-            s.navilyUrl
-              ? `
-            <a href="${s.navilyUrl}" target="_blank" title="Open in Navily" aria-label="Open ${escapeMarkup(s.name)} in Navily">
-              <i class="fa-solid fa-anchor" aria-hidden="true"></i>
-            </a>
-          `
-              : ""
-          }
-          ${removeBtn}
-        `;
           const planningLabels = Array.isArray(s.labels)
             ? s.labels.filter((label) => label.name)
             : [];
-          const visibleLabelCount = 4;
+          const visibleLabelCount = 3;
           const hiddenLabelCount = Math.max(
             planningLabels.length - visibleLabelCount,
             0,
@@ -2290,7 +2280,7 @@ function renderTable(stops, speed) {
           tr.style.borderLeft = `4px solid ${markerColor}`;
           tr.innerHTML = `
           <td colspan="6" class="stop-card-cell">
-            <article class="stop-card">
+            <article class="stop-card stop-card-map-link" data-map-stop-id="${s.id}" role="button" tabindex="0" aria-label="Show ${escapeMarkup(s.name)} on the map">
               <header class="stop-card-header">
                 <div class="stop-card-heading">
                   ${
@@ -2301,16 +2291,13 @@ function renderTable(stops, speed) {
                   ${stopNumber > 0 ? `<span class="stop-sequence" aria-label="Stop ${stopNumber}">${stopNumber}</span>` : ""}
                   <h3>${escapeMarkup(s.name)}</h3>
                 </div>
-                ${stars ? `<div class="stop-card-rating" aria-label="Rating">${stars}</div>` : ""}
+                <div class="stop-card-compact-metrics">
+                  ${distanceText ? `<span>${distanceText}</span>` : ""}
+                  ${eta ? `<span>${eta}</span>` : ""}
+                  <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                </div>
               </header>
               ${labels}
-              <footer class="stop-card-footer">
-                <div class="stop-card-metrics">
-                  ${distanceText ? `<span title="Distance from previous stop"><i class="fa-solid fa-route" aria-hidden="true"></i>${distanceText}</span>` : ""}
-                  ${eta ? `<span title="Travel time"><i class="fa-solid fa-clock" aria-hidden="true"></i>${eta}</span>` : ""}
-                </div>
-                <div class="stop-card-actions">${links}</div>
-              </footer>
             </article>
           </td>
         `;
@@ -2394,6 +2381,18 @@ function renderTable(stops, speed) {
       button.textContent = nextExpanded
         ? "Show less"
         : `+${button.dataset.hiddenCount}`;
+    });
+  });
+  document.querySelectorAll(".stop-card-map-link").forEach((card) => {
+    const openStop = (event) => {
+      if (event.target.closest("button, a, .stop-drag-handle")) return;
+      showPlanningStopOnMap(card.dataset.mapStopId);
+    };
+    card.addEventListener("click", openStop);
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openStop(event);
     });
   });
   handleRemoveButtonClicks();
@@ -3017,6 +3016,35 @@ function renderMapWithToggle() {
     // Map exists: just update log layer and planned/places markers
     initMap(visibleStops, plannedOnlyToggle.checked ? [] : places, logs);
   }
+}
+
+function showPlanningStopOnMap(stopId) {
+  const marker = planningStopMarkers.get(stopId);
+  if (!leafletMap || !marker) return;
+
+  const mapRect = leafletMap.getContainer().getBoundingClientRect();
+  const overlayRect = document
+    .querySelector("#planning .map-overlay")
+    ?.getBoundingClientRect();
+  const compact = window.matchMedia("(max-width: 820px)").matches;
+  const zoom = Math.min(Math.max(leafletMap.getZoom(), 13), 15);
+
+  leafletMap.setView(marker.getLatLng(), zoom, { animate: true });
+  setTimeout(() => {
+    if (overlayRect) {
+      const offset = compact
+        ? [0, Math.min(overlayRect.height * 0.45, mapRect.height * 0.3)]
+        : [
+            -Math.min(
+              (overlayRect.right - mapRect.left) / 2,
+              mapRect.width * 0.28,
+            ),
+            0,
+          ];
+      leafletMap.panBy(offset, { animate: true, duration: 0.25 });
+    }
+    marker.openPopup();
+  }, 220);
 }
 
 function currentVoyage(voyages, now = new Date()) {
