@@ -400,9 +400,43 @@ function focusPlanningMapOnCurrentPosition() {
   const bounds = L.latLng(focus.lat, focus.lng).toBounds(
     INITIAL_MAP_RADIUS_METERS * 2,
   );
-  leafletMap.fitBounds(bounds, { animate: false });
+  leafletMap.fitBounds(bounds, {
+    animate: false,
+    maxZoom: 14,
+    ...planningMapFitPadding(leafletMap),
+  });
   planningMapViewportSource = focus.source;
   return true;
+}
+
+function planningMapFitPadding(map) {
+  const container = map?.getContainer?.();
+  const overlay = document.querySelector("#planning .map-overlay");
+  if (!container || !overlay) return { padding: [40, 40] };
+
+  const mapRect = container.getBoundingClientRect();
+  const overlayRect = overlay.getBoundingClientRect();
+  const compact = window.matchMedia("(max-width: 820px)").matches;
+
+  if (compact) {
+    const reservedBottom = Math.min(
+      mapRect.height * 0.62,
+      Math.max(overlayRect.height + 24, 140),
+    );
+    return {
+      paddingTopLeft: [32, 32],
+      paddingBottomRight: [32, reservedBottom],
+    };
+  }
+
+  const reservedLeft = Math.min(
+    mapRect.width * 0.52,
+    Math.max(overlayRect.right - mapRect.left + 28, 80),
+  );
+  return {
+    paddingTopLeft: [reservedLeft, 40],
+    paddingBottomRight: [48, 40],
+  };
 }
 
 async function refreshCurrentJourney() {
@@ -589,7 +623,7 @@ function planningRouteSequence(plannedStops) {
         Number.isFinite(stop.lng),
     )
     .sort((left, right) => new Date(left.due) - new Date(right.due));
-  const start = planningStartStop(plannedStops);
+  const start = currentStatus ? planningStartStop(plannedStops) : null;
   const sequence =
     start && Number.isFinite(start.lat) && Number.isFinite(start.lng)
       ? [start, ...future]
@@ -600,6 +634,26 @@ function planningRouteSequence(plannedStops) {
       stop.lat !== sequence[index - 1].lat ||
       stop.lng !== sequence[index - 1].lng,
   );
+}
+
+function planningStopsVisibleOnMap(plannedStops) {
+  const future = plannedStops.filter(
+    (stop) =>
+      !stop.dueComplete &&
+      stop.due &&
+      Number.isFinite(stop.lat) &&
+      Number.isFinite(stop.lng),
+  );
+  const start = currentStatus ? planningStartStop(plannedStops) : null;
+  if (
+    !start ||
+    !Number.isFinite(start.lat) ||
+    !Number.isFinite(start.lng) ||
+    future.some((stop) => stop.id === start.id)
+  ) {
+    return future;
+  }
+  return [start, ...future];
 }
 
 function planningRouteKey(sequence) {
@@ -1511,7 +1565,16 @@ function initMap(stops, places, logs = null) {
       return;
     }
     if (mapWasCreated && stopCoords.length) {
-      map.fitBounds(stopCoords, { padding: [40, 40] });
+      const initialBounds =
+        stopCoords.length === 1
+          ? L.latLng(stopCoords[0]).toBounds(INITIAL_MAP_RADIUS_METERS * 2)
+          : stopCoords;
+      map.fitBounds(initialBounds, {
+        animate: false,
+        maxZoom: 13,
+        ...planningMapFitPadding(map),
+      });
+      planningMapViewportSource = "plan";
     }
   }, 0);
 
@@ -2942,16 +3005,17 @@ function renderMapWithToggle() {
       mostRecentTripRange.end,
     );
   }
+  const visibleStops = planningStopsVisibleOnMap(stops);
   if (!leafletMap) {
     // First time: create the map
     if (plannedOnlyToggle.checked) {
-      leafletMap = initMap(stops, [], logs);
+      leafletMap = initMap(visibleStops, [], logs);
     } else {
-      leafletMap = initMap(stops, places, logs);
+      leafletMap = initMap(visibleStops, places, logs);
     }
   } else {
     // Map exists: just update log layer and planned/places markers
-    initMap(stops, plannedOnlyToggle.checked ? [] : places, logs);
+    initMap(visibleStops, plannedOnlyToggle.checked ? [] : places, logs);
   }
 }
 
