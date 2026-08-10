@@ -3241,3 +3241,264 @@ body {
     font-size: 0.78rem;
   }
 }
+
+/* Front page: one continuous map surface followed by the passage plan. */
+.page--map {
+  width: 100%;
+  max-width: none;
+  padding: 0 0 4rem;
+}
+
+.page--map .site-header {
+  top: 0;
+  min-height: 6.4rem;
+  margin: 0;
+  padding-inline: clamp(1rem, 4vw, 4rem);
+  border-width: 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#planning .planning-flex {
+  display: flex;
+  gap: 0;
+  flex-direction: column;
+}
+
+#planning .map-stage {
+  position: relative;
+  top: auto;
+  width: 100%;
+  height: min(72vh, 52rem);
+  min-height: 36rem;
+}
+
+#planning .map-stage #map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#planning .live-journey,
+#planning .live-journey.is-anchored {
+  top: clamp(1.25rem, 3vw, 2.5rem);
+  left: clamp(1rem, 4vw, 4rem);
+  width: min(25rem, calc(100% - 2rem));
+  border-color: rgba(7, 29, 54, 0.08);
+  box-shadow: 0 20px 55px rgba(3, 20, 38, 0.2);
+}
+
+#planning .plan-section {
+  width: min(72rem, calc(100% - 3rem));
+  max-width: none;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 6vw, 5rem) 0 0;
+}
+
+.plan-section-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--sk-line);
+}
+
+.plan-section-header .chartroom-eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.plan-section-header h2 {
+  margin: 0;
+  color: var(--sk-ink-900);
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  font-weight: 730;
+  letter-spacing: -0.04em;
+}
+
+#planning .controls {
+  gap: 1.5rem;
+  margin: 0 0 1rem;
+  padding: 0 0 1rem;
+  border-bottom: 1px solid var(--sk-line);
+}
+
+#planning .controls label {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+#planning .summary-panel {
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--sk-line);
+}
+
+#planning .summary-panel .summary-item {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+#planning .log-launch-panel {
+  margin: 0;
+  padding: 1rem 0;
+  color: var(--sk-ink-900);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--sk-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#planning .log-launch-panel h3 {
+  color: var(--sk-ink-900);
+}
+
+#planning .log-launch-panel .muted {
+  color: var(--sk-muted);
+}
+
+#planning .log-launch-btn {
+  color: #fff;
+  background: var(--sk-ink-900);
+}
+
+#planning .planning-help {
+  margin: 1rem 0;
+  padding: 0;
+}
+
+#planning .planning-table {
+  margin-top: 0.5rem;
+}
+
+#planning .day-header-row {
+  margin-top: 2rem;
+}
+
+#planning .day-header-table {
+  padding: 0.9rem 0 !important;
+  color: var(--sk-ink-900);
+  background: transparent;
+  border-bottom: 2px solid var(--sk-ink-900) !important;
+  border-radius: 0;
+}
+
+#planning .day-totals {
+  color: var(--sk-muted);
+}
+
+#planning .time-period-row,
+#planning .time-period-row td {
+  background: transparent;
+}
+
+#planning .time-period-row td {
+  padding-inline: 0;
+  border-bottom: 1px solid var(--sk-line);
+}
+
+#planning .planning-table tr[data-day]:not(.day-header-row),
+#planning .planning-table tr.day-end-row {
+  margin: 0 !important;
+  background: transparent;
+  border: 0 !important;
+  border-bottom: 1px solid var(--sk-line) !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+#planning .planning-table .sortable-stop-row:not(.empty-period-drop-row):hover {
+  background: rgba(168, 217, 215, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+#planning .current-stop-row,
+#planning .underway-row {
+  padding-left: 0.75rem !important;
+  background: rgba(168, 217, 215, 0.12) !important;
+  border-left: 3px solid var(--sk-sea-500) !important;
+}
+
+#planning .stop-card {
+  padding: 1rem 0.35rem;
+}
+
+#planning .stop-card-footer {
+  border-top-color: var(--sk-line);
+}
+
+@media (max-width: 820px) {
+  .page--map .site-header {
+    top: 0;
+    padding-inline: 0.65rem;
+    border-radius: 0;
+  }
+
+  #planning .map-stage {
+    display: block;
+    height: 66vh;
+    min-height: 31rem;
+  }
+
+  #planning .map-stage #map {
+    height: 100%;
+    min-height: 0;
+  }
+
+  #planning .live-journey,
+  #planning .live-journey.is-anchored {
+    position: absolute;
+    top: 1rem;
+    left: 0.75rem;
+    width: min(23rem, calc(100% - 1.5rem));
+    padding: 1rem;
+  }
+
+  #planning .plan-section {
+    width: min(100% - 1.5rem, 72rem);
+    padding-top: 2.5rem;
+  }
+
+  #planning .controls {
+    gap: 0.85rem;
+  }
+
+  #planning .controls label {
+    width: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  #planning .map-stage {
+    height: 72vh;
+    min-height: 34rem;
+  }
+
+  #planning .live-journey-readings,
+  #planning .live-journey.has-temperature .live-journey-readings {
+    display: none;
+  }
+
+  #planning .controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #planning .log-launch-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

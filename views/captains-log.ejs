@@ -24,7 +24,7 @@
 
 <body>
 
-<main class="page">
+<main class="page<%= activePage === "planning" ? " page--map" : "" %>">
 
 <header class="site-header">
   <div class="site-title">
@@ -93,7 +93,13 @@
         </dl>
       </section>
     </div>
-    <div class="table-col">
+    <section class="table-col plan-section" aria-labelledby="plan-title">
+      <header class="plan-section-header">
+        <div>
+          <p class="chartroom-eyebrow">Upcoming route</p>
+          <h2 id="plan-title">Plan</h2>
+        </div>
+      </header>
       <div class="controls">
         <label for="speed-input">
           <span class="speed-label">Speed</span>
@@ -132,7 +138,7 @@
         <p id="planning-order-status" class="planning-order-status" role="status" aria-live="polite"></p>
       <% } %>
       <table id="planning-table" class="planning-table"></table>
-    </div>
+    </section>
   </div>
 </section>
 
