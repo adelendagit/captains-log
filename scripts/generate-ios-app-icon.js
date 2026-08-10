@@ -16,26 +16,12 @@ async function generate() {
     "AppIcon.png",
   );
 
-  const source = await fs.promises.readFile(sourcePath, "utf8");
-  const croppedLogo = source.replace(
-    'viewBox="0 0 100 100"',
-    'viewBox="18 18 64 64"',
-  );
-  const mark = await sharp(Buffer.from(croppedLogo), { density: 1024 })
-    .resize(700, 700, { fit: "contain" })
-    .png()
-    .toBuffer();
+  const source = await fs.promises.readFile(sourcePath);
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-  await sharp({
-    create: {
-      width: 1024,
-      height: 1024,
-      channels: 3,
-      background: "#f4f0e7",
-    },
-  })
-    .composite([{ input: mark, gravity: "center" }])
+  await sharp(source, { density: 1024 })
+    .resize(1024, 1024, { fit: "cover" })
+    .flatten({ background: "#0A2540" })
     .removeAlpha()
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(outputPath);
