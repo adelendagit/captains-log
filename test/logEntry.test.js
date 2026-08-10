@@ -567,6 +567,20 @@ test("keeps the current stop description private and lets a logged-in user updat
           "timestamp: 2026-08-05T09:00:00.000Z",
           "lat: 37.5",
           "lng: 23.4",
+          "mooring: Long lines",
+        ].join("\n"),
+      },
+    },
+    {
+      type: "commentCard",
+      date: "2025-07-01T09:00:00.000Z",
+      data: {
+        card: { id: "stop-card" },
+        text: [
+          "Visited",
+          "timestamp: 2025-07-01T09:00:00.000Z",
+          "lat: 37.5",
+          "lng: 23.4",
         ].join("\n"),
       },
     },
@@ -612,6 +626,8 @@ test("keeps the current stop description private and lets a logged-in user updat
   assert.equal(response.status, 200);
   assert.equal(status.status, "arrived");
   assert.equal(status.temperature, 27.8);
+  assert.equal(status.mooring, "Long lines");
+  assert.equal(status.visitCount, 2);
   assert.equal(Object.hasOwn(status.current, "desc"), false);
   assert.equal(response.headers.get("cache-control"), "public, max-age=30");
   assert.equal(response.headers.get("vary"), "Cookie");

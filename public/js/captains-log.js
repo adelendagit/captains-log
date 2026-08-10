@@ -130,6 +130,27 @@ function formatStatusDate(timestamp) {
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+function formatRelativeTime(timestamp) {
+  if (!timestamp) return "Not recorded";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+  const seconds = (date.getTime() - Date.now()) / 1000;
+  const absoluteSeconds = Math.abs(seconds);
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const units = [
+    ["year", 365 * 24 * 60 * 60],
+    ["month", 30 * 24 * 60 * 60],
+    ["week", 7 * 24 * 60 * 60],
+    ["day", 24 * 60 * 60],
+    ["hour", 60 * 60],
+    ["minute", 60],
+  ];
+  const [unit, unitSeconds] =
+    units.find(([, threshold]) => absoluteSeconds >= threshold) ||
+    ["second", 1];
+  return formatter.format(Math.round(seconds / unitSeconds), unit);
+}
+
 function placeSummary(place) {
   const description = String(place?.desc || "")
     .replace(/^#+\s*/gm, "")
@@ -219,11 +240,21 @@ function renderJourneyStatus() {
     "live-journey-temperature-reading",
   );
   const temperature = document.getElementById("live-journey-temperature");
+  const mooringReading = document.getElementById(
+    "live-journey-mooring-reading",
+  );
+  const mooring = document.getElementById("live-journey-mooring");
+  const ratingReading = document.getElementById(
+    "live-journey-rating-reading",
+  );
+  const rating = document.getElementById("live-journey-rating");
 
-  const showTemperature =
+  const showArrivalDetails =
     !currentJourney?.active && currentStatus?.status === "arrived";
-  panel.classList.toggle("has-temperature", showTemperature);
-  temperatureReading?.classList.toggle("hidden", !showTemperature);
+  panel.classList.toggle("has-temperature", showArrivalDetails);
+  temperatureReading?.classList.toggle("hidden", !showArrivalDetails);
+  mooringReading?.classList.toggle("hidden", !showArrivalDetails);
+  ratingReading?.classList.toggle("hidden", !showArrivalDetails);
 
   panel.classList.toggle("is-live", Boolean(currentJourney?.active));
   panel.classList.toggle(
@@ -278,9 +309,9 @@ function renderJourneyStatus() {
     message.classList.toggle("hidden", !canEditDescription);
     renderCurrentStopDescriptionEditor(place);
     updatedLabel.textContent = "Arrived";
-    speedLabel.textContent = "Visits";
+    speedLabel.textContent = "Total visits";
     courseLabel.textContent = "Area";
-    updated.textContent = formatStatusDate(currentStatus.arrivedAt);
+    updated.textContent = formatRelativeTime(currentStatus.arrivedAt);
     const count = Math.max(1, Number(currentStatus.visitCount) || 1);
     speed.textContent = `${count} ${count === 1 ? "visit" : "visits"}`;
     course.textContent = place.listName || "—";
@@ -288,6 +319,15 @@ function renderJourneyStatus() {
       temperature.textContent = Number.isFinite(currentStatus.temperature)
         ? `${currentStatus.temperature} °C`
         : "—";
+    }
+    if (mooring) mooring.textContent = currentStatus.mooring || "—";
+    if (rating) {
+      const value = Number(place.rating);
+      rating.innerHTML = Number.isFinite(value) ? makeStars(value) : "—";
+      rating.setAttribute(
+        "aria-label",
+        Number.isFinite(value) ? `${Math.round(value)} out of 5 stars` : "Not rated",
+      );
     }
     return;
   }

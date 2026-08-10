@@ -27,7 +27,6 @@ const {
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
 let currentStopRequest = null;
-const CURRENT_STATUS_COMMENT_LIMIT = 200;
 
 function extractTimestamp(text, fallback, cardId) {
   const match = text.match(/timestamp:\s*([0-9T:\- ]+)/i);
@@ -50,6 +49,11 @@ function extractTemperature(text) {
   );
   const temperature = Number((metadataMatch || headlineMatch)?.[1]);
   return Number.isFinite(temperature) ? temperature : null;
+}
+
+function extractMooring(text) {
+  const match = String(text || "").match(/^mooring:\s*(.+?)\s*$/im);
+  return match?.[1]?.trim() || null;
 }
 
 // existing number helper
@@ -317,6 +321,11 @@ function deriveCurrentStatus(cards, lists, customFields, comments) {
     result.temperature = latestTemperature
       ? extractTemperature(latestTemperature.data.text)
       : null;
+    result.mooring =
+      extractMooring(lastArrived.data.text) ||
+      result.current?.labels?.find((label) => label.trelloColor === "orange")
+        ?.name ||
+      null;
     result.visitCount = actions.filter(
       (action) =>
         action.data.card.id === currentCardId &&
@@ -334,15 +343,15 @@ async function getCurrentStatus() {
   if (currentStopRequest) return currentStopRequest;
 
   currentStopRequest = (async () => {
-    const [{ cards, lists, customFields }, recentComments] = await Promise.all([
+    const [{ cards, lists, customFields }, allComments] = await Promise.all([
       fetchBoard(),
-      fetchRecentComments(CURRENT_STATUS_COMMENT_LIMIT),
+      fetchAllComments(),
     ]);
     currentStopCache = deriveCurrentStatus(
       cards,
       lists,
       customFields,
-      recentComments,
+      allComments,
     );
     currentStopCacheExpiresAt = Date.now() + 30_000;
     return currentStopCache;

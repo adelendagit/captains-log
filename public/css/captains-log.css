@@ -3796,3 +3796,26 @@ body {
   padding: 0.12rem 0.34rem;
   font-size: 0.6rem;
 }
+
+/* Current-stop detail belongs in the summary above, not in the route list. */
+#planning .map-overlay .planning-table .current-stop-row {
+  display: none !important;
+}
+
+#planning .map-overlay .live-journey-readings,
+#planning .map-overlay .live-journey.has-temperature .live-journey-readings {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+#planning .map-overlay .live-journey-readings div {
+  border-bottom: 1px solid var(--sk-line);
+}
+
+#planning .map-overlay .live-journey-readings div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+#planning .map-overlay #live-journey-rating .stars {
+  color: #f39c12;
+  letter-spacing: 0.03em;
+}
