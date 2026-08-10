@@ -2507,6 +2507,472 @@ summary:focus-visible {
   }
 }
 
+/* Skibidi visual system — deep water, sea glass, and clean instruments. */
+:root {
+  color-scheme: light;
+  --sk-ink-950: #031426;
+  --sk-ink-900: #071d36;
+  --sk-ink-800: #0d2b49;
+  --sk-sea-600: #438f9a;
+  --sk-sea-500: #69adb2;
+  --sk-glass-300: #a8d9d7;
+  --sk-glass-100: #e7f4f4;
+  --sk-sky-50: #f4f8fa;
+  --sk-white: #ffffff;
+  --sk-line: #dce6eb;
+  --sk-muted: #607486;
+  --sk-signal: #ee806e;
+  --chart-ink: var(--sk-ink-900);
+  --chart-sea: var(--sk-sea-600);
+  --chart-teal: var(--sk-sea-500);
+  --chart-paper: var(--sk-sky-50);
+  --chart-card: var(--sk-white);
+  --chart-line: var(--sk-line);
+  --chart-signal: var(--sk-signal);
+  --chart-muted: var(--sk-muted);
+}
+
+html {
+  background: var(--sk-sky-50);
+}
+
+body {
+  min-width: 320px;
+  color: var(--sk-ink-900);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(168, 217, 215, 0.22), transparent 28rem),
+    linear-gradient(180deg, #edf5f7 0, var(--sk-sky-50) 24rem);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  width: min(100%, 1520px);
+  padding: 1rem clamp(0.75rem, 2.4vw, 2.25rem) 4rem;
+}
+
+.site-header {
+  grid-template-columns: minmax(20rem, 1fr) auto minmax(3.25rem, 0.25fr);
+  gap: clamp(1rem, 2.5vw, 2.5rem);
+  min-height: 5.65rem;
+  top: 0.65rem;
+  padding: 0.7rem clamp(0.8rem, 2.2vw, 1.6rem);
+  color: #fff;
+  background:
+    radial-gradient(circle at 9% -80%, rgba(105, 173, 178, 0.3), transparent 24rem),
+    linear-gradient(110deg, var(--sk-ink-950), var(--sk-ink-900) 62%, #06192e);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.1rem;
+  box-shadow: 0 18px 45px rgba(3, 20, 38, 0.18);
+}
+
+.site-title-link {
+  gap: 0;
+  color: #fff;
+}
+
+.site-logo {
+  width: 3.45rem;
+  height: 3.45rem;
+  margin-right: 0.85rem;
+  border: 1px solid rgba(168, 217, 215, 0.2);
+  border-radius: 0.9rem;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+}
+
+.site-title-link .site-wordmark {
+  display: block;
+  color: #fff;
+  font-family: inherit;
+  font-size: 1.12rem;
+  font-weight: 750;
+  letter-spacing: 0.34em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.site-title-link .brand-tagline {
+  display: block;
+  margin-left: 1.15rem;
+  padding: 0.45rem 0 0.45rem 1.15rem;
+  color: var(--sk-glass-300);
+  border-left: 1px solid rgba(255, 255, 255, 0.24);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tab-nav {
+  gap: clamp(0.25rem, 1vw, 1.2rem);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  backdrop-filter: none;
+}
+
+.tab-nav button,
+.tab-nav a {
+  min-width: auto;
+  padding: 1rem 0.55rem 0.85rem;
+  color: rgba(255, 255, 255, 0.76);
+  border-radius: 0;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tab-nav button.active,
+.tab-nav a[aria-current="page"] {
+  color: #fff;
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--sk-glass-300);
+}
+
+.tab-nav button:hover:not(.active),
+.tab-nav a:hover,
+.tab-nav a[aria-current="page"]:hover,
+.tab-nav button.active:hover {
+  color: #fff;
+  background: transparent;
+}
+
+.site-user .user-btn,
+.site-user .user-btn:link,
+.site-user .user-btn:visited {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  justify-content: center;
+  padding: 0.25rem;
+  color: var(--sk-ink-900);
+  background: var(--sk-glass-300);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+}
+
+.site-user .user-btn:not(.logged-in) {
+  padding-inline: 0.85rem;
+  color: var(--sk-ink-900);
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.site-user .user-btn:hover:not(:disabled) {
+  color: var(--sk-ink-950);
+  background: #c8e7e5;
+}
+
+.user-avatar {
+  border: 0;
+}
+
+.planning-flex {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(22rem, 0.72fr);
+  gap: clamp(1rem, 2vw, 1.6rem);
+  align-items: start;
+}
+
+.map-stage {
+  position: sticky;
+  top: 7.6rem;
+  height: min(76vh, 52rem);
+  min-height: 38rem;
+}
+
+.map-stage #map {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid rgba(7, 29, 54, 0.12);
+  border-radius: 1.2rem;
+  box-shadow: 0 22px 55px rgba(7, 29, 54, 0.14);
+}
+
+.live-journey,
+.live-journey.is-anchored {
+  position: absolute;
+  z-index: 60;
+  top: 1.5rem;
+  left: 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  width: min(24rem, calc(100% - 3rem));
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--sk-ink-900);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 1rem;
+  box-shadow: 0 18px 46px rgba(3, 20, 38, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.chartroom-eyebrow {
+  color: var(--sk-sea-600);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+}
+
+.live-journey-heading {
+  gap: 0.65rem;
+}
+
+.live-journey h1 {
+  color: var(--sk-ink-900);
+  font-family: inherit;
+  font-size: clamp(1.35rem, 2.3vw, 1.8rem);
+  font-weight: 730;
+  letter-spacing: -0.025em;
+}
+
+.live-journey-message,
+.live-journey-message.is-editable {
+  max-width: 100%;
+  margin: 0.55rem 0 0;
+  color: var(--sk-muted);
+  line-height: 1.45;
+}
+
+.live-journey-message.is-editable {
+  margin-left: -0.45rem;
+}
+
+.current-stop-description-controls {
+  margin-left: 0;
+}
+
+.current-stop-description-form label,
+.current-stop-description-status {
+  color: var(--sk-muted);
+}
+
+.current-stop-description-actions button {
+  color: var(--sk-ink-900);
+  border-color: var(--sk-line);
+  background: var(--sk-sky-50);
+}
+
+.live-journey-readings,
+.live-journey.has-temperature .live-journey-readings {
+  grid-template-columns: repeat(2, 1fr);
+  border-color: var(--sk-line);
+  border-radius: 0.75rem;
+}
+
+.live-journey-readings div,
+.live-journey-readings div:last-child {
+  padding: 0.65rem 0.7rem;
+  border-color: var(--sk-line);
+}
+
+.live-journey-readings div:nth-child(2n) {
+  border-right: 0;
+}
+
+.live-journey-readings div:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--sk-line);
+}
+
+.live-journey-readings dt {
+  color: var(--sk-muted);
+}
+
+.live-journey-readings dd {
+  color: var(--sk-ink-900);
+  font-size: 0.9rem;
+}
+
+.live-indicator {
+  border-width: 2px;
+  border-color: rgba(7, 29, 54, 0.08);
+}
+
+.table-col {
+  min-width: 0;
+  width: 100%;
+}
+
+.controls label,
+.summary-panel .summary-item,
+.voyage-filter-panel,
+#log-list,
+#diesel-info,
+#broken-items {
+  background: #fff;
+  border-color: var(--sk-line);
+}
+
+.controls label {
+  border-radius: 0.75rem;
+}
+
+.log-launch-panel {
+  background: linear-gradient(115deg, var(--sk-ink-900), var(--sk-ink-800));
+  border-radius: 0.9rem;
+  box-shadow: 0 14px 34px rgba(7, 29, 54, 0.14);
+}
+
+.section-hero {
+  min-height: 9rem;
+  background:
+    radial-gradient(circle at 86% 5%, rgba(168, 217, 215, 0.22), transparent 18rem),
+    linear-gradient(110deg, var(--sk-ink-950), var(--sk-ink-800));
+  border-radius: 1.1rem;
+}
+
+.section-hero h1,
+.day-header-table,
+#diesel-info h4,
+#broken-items h4 {
+  font-family: inherit;
+}
+
+.section-hero h1 {
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.day-header-table {
+  background: var(--sk-ink-900);
+  border-radius: 0.85rem 0.85rem 0 0;
+  font-weight: 700;
+}
+
+.planning-table tr.day-end-row,
+.voyage-filter-panel,
+#log-list,
+#diesel-info,
+#broken-items {
+  box-shadow: 0 10px 30px rgba(7, 29, 54, 0.06);
+}
+
+.historical-log-entry {
+  background: var(--sk-sky-50);
+  border-color: var(--sk-line);
+}
+
+.stop-marker--planned {
+  border-color: var(--sk-sea-600);
+}
+
+.stop-marker--current,
+.live-boat-marker {
+  border-color: var(--sk-glass-300);
+}
+
+@media (max-width: 1080px) {
+  .site-header {
+    grid-template-columns: minmax(17rem, 1fr) auto auto;
+  }
+
+  .site-title-link .brand-tagline {
+    display: none;
+  }
+
+  .planning-flex {
+    grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.8fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .page {
+    padding: 0.55rem 0.55rem 2rem;
+  }
+
+  .site-header {
+    grid-template-columns: 1fr auto;
+    gap: 0.55rem;
+    top: 0.35rem;
+    min-height: auto;
+    padding: 0.6rem;
+    border-radius: 0.9rem;
+  }
+
+  .site-logo {
+    width: 2.65rem;
+    height: 2.65rem;
+    margin-right: 0.65rem;
+    border-radius: 0.7rem;
+  }
+
+  .site-title-link .site-wordmark {
+    font-size: 0.95rem;
+    letter-spacing: 0.27em;
+  }
+
+  .tab-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: stretch;
+    width: 100%;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .tab-nav a,
+  .tab-nav button {
+    flex: 1;
+    padding: 0.75rem 0.4rem 0.65rem;
+    text-align: center;
+  }
+
+  .planning-flex {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .map-stage {
+    position: static;
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .map-stage #map {
+    order: 2;
+    height: 58vh;
+    min-height: 26rem;
+  }
+
+  .live-journey,
+  .live-journey.is-anchored {
+    position: static;
+    order: 1;
+    width: 100%;
+    box-sizing: border-box;
+    background: #fff;
+    border-color: var(--sk-line);
+    box-shadow: 0 10px 30px rgba(7, 29, 54, 0.08);
+  }
+
+  .table-col {
+    max-width: none;
+  }
+
+  .section-hero {
+    border-radius: 0.9rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .live-journey,
+  .live-journey.is-anchored {
+    padding: 1rem;
+  }
+
+  .map-stage #map {
+    height: 54vh;
+    min-height: 23rem;
+  }
+}
+
 /* Compact itinerary cards inside the stacked planning table. */
 .planning-table .sortable-stop-row:not(.empty-period-drop-row) {
   padding: 0;

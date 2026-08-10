@@ -1,6 +1,8 @@
-<!–– Leaflet styles ––>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>Where is...</title>
+  <meta charset="utf-8">
+  <title>Skibidi · Where is Skibidi?</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="/icons/logo.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
@@ -8,8 +10,8 @@
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="mask-icon" href="/icons/logo.svg" color="#0c4a6e">
-  <meta name="theme-color" content="#0c4a6e">
+  <link rel="mask-icon" href="/icons/logo.svg" color="#071d36">
+  <meta name="theme-color" content="#071d36">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link
@@ -20,17 +22,20 @@
 <link rel="stylesheet" href="/css/captains-log.css">
 </head>
 
+<body>
+
 <main class="page">
 
 <header class="site-header">
   <div class="site-title">
     <a href="/" class="site-title-link">
       <img src="/icons/logo.svg" alt="" class="site-logo">
-      <span><small>Where is</small>Skibidi</span>
+      <span class="site-wordmark">Skibidi</span>
+      <span class="brand-tagline">Where is Skibidi?</span>
     </a>
   </div>
   <nav class="tab-nav" aria-label="Primary navigation">
-    <a href="/" data-tab="planning" <% if (activePage === "planning") { %>aria-current="page"<% } %>>Chart</a>
+    <a href="/" data-tab="planning" <% if (activePage === "planning") { %>aria-current="page"<% } %>>Map</a>
     <a href="/logbook" data-tab="log" <% if (activePage === "log") { %>aria-current="page"<% } %>>Logbook</a>
     <% if (user) { %>
       <a href="/to-do" class="tab-nav-link">To Do</a>
@@ -55,37 +60,39 @@
 </header>
 
 <section id="planning" class="tab-content<%= activePage === "planning" ? "" : " hidden" %>">
-  <section id="live-journey" class="live-journey" aria-live="polite">
-    <div class="live-journey-copy">
-      <p id="live-journey-eyebrow" class="chartroom-eyebrow">Current position</p>
-      <div class="live-journey-heading">
-        <span id="live-journey-indicator" class="live-indicator" aria-hidden="true"></span>
-        <h1 id="live-journey-title">Checking Skibidi’s position…</h1>
-      </div>
-      <p id="live-journey-message" class="live-journey-message">Connecting to the ship’s log.</p>
-      <% if (user) { %>
-        <div id="current-stop-description-controls" class="current-stop-description-controls hidden">
-          <form id="current-stop-description-form" class="current-stop-description-form hidden">
-            <label for="current-stop-description-input">Description</label>
-            <textarea id="current-stop-description-input" maxlength="16384" rows="1"></textarea>
-            <div class="current-stop-description-actions">
-              <button type="button" id="cancel-current-stop-description-btn">Cancel</button>
-              <button type="submit" id="save-current-stop-description-btn">Save</button>
-            </div>
-            <p id="current-stop-description-status" class="current-stop-description-status" role="status"></p>
-          </form>
-        </div>
-      <% } %>
-    </div>
-    <dl class="live-journey-readings">
-      <div><dt id="live-journey-updated-label">Last report</dt><dd id="live-journey-updated">—</dd></div>
-      <div><dt id="live-journey-speed-label">Speed</dt><dd id="live-journey-speed">—</dd></div>
-      <div><dt id="live-journey-course-label">Course</dt><dd id="live-journey-course">—</dd></div>
-      <div id="live-journey-temperature-reading" class="hidden"><dt>Sea Temp</dt><dd id="live-journey-temperature">—</dd></div>
-    </dl>
-  </section>
   <div class="planning-flex">
-    <div id="map"></div>
+    <div class="map-stage">
+      <div id="map"></div>
+      <section id="live-journey" class="live-journey" aria-live="polite">
+        <div class="live-journey-copy">
+          <p id="live-journey-eyebrow" class="chartroom-eyebrow">Current position</p>
+          <div class="live-journey-heading">
+            <span id="live-journey-indicator" class="live-indicator" aria-hidden="true"></span>
+            <h1 id="live-journey-title">Checking Skibidi’s position…</h1>
+          </div>
+          <p id="live-journey-message" class="live-journey-message">Connecting to the ship’s log.</p>
+          <% if (user) { %>
+            <div id="current-stop-description-controls" class="current-stop-description-controls hidden">
+              <form id="current-stop-description-form" class="current-stop-description-form hidden">
+                <label for="current-stop-description-input">Description</label>
+                <textarea id="current-stop-description-input" maxlength="16384" rows="1"></textarea>
+                <div class="current-stop-description-actions">
+                  <button type="button" id="cancel-current-stop-description-btn">Cancel</button>
+                  <button type="submit" id="save-current-stop-description-btn">Save</button>
+                </div>
+                <p id="current-stop-description-status" class="current-stop-description-status" role="status"></p>
+              </form>
+            </div>
+          <% } %>
+        </div>
+        <dl class="live-journey-readings">
+          <div><dt id="live-journey-updated-label">Last report</dt><dd id="live-journey-updated">—</dd></div>
+          <div><dt id="live-journey-speed-label">Speed</dt><dd id="live-journey-speed">—</dd></div>
+          <div><dt id="live-journey-course-label">Course</dt><dd id="live-journey-course">—</dd></div>
+          <div id="live-journey-temperature-reading" class="hidden"><dt>Sea Temp</dt><dd id="live-journey-temperature">—</dd></div>
+        </dl>
+      </section>
+    </div>
     <div class="table-col">
       <div class="controls">
         <label for="speed-input">
@@ -322,3 +329,5 @@
 
 <!–– Your app JS ––>
 <script src="/js/captains-log.js"></script>
+</body>
+</html>

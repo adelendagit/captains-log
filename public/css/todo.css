@@ -422,3 +422,62 @@ h1 {
     flex-direction: column;
   }
 }
+
+/* Align the worklist with the Skibidi map-first visual system. */
+.todo-page {
+  width: min(840px, 100%);
+}
+
+.todo-header {
+  min-height: 9rem;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(168, 217, 215, 0.22), transparent 17rem),
+    linear-gradient(110deg, var(--sk-ink-950), var(--sk-ink-800));
+  border-radius: 1.1rem;
+  box-shadow: 0 18px 45px rgba(3, 20, 38, 0.15);
+}
+
+.todo-header h1 {
+  font-family: inherit;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.todo-header .eyebrow {
+  color: var(--sk-glass-300);
+}
+
+.todo-intro {
+  color: rgba(231, 244, 244, 0.78);
+}
+
+.list-button {
+  background: #fff;
+}
+
+.list-button:hover,
+.list-button.active {
+  background: var(--sk-glass-100);
+  border-color: var(--sk-sea-500);
+}
+
+.add-item-form {
+  background: #fff;
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 30px rgba(7, 29, 54, 0.06);
+}
+
+.add-item-form button {
+  background: var(--sk-ink-900);
+  border-color: var(--sk-ink-900);
+}
+
+.todo-card {
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 30px rgba(7, 29, 54, 0.06);
+}
+
+.todo-card h2 {
+  font-family: inherit;
+  font-weight: 680;
+}
