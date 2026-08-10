@@ -44,27 +44,26 @@
         </div>
       </header>
 
-    <main class="todo-page" data-list-id="<%= selectedList.id %>">
-      <header class="todo-header">
-        <div>
-          <p class="eyebrow">Ship's worklist</p>
-          <h1><%= selectedList.name %></h1>
-          <p class="todo-intro">Keep the next jobs visible and the completed ones safely in the wake.</p>
-        </div>
-        <span id="todo-count" class="todo-count"><%= openCards.length %> open</span>
-      </header>
-
-      <% if (showListSwitcher) { %>
-        <nav class="list-switcher" aria-label="To-do lists">
+      <nav class="section-subnav" aria-label="To-do lists">
+        <span class="section-subnav-label">Lists</span>
+        <div class="section-subnav-items">
           <% lists.forEach(list => { %>
             <a
               href="/to-do?list=<%= encodeURIComponent(list.id) %>"
-              class="list-button<%= list.id === selectedList.id ? ' active' : '' %>"
+              class="section-subnav-link<%= list.id === selectedList.id ? ' active' : '' %>"
               <%= list.id === selectedList.id ? 'aria-current="page"' : '' %>
-            ><%= list.name %></a>
+            >
+              <span><%= list.name %></span>
+              <% if (list.id === selectedList.id) { %>
+                <span id="todo-count" class="section-subnav-count"><%= openCards.length %> open</span>
+              <% } %>
+            </a>
           <% }) %>
-        </nav>
+        </div>
+      </nav>
 
+    <main class="todo-page" data-list-id="<%= selectedList.id %>">
+      <% if (showListSwitcher) { %>
         <form id="add-item-form" class="add-item-form">
           <label for="add-item-name" class="visually-hidden">New item</label>
           <input

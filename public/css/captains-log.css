@@ -2865,6 +2865,77 @@ body {
   border-color: var(--sk-glass-300);
 }
 
+/* Reusable secondary navigation for sections with peer subpages. */
+.section-subnav {
+  position: relative;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: -0.25rem 0 0.75rem;
+  padding: 0.65rem 1rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--sk-line);
+  border-radius: 0 0 0.9rem 0.9rem;
+  box-shadow: 0 10px 28px rgba(7, 29, 54, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.section-subnav-label {
+  flex: 0 0 auto;
+  color: var(--sk-muted);
+  font-size: 0.67rem;
+  font-weight: 780;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.section-subnav-items {
+  display: flex;
+  min-width: 0;
+  gap: 0.35rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.section-subnav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+  flex: 0 0 auto;
+  padding: 0.25rem 0.8rem;
+  color: var(--sk-muted);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 680;
+  text-decoration: none;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+
+.section-subnav-link:hover {
+  color: var(--sk-ink-900);
+  background: var(--sk-glass-100);
+}
+
+.section-subnav-link.active,
+.section-subnav-link[aria-current="page"] {
+  color: #fff;
+  background: var(--sk-ink-900);
+  border-color: var(--sk-ink-900);
+}
+
+.section-subnav-count {
+  padding: 0.15rem 0.45rem;
+  color: var(--sk-ink-900);
+  background: var(--sk-glass-300);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
 @media (max-width: 1080px) {
   .site-header {
     grid-template-columns: minmax(17rem, 1fr) auto auto;
@@ -2958,6 +3029,17 @@ body {
 
   .section-hero {
     border-radius: 0.9rem;
+  }
+
+  .section-subnav {
+    gap: 0.6rem;
+    margin-top: -0.15rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 0 0 0.8rem 0.8rem;
+  }
+
+  .section-subnav-label {
+    padding-left: 0.15rem;
   }
 }
 

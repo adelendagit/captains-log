@@ -426,6 +426,7 @@ h1 {
 /* Align the worklist with the Skibidi map-first visual system. */
 .todo-page {
   width: min(840px, 100%);
+  padding-top: 0.75rem;
 }
 
 .todo-header {
