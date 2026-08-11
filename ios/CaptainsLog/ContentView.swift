@@ -67,10 +67,11 @@ private struct SignInView: View {
 
 private struct ChartroomView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
+    @State private var selectedTab = ChartroomTab.now
     @State private var logEntryIntent: LogEntryIntent?
 
     var body: some View {
-        TabView {
+        TabView(selection: selectedTabBinding) {
             CurrentPositionView(
                 onStartJourney: {
                     logEntryIntent = LogEntryIntent(action: "departed")
@@ -80,27 +81,19 @@ private struct ChartroomView: View {
                 }
             )
                 .tabItem { Label("Now", systemImage: "location.fill") }
+                .tag(ChartroomTab.now)
             PlanView()
                 .tabItem { Label("Plan", systemImage: "map") }
+                .tag(ChartroomTab.plan)
+            Color.clear
+                .tabItem { Label("Add", systemImage: "plus") }
+                .tag(ChartroomTab.add)
             LogbookView()
                 .tabItem { Label("Logbook", systemImage: "book.closed") }
+                .tag(ChartroomTab.logbook)
             TodoView()
                 .tabItem { Label("To Do", systemImage: "checklist") }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                logEntryIntent = LogEntryIntent(action: nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title2.bold())
-                    .frame(width: 54, height: 54)
-                    .foregroundStyle(.white)
-                    .background(Chartroom.sea, in: Circle())
-                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
-            }
-            .accessibilityLabel("Add log entry")
-            .padding(.trailing, 18)
-            .padding(.bottom, 66)
+                .tag(ChartroomTab.todo)
         }
         .sheet(item: $logEntryIntent) { intent in
             AddLogEntryView(initialAction: intent.action)
@@ -121,6 +114,19 @@ private struct ChartroomView: View {
         }
     }
 
+    private var selectedTabBinding: Binding<ChartroomTab> {
+        Binding(
+            get: { selectedTab },
+            set: { tab in
+                if tab == .add {
+                    logEntryIntent = LogEntryIntent(action: nil)
+                } else {
+                    selectedTab = tab
+                }
+            }
+        )
+    }
+
     private var connectionMessage: String {
         let count = authentication.pendingMutationCount
         if authentication.isOffline {
@@ -130,6 +136,14 @@ private struct ChartroomView: View {
         }
         return "Syncing \(count) queued plan change\(count == 1 ? "" : "s")…"
     }
+}
+
+private enum ChartroomTab: Hashable {
+    case now
+    case plan
+    case add
+    case logbook
+    case todo
 }
 
 private struct CurrentPositionView: View {
