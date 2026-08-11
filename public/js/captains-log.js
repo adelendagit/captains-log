@@ -90,6 +90,10 @@ function localDateKey(value) {
   ].join("-");
 }
 
+function placeIdFor(item) {
+  return item?.placeId || item?.id || null;
+}
+
 function addCalendarDays(dateString, amount) {
   const date = new Date(`${dateString}T12:00:00`);
   date.setDate(date.getDate() + amount);
@@ -145,9 +149,9 @@ function formatRelativeTime(timestamp) {
     ["hour", 60 * 60],
     ["minute", 60],
   ];
-  const [unit, unitSeconds] =
-    units.find(([, threshold]) => absoluteSeconds >= threshold) ||
-    ["second", 1];
+  const [unit, unitSeconds] = units.find(
+    ([, threshold]) => absoluteSeconds >= threshold,
+  ) || ["second", 1];
   return formatter.format(Math.round(seconds / unitSeconds), unit);
 }
 
@@ -244,9 +248,7 @@ function renderJourneyStatus() {
     "live-journey-mooring-reading",
   );
   const mooring = document.getElementById("live-journey-mooring");
-  const ratingReading = document.getElementById(
-    "live-journey-rating-reading",
-  );
+  const ratingReading = document.getElementById("live-journey-rating-reading");
   const rating = document.getElementById("live-journey-rating");
 
   const showArrivalDetails =
@@ -326,7 +328,9 @@ function renderJourneyStatus() {
       rating.innerHTML = Number.isFinite(value) ? makeStars(value) : "—";
       rating.setAttribute(
         "aria-label",
-        Number.isFinite(value) ? `${Math.round(value)} out of 5 stars` : "Not rated",
+        Number.isFinite(value)
+          ? `${Math.round(value)} out of 5 stars`
+          : "Not rated",
       );
     }
     return;
@@ -642,14 +646,16 @@ function renderHistoricalRoutes(
 function planningStartStop(plannedStops) {
   if (currentStatus?.status === "arrived" && currentStatus.current) {
     return (
-      plannedStops.find((stop) => stop.id === currentStatus.current.id) ||
-      currentStatus.current
+      plannedStops.find(
+        (stop) => placeIdFor(stop) === placeIdFor(currentStatus.current),
+      ) || currentStatus.current
     );
   }
   if (currentStatus?.status === "underway" && currentStatus.from) {
     return (
-      plannedStops.find((stop) => stop.id === currentStatus.from.id) ||
-      currentStatus.from
+      plannedStops.find(
+        (stop) => placeIdFor(stop) === placeIdFor(currentStatus.from),
+      ) || currentStatus.from
     );
   }
   return plannedStops.find((stop) => stop.dueComplete) || null;
@@ -691,7 +697,7 @@ function planningStopsVisibleOnMap(plannedStops) {
     !start ||
     !Number.isFinite(start.lat) ||
     !Number.isFinite(start.lng) ||
-    future.some((stop) => stop.id === start.id)
+    future.some((stop) => placeIdFor(stop) === placeIdFor(start))
   ) {
     return future;
   }
@@ -875,11 +881,12 @@ function updateSummary(stops, speed) {
   if (currentStatus) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
       prev =
-        stops.find((s) => s.id === currentStatus.current.id) ||
+        stops.find((s) => placeIdFor(s) === currentStatus.current.id) ||
         currentStatus.current;
     } else if (currentStatus.status === "underway" && currentStatus.from) {
       prev =
-        stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+        stops.find((s) => placeIdFor(s) === currentStatus.from.id) ||
+        currentStatus.from;
     }
   } else {
     prev = stops.find((s) => s.dueComplete) || null;
@@ -1063,7 +1070,7 @@ function setupCurrentStopDescriptionEditor() {
 
       currentStatus.current.desc = result.description;
       const matchingStop = stops.find(
-        (stop) => stop.id === currentStatus.current.id,
+        (stop) => placeIdFor(stop) === currentStatus.current.id,
       );
       if (matchingStop) matchingStop.desc = result.description;
       const matchingPlace = places.find(
@@ -1276,8 +1283,11 @@ function showLabelEditor(targetEl, cardId, currentIds) {
       if (res.ok) {
         const newLabels = boardLabels.filter((l) => selected.includes(l.id));
         targetEl.innerHTML = labelsToHtml(newLabels);
-        const stop = stops.find((s) => s.id === cardId);
-        if (stop) stop.labels = newLabels;
+        stops
+          .filter((stop) => placeIdFor(stop) === cardId)
+          .forEach((stop) => {
+            stop.labels = newLabels;
+          });
         if (lastLoadedLogs) {
           lastLoadedLogs.forEach((log) => {
             if (log.cardId === cardId) log.labels = newLabels;
@@ -1522,7 +1532,7 @@ function initMap(stops, places, logs = null) {
   if (currentStatus) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
       highlightId = currentStatus.current.id;
-      if (!mapStops.some((s) => s.id === highlightId)) {
+      if (!mapStops.some((s) => placeIdFor(s) === highlightId)) {
         const savedPlace = places.find((place) => place.id === highlightId);
         mapStops.unshift({
           ...savedPlace,
@@ -1534,7 +1544,7 @@ function initMap(stops, places, logs = null) {
       }
     } else if (currentStatus.status === "underway" && currentStatus.from) {
       highlightId = currentStatus.from.id;
-      if (!mapStops.some((s) => s.id === highlightId)) {
+      if (!mapStops.some((s) => placeIdFor(s) === highlightId)) {
         const savedPlace = places.find((place) => place.id === highlightId);
         mapStops.unshift({ ...savedPlace, ...currentStatus.from });
       }
@@ -1568,7 +1578,7 @@ function initMap(stops, places, logs = null) {
       popupHtml += `${new Date(s.due).toLocaleDateString()}<br>`;
     }
     const starsHtml = canPlan
-      ? makeEditableStars(s.rating, s.id)
+      ? makeEditableStars(s.rating, placeIdFor(s))
       : makeStars(s.rating);
     popupHtml += `Rating: ${starsHtml}<br>`;
     popupHtml += placePopupFacts(s);
@@ -1583,7 +1593,7 @@ function initMap(stops, places, logs = null) {
       popupHtml += `<br><button class="remove-btn" data-card-id="${s.id}">Remove from plan</button>`;
     }
 
-    const isHighlight = highlightId && s.id === highlightId;
+    const isHighlight = highlightId && placeIdFor(s) === highlightId;
     const plannedIndex = stops.findIndex((stop) => stop.id === s.id);
     const marker = L.marker(ll, {
       icon: stopMarkerIcon(s, {
@@ -1632,7 +1642,10 @@ function initMap(stops, places, logs = null) {
 
   // plot other places without changing zoom
   places
-    .filter((place) => !mapStops.some((stop) => stop.id === place.id))
+    .filter(
+      (place) =>
+        !mapStops.some((stop) => placeIdFor(stop) === placeIdFor(place)),
+    )
     .forEach((p) => {
       const ll = [p.lat, p.lng];
       let popupHtml = `<strong>${escapeMarkup(p.name)}</strong><br>`;
@@ -1810,7 +1823,7 @@ function initMap(stops, places, logs = null) {
         btn.disabled = true;
         const originalText = btn.textContent;
         btn.textContent = "Planning...";
-        const cardId = btn.getAttribute("data-card-id");
+        const placeId = btn.getAttribute("data-card-id");
         // Find the latest due date (if any)
         const lastDue = stops
           .filter((s) => s.due)
@@ -1825,7 +1838,7 @@ function initMap(stops, places, logs = null) {
         const res = await fetch(`/api/plan-stop`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cardId, due: nextDue.toISOString() }),
+          body: JSON.stringify({ placeId, due: nextDue.toISOString() }),
         });
         if (res.ok) {
           btn.textContent = "Planned!";
@@ -1867,12 +1880,12 @@ function initMap(stops, places, logs = null) {
       removeBtn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const cardId = removeBtn.getAttribute("data-card-id");
+        const planId = removeBtn.getAttribute("data-card-id");
         if (!confirm("Remove this planned stop?")) return;
         const res = await fetch(`/api/remove-stop`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cardId }),
+          body: JSON.stringify({ planId }),
         });
         if (res.ok) {
           const data = await fetchData();
@@ -1929,7 +1942,7 @@ function handlePlanButtonClicks() {
         btn.getAttribute("data-card-id"),
       );
       e.preventDefault();
-      const cardId = btn.getAttribute("data-card-id");
+      const placeId = btn.getAttribute("data-card-id");
       // Find the latest due date (if any)
       const lastDue = stops
         .filter((s) => s.due)
@@ -1944,7 +1957,7 @@ function handlePlanButtonClicks() {
       const res = await fetch(`/api/plan-stop`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardId, due: nextDue.toISOString() }),
+        body: JSON.stringify({ placeId, due: nextDue.toISOString() }),
       });
       if (res.ok) {
         // Refresh planning data, table, and map
@@ -1970,11 +1983,11 @@ function handleRemoveButtonClicks() {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      const cardId = btn.getAttribute("data-card-id");
+      const planId = btn.getAttribute("data-card-id");
       const res = await fetch(`/api/remove-stop`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardId }),
+        body: JSON.stringify({ planId }),
       });
       if (res.ok) {
         // Refresh planning data, table, and map
@@ -2051,11 +2064,12 @@ function renderTable(stops, speed) {
   if (currentStatus) {
     if (currentStatus.status === "arrived" && currentStatus.current) {
       current =
-        stops.find((s) => s.id === currentStatus.current.id) ||
+        stops.find((s) => placeIdFor(s) === currentStatus.current.id) ||
         currentStatus.current;
     } else if (currentStatus.status === "underway" && currentStatus.from) {
       departed =
-        stops.find((s) => s.id === currentStatus.from.id) || currentStatus.from;
+        stops.find((s) => placeIdFor(s) === currentStatus.from.id) ||
+        currentStatus.from;
     }
   } else {
     current = stops.find((s) => s.dueComplete) || null;
@@ -2063,7 +2077,7 @@ function renderTable(stops, speed) {
 
   if (current) {
     const stars = canPlan
-      ? makeEditableStars(current.rating, current.id)
+      ? makeEditableStars(current.rating, placeIdFor(current))
       : makeStars(current.rating);
     const links = `
       <a href="${current.trelloUrl}" target="_blank" title="Open in Trello">
@@ -2099,8 +2113,9 @@ function renderTable(stops, speed) {
     tbody.appendChild(tr);
   } else if (departed) {
     const nextStop = currentStatus.destination
-      ? stops.find((s) => s.id === currentStatus.destination.id) ||
-        currentStatus.destination
+      ? stops.find(
+          (s) => placeIdFor(s) === placeIdFor(currentStatus.destination),
+        ) || currentStatus.destination
       : null;
     const speed = parseFloat(document.getElementById("speed-input").value) || 0;
     const departedAt = currentStatus.departedAt
@@ -2507,10 +2522,10 @@ function initTableDragAndDrop() {
         rows
           .filter((row) => row.getAttribute("data-card-id"))
           .forEach((row, i) => {
-            const cardId = row.getAttribute("data-card-id");
+            const planId = row.getAttribute("data-card-id");
             const due = dueForPlanningPosition(day, period, i);
-            if (existingDueByCardId.get(cardId) !== new Date(due).getTime()) {
-              updates.push({ cardId, due });
+            if (existingDueByCardId.get(planId) !== new Date(due).getTime()) {
+              updates.push({ planId, due });
             }
           });
       });
@@ -2584,7 +2599,7 @@ function renderHistoricalLog(logs = [], stops = []) {
 
   arrived.forEach((l) => {
     const stop =
-      stops.find((s) => s.id === l.cardId) ||
+      stops.find((s) => placeIdFor(s) === l.cardId) ||
       stops.find((s) => s.name === l.cardName);
     const currentRating = stop ? stop.rating : l.rating;
     const ratingHtml = canPlan
@@ -2631,8 +2646,11 @@ function renderHistoricalLog(logs = [], stops = []) {
                 const val = parseInt(s.getAttribute("data-value"), 10);
                 s.textContent = val <= rating ? "★" : "☆";
               });
-              const stop = stops.find((s) => s.id === cardId);
-              if (stop) stop.rating = rating;
+              stops
+                .filter((stop) => placeIdFor(stop) === cardId)
+                .forEach((stop) => {
+                  stop.rating = rating;
+                });
               if (lastLoadedLogs) {
                 lastLoadedLogs.forEach((log) => {
                   if (log.cardId === cardId) log.rating = rating;
@@ -3666,12 +3684,18 @@ function setupLogWizard() {
       }
 
       if (logResult.dueComplete) {
-        const completedStop = stops.find((stop) => stop.id === cardId);
+        const completedStop = stops.find(
+          (stop) =>
+            stop.id === logResult.completedPlanId ||
+            (logResult.legacyPlanUpdated && placeIdFor(stop) === cardId),
+        );
         if (completedStop) completedStop.dueComplete = true;
         writeChartSnapshot();
       }
       if (logResult.dueCleared) {
-        const departedStop = stops.find((stop) => stop.id === cardId);
+        const departedStop = stops.find(
+          (stop) => placeIdFor(stop) === cardId && stop.legacyPlan,
+        );
         if (departedStop) departedStop.due = null;
         writeChartSnapshot();
       }
@@ -3949,7 +3973,7 @@ renderHistoricalLog = function (logs = [], stops = []) {
 
   displayLogs.forEach((l) => {
     const stop =
-      stops.find((s) => s.id === l.cardId) ||
+      stops.find((s) => placeIdFor(s) === l.cardId) ||
       stops.find((s) => s.name === l.cardName);
     const currentRating = stop ? stop.rating : l.rating;
     const ratingHtml = canPlan
@@ -4026,8 +4050,11 @@ renderHistoricalLog = function (logs = [], stops = []) {
                 const val = parseInt(s.getAttribute("data-value"), 10);
                 s.textContent = val <= rating ? "★" : "☆";
               });
-              const stop = stops.find((s) => s.id === cardId);
-              if (stop) stop.rating = rating;
+              stops
+                .filter((stop) => placeIdFor(stop) === cardId)
+                .forEach((stop) => {
+                  stop.rating = rating;
+                });
               if (lastLoadedLogs) {
                 lastLoadedLogs.forEach((log) => {
                   if (log.cardId === cardId) log.rating = rating;

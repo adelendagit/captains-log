@@ -406,8 +406,10 @@ struct AddLogEntryView: View {
 
     private func applyPlanning(_ planning: PlanningResponse) {
         boardLabels = planning.boardLabels ?? []
-        var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.id, $0) })
-        for stop in planning.stops { byID[stop.id] = stop }
+        var byID = Dictionary(uniqueKeysWithValues: planning.places.map { ($0.placeCardID, $0) })
+        for stop in planning.stops where byID[stop.placeCardID] == nil {
+            byID[stop.placeCardID] = stop
+        }
         if let current = tracker.currentStatus?.current ?? tracker.currentStatus?.from {
             byID[current.id] = current
             if selectedPlaceID.isEmpty { selectedPlaceID = current.id }
@@ -448,7 +450,7 @@ struct AddLogEntryView: View {
             let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
             try await authentication.api.addLogEntry(
                 action: action,
-                cardID: place.id,
+                cardID: place.placeCardID,
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
                 journeyName: action == "departed" ? journeyName : nil,
@@ -466,7 +468,7 @@ struct AddLogEntryView: View {
                     _ = try await authentication.api.sendLogNotification(
                         mode: notificationMode.rawValue,
                         action: action,
-                        cardID: place.id,
+                        cardID: place.placeCardID,
                         latitude: coordinate.latitude,
                         longitude: coordinate.longitude,
                         timestamp: timestamp,
@@ -785,7 +787,7 @@ struct PlanView: View {
         } else {
             start = currentStatus?.current
         }
-        if let start, start.coordinate != nil, stops.first?.id != start.id {
+        if let start, start.coordinate != nil, stops.first?.placeCardID != start.placeCardID {
             stops.insert(start, at: 0)
         }
         return stops
@@ -793,10 +795,12 @@ struct PlanView: View {
 
     private var mapPlaces: [PlaceSummary] {
         var byID: [String: PlaceSummary] = [:]
-        for place in data?.places ?? [] { byID[place.id] = place }
-        for stop in data?.stops ?? [] { byID[stop.id] = stop }
+        for place in data?.places ?? [] { byID[place.placeCardID] = place }
+        for stop in data?.stops ?? [] where byID[stop.placeCardID] == nil {
+            byID[stop.placeCardID] = stop
+        }
         if let current = currentStatus?.current ?? currentStatus?.from {
-            if byID[current.id] == nil { byID[current.id] = current }
+            if byID[current.placeCardID] == nil { byID[current.placeCardID] = current }
         }
         return byID.values
             .filter { $0.coordinate != nil }
@@ -852,10 +856,11 @@ struct PlanView: View {
     }
 
     private func mapMarker(for place: PlaceSummary) -> some View {
-        let plannedIndex = plannedStops.firstIndex(where: { $0.id == place.id }).map { $0 + 1 }
+        let plannedIndex = plannedStops.firstIndex(where: { $0.placeCardID == place.placeCardID }).map { $0 + 1 }
         let rating = place.rating.map { min(5, max(1, $0)) }
         let visits = max(0, place.visitCount ?? 0)
-        let isCurrent = place.id == currentStatus?.current?.id || place.id == currentStatus?.from?.id
+        let isCurrent = place.placeCardID == currentStatus?.current?.placeCardID ||
+            place.placeCardID == currentStatus?.from?.placeCardID
         return ZStack {
             Circle()
                 .fill(Chartroom.ink)
@@ -1022,7 +1027,7 @@ struct PlanView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    if plannedStops.contains(where: { $0.id == place.id }) {
+                    if place.due != nil {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Already in your plan", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(Chartroom.sea)
@@ -1335,7 +1340,8 @@ struct PlanView: View {
 
         do {
             let queued = try await authentication.api.planStop(
-                cardID: place.id,
+                placeID: place.placeCardID,
+                planID: place.planCardID,
                 due: due,
                 token: token,
                 queueImmediately: authentication.isOffline
@@ -1410,7 +1416,7 @@ struct PlanView: View {
                     calendar: calendar
                 ) else { continue }
                 if effectiveDue(for: stop) != due {
-                    updates.append(PlanningStopUpdate(cardId: stop.id, due: due))
+                    updates.append(PlanningStopUpdate(planId: stop.id, due: due))
                 }
             }
         }
@@ -1421,7 +1427,7 @@ struct PlanView: View {
         }
 
         let previousOverrides = plannedDueOverrides
-        for update in updates { plannedDueOverrides[update.cardId] = update.due }
+        for update in updates { plannedDueOverrides[update.planId] = update.due }
         planningOrderFailed = false
         planningOrderMessage = "Saving plan…"
         isSavingPlanningOrder = true
@@ -1482,7 +1488,7 @@ struct PlanView: View {
             let lastDate = plannedStops.compactMap(\.due).max() ?? Date()
             let due = Calendar.current.date(byAdding: .day, value: 1, to: max(lastDate, Date())) ?? Date()
             let queued = try await authentication.api.planStop(
-                cardID: place.id,
+                placeID: place.placeCardID,
                 due: due,
                 token: token,
                 queueImmediately: authentication.isOffline
@@ -1501,7 +1507,7 @@ struct PlanView: View {
         defer { workingCardID = nil }
         do {
             let queued = try await authentication.api.removeStop(
-                cardID: place.id,
+                planID: place.planCardID ?? place.id,
                 token: token,
                 queueImmediately: authentication.isOffline
             )

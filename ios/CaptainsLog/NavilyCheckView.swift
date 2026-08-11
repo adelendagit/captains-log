@@ -152,7 +152,7 @@ struct NavilyCheckView: View {
         )
         do {
             let snapshot = try await api.saveNavilySnapshot(
-                cardID: place.id,
+                cardID: place.placeCardID,
                 draft: confirmed,
                 token: token
             )

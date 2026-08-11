@@ -40,6 +40,8 @@ struct PlaceLabel: Codable, Identifiable {
 
 struct PlaceSummary: Codable, Identifiable {
     let id: String
+    let planId: String?
+    let placeId: String?
     let name: String
     let listName: String?
     let due: Date?
@@ -55,6 +57,9 @@ struct PlaceSummary: Codable, Identifiable {
     let visitCount: Int?
     let lastVisitedAt: Date?
 
+    var placeCardID: String { placeId ?? id }
+    var planCardID: String? { planId }
+
     var coordinate: CLLocationCoordinate2D? {
         guard let lat, let lng else { return nil }
         return CLLocationCoordinate2D(latitude: lat, longitude: lng)
@@ -63,6 +68,8 @@ struct PlaceSummary: Codable, Identifiable {
     func withPlanningState(due: Date?, dueComplete: Bool? = nil) -> PlaceSummary {
         PlaceSummary(
             id: id,
+            planId: planId,
+            placeId: placeId,
             name: name,
             listName: listName,
             due: due,
@@ -154,7 +161,7 @@ struct PlanningResponse: Codable {
 }
 
 struct PlanningStopUpdate: Codable, Sendable {
-    let cardId: String
+    let planId: String
     let due: Date
 }
 
