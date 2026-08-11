@@ -176,7 +176,11 @@ test("departing archives the completed occurrence and preserves future visits", 
     return { data: {} };
   };
   axios.put = async (url, body, options) => {
-    operationOrder.push("archive-completed-plan");
+    operationOrder.push(
+      url.endsWith("/completed-plan-card")
+        ? "archive-completed-plan"
+        : "clear-legacy-due",
+    );
     updates.push({ url, body, options });
     return { data: {} };
   };
@@ -190,6 +194,8 @@ test("departing archives the completed occurrence and preserves future visits", 
             idList: "places-list",
             name: "Channel Rock Bay",
             shortLink: "channelrock",
+            due: "2026-08-05T06:00:00.000Z",
+            dueComplete: false,
             labels: [],
             customFieldItems: [],
           },
@@ -275,7 +281,7 @@ test("departing archives the completed occurrence and preserves future visits", 
 
   assert.equal(response.status, 200);
   assert.equal(result.dueComplete, false);
-  assert.equal(result.dueCleared, false);
+  assert.equal(result.dueCleared, true);
   assert.equal(result.planArchived, true);
   assert.equal(result.archivedPlanId, "completed-plan-card");
   assert.equal(result.journey.started, true);
@@ -290,14 +296,20 @@ test("departing archives the completed occurrence and preserves future visits", 
     ),
     true,
   );
-  assert.equal(updates.length, 1);
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0].url, "https://api.trello.com/1/cards/stop-card");
+  assert.deepEqual(updates[0].options.params, {
+    due: "null",
+    dueComplete: false,
+  });
   assert.equal(
-    updates[0].url,
+    updates[1].url,
     "https://api.trello.com/1/cards/completed-plan-card",
   );
-  assert.deepEqual(updates[0].options.params, { closed: true });
+  assert.deepEqual(updates[1].options.params, { closed: true });
   assert.deepEqual(operationOrder, [
     "start-journey",
+    "clear-legacy-due",
     "log-departed",
     "archive-completed-plan",
   ]);

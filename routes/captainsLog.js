@@ -1516,19 +1516,22 @@ router.post("/api/log-entry", async (req, res, next) => {
     const archivedPlanId = planToArchive?.planId || null;
     const clearsPlannedStopDueDate =
       normalizedAction === "departed" && Boolean(legacyPlan);
-    const updatePlannedVisit = async () => {
+    const updatePlanOccurrence = async () => {
       if (completesPlannedStop && planToComplete) {
         await updateTrelloCard(req.user, planToComplete.id, {
           dueComplete: true,
         });
       } else if (planToArchive) {
         await updateTrelloCard(req.user, planToArchive.id, { closed: true });
-      } else if (clearsPlannedStopDueDate) {
-        await updateTrelloCard(req.user, legacyPlan.id, {
-          due: "null",
-          dueComplete: false,
-        });
       }
+    };
+
+    const clearLegacyPlanDueDate = async () => {
+      if (!clearsPlannedStopDueDate) return;
+      await updateTrelloCard(req.user, legacyPlan.id, {
+        due: "null",
+        dueComplete: false,
+      });
     };
 
     const addMooringLabel = async () => {
@@ -1561,7 +1564,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       return true;
     };
 
-    if (clearsPlannedStopDueDate) await updatePlannedVisit();
+    if (clearsPlannedStopDueDate) await clearLegacyPlanDueDate();
 
     await axios.post(url, null, {
       params: { text },
@@ -1571,7 +1574,7 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const mooringLabelAdded = await addMooringLabel();
 
-    if (completesPlannedStop || planToArchive) await updatePlannedVisit();
+    if (completesPlannedStop || planToArchive) await updatePlanOccurrence();
 
     currentStopCache = null;
     currentStopCacheExpiresAt = 0;
