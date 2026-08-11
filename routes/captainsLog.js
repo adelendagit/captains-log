@@ -1703,6 +1703,13 @@ router.get("/captains-log", (req, res) => {
   res.redirect(301, "/");
 });
 
+router.get("/plan-migration", (req, res) => {
+  if (!req.user) {
+    return res.redirect("/auth/trello");
+  }
+  res.render("plan-migration", { user: req.user });
+});
+
 router.post("/api/places", async (req, res, next) => {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan migration · Skibidi</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #10263a;
+        background: #eef5f6;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      main {
+        width: min(100%, 520px);
+        background: white;
+        border-radius: 22px;
+        box-shadow: 0 18px 50px rgb(16 38 58 / 12%);
+        padding: 28px;
+        box-sizing: border-box;
+      }
+      h1 { margin: 0 0 12px; font-size: 1.8rem; }
+      p { line-height: 1.55; color: #496273; }
+      button, a {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 12px;
+        padding: 14px 18px;
+        font: inherit;
+        font-weight: 700;
+        text-align: center;
+      }
+      button {
+        margin-top: 22px;
+        border: 0;
+        color: white;
+        background: #137d86;
+      }
+      button:disabled { opacity: .6; }
+      a { margin-top: 12px; color: #137d86; text-decoration: none; }
+      #result { margin-top: 20px; font-weight: 650; }
+      .success { color: #14734a; }
+      .error { color: #a32f2f; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Migrate planned visits</h1>
+      <p>
+        This converts due dates on permanent place cards into separate linked
+        cards in the Trello <strong>Plan</strong> list. It is safe to run more
+        than once.
+      </p>
+      <button id="migrate" type="button">Migrate plan now</button>
+      <div id="result" role="status" aria-live="polite"></div>
+      <a href="/">Return to Skibidi</a>
+    </main>
+    <script>
+      const button = document.getElementById("migrate");
+      const result = document.getElementById("result");
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "Migrating…";
+        result.className = "";
+        result.textContent = "Creating linked Plan cards…";
+
+        try {
+          const response = await fetch("/api/plan/migrate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Migration failed");
+
+          result.className = "success";
+          result.textContent = data.migrated === 0
+            ? "Migration complete. No legacy due dates remain."
+            : `Migration complete. ${data.migrated} planned visit${data.migrated === 1 ? "" : "s"} converted.`;
+          button.textContent = "Migration complete";
+        } catch (error) {
+          result.className = "error";
+          result.textContent = error.message;
+          button.disabled = false;
+          button.textContent = "Try migration again";
+        }
+      });
+    </script>
+  </body>
+</html>
