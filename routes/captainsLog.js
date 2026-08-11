@@ -26,10 +26,12 @@ const {
   findActiveJourney,
 } = require("../services/journeys");
 const {
-  buildPlanDescription,
+  findAttachedPlaceCard,
   findPlanList,
   isReservedList,
-  parsePlanMetadata,
+  parseLegacyPlanMetadata,
+  removeLegacyPlanMetadata,
+  resolvePlanPlaceCard,
 } = require("../services/plans");
 
 let currentStopCache = null;
@@ -169,24 +171,39 @@ async function updateTrelloCard(user, cardId, values) {
   return response.data;
 }
 
+async function createTrelloCardAttachment(user, cardId, placeCard) {
+  const url = `https://api.trello.com/1/cards/${cardId}/attachments`;
+  const values = { name: placeCard.name, url: placeCard.shortUrl };
+  const headers = trelloHeaders(user, url, "POST", values);
+  const response = await axios.post(url, null, { params: values, headers });
+  invalidateBoardCache();
+  return response.data;
+}
+
 async function createPlanCard(user, planList, placeCard, due, options = {}) {
   const url = "https://api.trello.com/1/cards";
   const values = {
     idList: planList.id,
     name: placeCard.name,
-    desc: buildPlanDescription({
-      placeCardId: placeCard.id,
-      placeUrl: placeCard.shortUrl,
-      tripCardId: options.tripCardId,
-      migratedFromDue: options.migratedFromDue,
-    }),
+    desc: "",
     due,
     dueComplete: Boolean(options.dueComplete),
   };
   const headers = trelloHeaders(user, url, "POST", values);
   const response = await axios.post(url, null, { params: values, headers });
+  const planCard = response.data;
+  try {
+    await createTrelloCardAttachment(user, planCard.id, placeCard);
+  } catch (error) {
+    try {
+      await updateTrelloCard(user, planCard.id, { closed: true });
+    } catch (_cleanupError) {
+      // Preserve the attachment error; the orphan is safer archived if cleanup works.
+    }
+    throw error;
+  }
   invalidateBoardCache();
-  return response.data;
+  return planCard;
 }
 
 const colorMap = {
@@ -266,14 +283,13 @@ function buildPlanningStops(cards, lists, customFields) {
     for (const planCard of cards.filter(
       (card) => card.idList === planList.id,
     )) {
-      const metadata = parsePlanMetadata(planCard.desc);
-      const placeCard = metadata && placeCards.get(metadata.placeCardId);
-      if (!metadata || !placeCard || !planCard.due) continue;
-      if (metadata.migratedFromDue) {
-        migratedLegacyKeys.add(
-          `${metadata.placeCardId}:${new Date(metadata.migratedFromDue).toISOString()}`,
-        );
-      }
+      const placeCard = resolvePlanPlaceCard(planCard, [
+        ...placeCards.values(),
+      ]);
+      if (!placeCard || !planCard.due) continue;
+      migratedLegacyKeys.add(
+        `${placeCard.id}:${new Date(planCard.due).toISOString()}`,
+      );
       explicit.push({
         ...buildStopPayload(placeCard, listNames, customFields),
         id: planCard.id,
@@ -317,10 +333,11 @@ function resolvePlaceCard(cards, lists, cardId) {
   const list = lists.find((candidate) => candidate.id === card.idList);
   if (!isReservedList(list)) return card;
   if (findPlanList(lists)?.id !== card.idList) return null;
-  const metadata = parsePlanMetadata(card.desc);
-  return metadata
-    ? cards.find((candidate) => candidate.id === metadata.placeCardId) || null
-    : null;
+  const placeCards = cards.filter((candidate) => {
+    const candidateList = lists.find((list) => list.id === candidate.idList);
+    return !isReservedList(candidateList);
+  });
+  return resolvePlanPlaceCard(card, placeCards);
 }
 
 function buildVisitStats(comments) {
@@ -1278,13 +1295,20 @@ router.post("/api/log-entry", async (req, res, next) => {
       const requestedCard = (board.cards || []).find(
         (card) => card.id === cardId,
       );
-      const requestedPlanMetadata = parsePlanMetadata(requestedCard?.desc);
       if (
-        requestedPlanMetadata &&
+        requestedCard &&
         requestedCard?.idList === findPlanList(board.lists)?.id
       ) {
+        const requestedPlace = resolvePlaceCard(
+          board.cards,
+          board.lists,
+          requestedCard.id,
+        );
+        if (!requestedPlace) {
+          return res.status(400).json({ error: "Plan card is not linked" });
+        }
         planId ||= requestedCard.id;
-        cardId = requestedPlanMetadata.placeCardId;
+        cardId = requestedPlace.id;
       }
       destinationCard = resolvePlaceCard(board.cards, board.lists, cardId);
       if (!destinationCard) {
@@ -2019,21 +2043,21 @@ router.post("/api/plan-stop", async (req, res, next) => {
       const candidate = cards.find((card) => card.id === suppliedPlaceId);
       if (
         candidate?.idList === planList.id &&
-        parsePlanMetadata(candidate.desc)
+        resolvePlaceCard(cards, lists, candidate.id)
       ) {
         planCard = candidate;
       }
     }
 
     if (planCard) {
-      const metadata = parsePlanMetadata(planCard.desc);
-      if (planCard.idList !== planList.id || !metadata) {
+      const linkedPlace = resolvePlaceCard(cards, lists, planCard.id);
+      if (planCard.idList !== planList.id || !linkedPlace) {
         return res.status(400).json({ error: "Invalid plan card" });
       }
       if (
         suppliedPlaceId &&
         suppliedPlanId &&
-        suppliedPlaceId !== metadata.placeCardId
+        suppliedPlaceId !== linkedPlace.id
       ) {
         return res
           .status(400)
@@ -2047,7 +2071,7 @@ router.post("/api/plan-stop", async (req, res, next) => {
         success: true,
         id: planCard.id,
         planId: planCard.id,
-        placeId: metadata.placeCardId,
+        placeId: linkedPlace.id,
       });
     }
 
@@ -2094,7 +2118,7 @@ router.post("/api/remove-stop", async (req, res, next) => {
     if (
       planList &&
       card.idList === planList.id &&
-      parsePlanMetadata(card.desc)
+      resolvePlaceCard(cards, lists, card.id)
     ) {
       await updateTrelloCard(req.user, card.id, { closed: true });
       return res.json({ success: true, planId: card.id, archived: true });
@@ -2148,7 +2172,7 @@ router.post("/api/reorder-stops", async (req, res, next) => {
       const isPlanCard =
         planList &&
         card.idList === planList.id &&
-        Boolean(parsePlanMetadata(card.desc));
+        Boolean(resolvePlaceCard(cards, lists, card.id));
       const isLegacyPlace =
         !isReservedList(listById.get(card.idList)) && Boolean(card.due);
       return !isPlanCard && !isLegacyPlace;
@@ -2183,15 +2207,41 @@ router.post("/api/plan/migrate", async (req, res, next) => {
     }
 
     const listById = new Map(lists.map((list) => [list.id, list]));
-    const existingMigrationKeys = new Set(
-      cards
-        .filter((card) => card.idList === planList.id)
-        .map((card) => parsePlanMetadata(card.desc))
-        .filter((metadata) => metadata?.migratedFromDue)
-        .map(
-          (metadata) =>
-            `${metadata.placeCardId}:${new Date(metadata.migratedFromDue).toISOString()}`,
-        ),
+    const placeCards = cards.filter(
+      (card) => !isReservedList(listById.get(card.idList)),
+    );
+    const placeCardsById = new Map(placeCards.map((card) => [card.id, card]));
+    const planCards = cards.filter((card) => card.idList === planList.id);
+
+    // Convert the first-generation metadata Plan cards to native Trello card
+    // attachments before clearing the old metadata from their descriptions.
+    const linked = [];
+    for (const planCard of planCards) {
+      const metadata = parseLegacyPlanMetadata(planCard.desc);
+      if (!metadata) continue;
+      const placeCard = placeCardsById.get(metadata.placeCardId);
+      if (!placeCard) continue;
+      if (!findAttachedPlaceCard(planCard, placeCards)) {
+        await createTrelloCardAttachment(req.user, planCard.id, placeCard);
+        planCard.attachments = [
+          ...(planCard.attachments || []),
+          { name: placeCard.name, url: placeCard.shortUrl, isUpload: false },
+        ];
+      }
+      await updateTrelloCard(req.user, planCard.id, {
+        desc: removeLegacyPlanMetadata(planCard.desc),
+      });
+      linked.push({ planId: planCard.id, placeId: placeCard.id });
+    }
+
+    const existingPlanKeys = new Set(
+      planCards.flatMap((planCard) => {
+        if (!planCard.due) return [];
+        const placeCard = resolvePlanPlaceCard(planCard, placeCards);
+        return placeCard
+          ? [`${placeCard.id}:${new Date(planCard.due).toISOString()}`]
+          : [];
+      }),
     );
     const legacyCards = cards.filter(
       (card) =>
@@ -2203,20 +2253,14 @@ router.post("/api/plan/migrate", async (req, res, next) => {
 
     const results = [];
     for (const placeCard of legacyCards) {
-      const migratedFromDue = new Date(placeCard.due).toISOString();
-      const key = `${placeCard.id}:${migratedFromDue}`;
+      const due = new Date(placeCard.due).toISOString();
+      const key = `${placeCard.id}:${due}`;
       let created = null;
-      if (!existingMigrationKeys.has(key)) {
-        created = await createPlanCard(
-          req.user,
-          planList,
-          placeCard,
-          migratedFromDue,
-          {
-            dueComplete: placeCard.dueComplete,
-            migratedFromDue,
-          },
-        );
+      if (!existingPlanKeys.has(key)) {
+        created = await createPlanCard(req.user, planList, placeCard, due, {
+          dueComplete: placeCard.dueComplete,
+        });
+        existingPlanKeys.add(key);
       }
       await updateTrelloCard(req.user, placeCard.id, {
         due: "null",
@@ -2229,7 +2273,13 @@ router.post("/api/plan/migrate", async (req, res, next) => {
       });
     }
 
-    res.json({ success: true, migrated: results.length, results });
+    res.json({
+      success: true,
+      linked: linked.length,
+      migrated: results.length,
+      linkedResults: linked,
+      results,
+    });
   } catch (error) {
     next(error);
   }

@@ -11,8 +11,9 @@ process.env.TRELLO_OAUTH_SECRET = "test-oauth-secret";
 
 const captainsLog = require("../routes/captainsLog");
 const {
-  buildPlanDescription,
-  parsePlanMetadata,
+  extractTrelloCardShortLink,
+  removeLegacyPlanMetadata,
+  resolvePlanPlaceCard,
 } = require("../services/plans");
 const {
   invalidateBoardCache,
@@ -53,6 +54,7 @@ function placeCard(id, name, due = null) {
     due,
     dueComplete: false,
     labels: [],
+    shortLink: id,
     shortUrl: `https://trello.com/c/${id}`,
     customFieldItems: [
       { idCustomField: "latitude", value: { number: "37.5" } },
@@ -61,18 +63,32 @@ function placeCard(id, name, due = null) {
   };
 }
 
-test("round trips Plan card metadata", () => {
-  const description = buildPlanDescription({
-    placeCardId: "place-1",
-    placeUrl: "https://trello.com/c/place-1",
-    tripCardId: "trip-1",
-    migratedFromDue: "2027-07-01T08:00:00.000Z",
-  });
-  assert.deepEqual(parsePlanMetadata(description), {
-    placeCardId: "place-1",
-    tripCardId: "trip-1",
-    migratedFromDue: "2027-07-01T08:00:00.000Z",
-  });
+test("resolves a permanent place from a Plan card attachment", () => {
+  const poros = placeCard("poros", "Poros");
+  const planCard = {
+    attachments: [{ name: "Poros", url: "https://trello.com/c/poros/poros" }],
+  };
+  assert.equal(
+    extractTrelloCardShortLink(planCard.attachments[0].url),
+    "poros",
+  );
+  assert.equal(resolvePlanPlaceCard(planCard, [poros]), poros);
+});
+
+test("removes first-generation Plan metadata without erasing visit notes", () => {
+  const description = [
+    "captains-log-plan: 1",
+    "placeCardId: place-1",
+    "migratedFromDue: 2027-07-01T08:00:00.000Z",
+    "",
+    "Place: https://trello.com/c/place1",
+    "",
+    "Call ahead for a berth.",
+  ].join("\n");
+  assert.equal(
+    removeLegacyPlanMetadata(description),
+    "Call ahead for a berth.",
+  );
 });
 
 test("API data returns distinct Plan occurrences joined to one place", async (t) => {
@@ -92,7 +108,8 @@ test("API data returns distinct Plan occurrences joined to one place", async (t)
         id: "poros-visit-1",
         idList: "plan-list",
         name: "Poros",
-        desc: "captains-log-plan: 1\nplaceCardId: poros",
+        desc: "First visit notes",
+        attachments: [{ url: "https://trello.com/c/poros" }],
         due: "2027-07-01T08:00:00.000Z",
         dueComplete: false,
         shortUrl: "https://trello.com/c/poros-visit-1",
@@ -101,7 +118,8 @@ test("API data returns distinct Plan occurrences joined to one place", async (t)
         id: "poros-visit-2",
         idList: "plan-list",
         name: "Poros",
-        desc: "captains-log-plan: 1\nplaceCardId: poros",
+        desc: "Return visit notes",
+        attachments: [{ url: "https://trello.com/c/poros" }],
         due: "2027-07-10T08:00:00.000Z",
         dueComplete: false,
         shortUrl: "https://trello.com/c/poros-visit-2",
@@ -210,19 +228,100 @@ test("migration creates linked Plan cards before clearing legacy due dates", asy
 
   assert.equal(response.status, 200);
   assert.equal(result.migrated, 1);
-  assert.equal(creates.length, 1);
+  assert.equal(creates.length, 2);
   assert.equal(creates[0].options.params.idList, "plan-list");
-  assert.match(creates[0].options.params.desc, /placeCardId: poros/);
-  assert.match(
-    creates[0].options.params.desc,
-    /migratedFromDue: 2027-07-01T08:00:00.000Z/,
+  assert.equal(creates[0].options.params.desc, "");
+  assert.equal(
+    creates[1].url,
+    "https://api.trello.com/1/cards/new-plan-card/attachments",
   );
+  assert.deepEqual(creates[1].options.params, {
+    name: "Poros",
+    url: "https://trello.com/c/poros",
+  });
   assert.equal(updates.length, 1);
   assert.equal(updates[0].url, "https://api.trello.com/1/cards/poros");
   assert.deepEqual(updates[0].options.params, {
     due: "null",
     dueComplete: false,
   });
+});
+
+test("migration attaches legacy Plan cards before freeing their descriptions", async (t) => {
+  invalidateBoardCache();
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  const originalPut = axios.put;
+  const operations = [];
+  const board = {
+    lists: [
+      { id: "places-list", name: "Saronic" },
+      { id: "plan-list", name: "Plan" },
+    ],
+    cards: [
+      placeCard("russianbay", "Russian Bay"),
+      {
+        id: "russian-plan",
+        idList: "plan-list",
+        name: "Russian Bay",
+        desc: [
+          "captains-log-plan: 1",
+          "placeCardId: russianbay",
+          "migratedFromDue: 2027-07-01T08:00:00.000Z",
+          "",
+          "Place: https://trello.com/c/russianbay",
+        ].join("\n"),
+        attachments: [],
+        due: "2027-07-01T08:00:00.000Z",
+        dueComplete: false,
+      },
+    ],
+    customFields: locationFields(),
+    members: [{ id: "captain", memberType: "normal" }],
+    labels: [],
+  };
+  axios.get = async () => ({ data: board });
+  axios.post = async (url, body, options) => {
+    operations.push({ method: "POST", url, body, options });
+    return { data: { id: "attachment" } };
+  };
+  axios.put = async (url, body, options) => {
+    operations.push({ method: "PUT", url, body, options });
+    return { data: {} };
+  };
+  t.after(() => {
+    axios.get = originalGet;
+    axios.post = originalPost;
+    axios.put = originalPut;
+    invalidateBoardCache();
+  });
+
+  const server = await startServer({
+    id: "captain",
+    token: "member-token",
+    tokenSecret: "member-secret",
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/plan/migrate`,
+    { method: "POST" },
+  );
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.linked, 1);
+  assert.equal(result.migrated, 0);
+  assert.equal(operations[0].method, "POST");
+  assert.equal(
+    operations[0].url,
+    "https://api.trello.com/1/cards/russian-plan/attachments",
+  );
+  assert.deepEqual(operations[0].options.params, {
+    name: "Russian Bay",
+    url: "https://trello.com/c/russianbay",
+  });
+  assert.equal(operations[1].method, "PUT");
+  assert.deepEqual(operations[1].options.params, { desc: "" });
 });
 
 test("plan operations create, reschedule, reorder, and archive occurrence cards", async (t) => {
@@ -243,7 +342,8 @@ test("plan operations create, reschedule, reorder, and archive occurrence cards"
         id: "existing-plan",
         idList: "plan-list",
         name: "Poros",
-        desc: "captains-log-plan: 1\nplaceCardId: poros",
+        desc: "Visit notes",
+        attachments: [{ url: "https://trello.com/c/poros" }],
         due: "2027-07-01T08:00:00.000Z",
         dueComplete: false,
       },
@@ -287,6 +387,11 @@ test("plan operations create, reschedule, reorder, and archive occurrence cards"
   assert.equal(createResponse.status, 201);
   assert.equal((await createResponse.json()).planId, "created-plan");
   assert.equal(creates[0].options.params.idList, "plan-list");
+  assert.equal(creates[0].options.params.desc, "");
+  assert.equal(
+    creates[1].url,
+    "https://api.trello.com/1/cards/created-plan/attachments",
+  );
 
   const rescheduleResponse = await fetch(`${baseURL}/api/plan-stop`, {
     method: "POST",
