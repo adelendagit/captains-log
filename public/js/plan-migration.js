@@ -17,10 +17,20 @@ button.addEventListener("click", async () => {
     if (!response.ok) throw new Error(data.error || "Migration failed");
 
     result.className = "success";
-    result.textContent =
-      data.migrated === 0
-        ? "Migration complete. No legacy due dates remain."
-        : `Migration complete. ${data.migrated} planned visit${data.migrated === 1 ? "" : "s"} converted.`;
+    const changes = [];
+    if (data.linked) {
+      changes.push(
+        `${data.linked} Plan card${data.linked === 1 ? "" : "s"} linked by attachment`,
+      );
+    }
+    if (data.migrated) {
+      changes.push(
+        `${data.migrated} place due date${data.migrated === 1 ? "" : "s"} converted`,
+      );
+    }
+    result.textContent = changes.length
+      ? `Migration complete: ${changes.join("; ")}.`
+      : "Migration complete. Nothing remains to convert.";
     button.textContent = "Migration complete";
   } catch (error) {
     result.className = "error";

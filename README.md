@@ -164,20 +164,17 @@ snapshot returned by `/api/data`; it does not scrape Navily from the server.
 
 Place cards are permanent location records. Each scheduled occurrence is a
 separate card in the Trello list named `Plan`, so the same place can appear in
-an itinerary more than once. A Plan card uses Trello's native due date and its
-description links it to the location card:
-
-```text
-captains-log-plan: 1
-placeCardId: <Trello location card ID>
-
-Place: https://trello.com/c/...
-```
+an itinerary more than once. A Plan card uses Trello's native due date and has
+the permanent place card attached to it. Its description remains available for
+notes about that particular visit. Captain's Log resolves the attachment's
+`https://trello.com/c/<shortLink>` URL against the permanent cards on the board.
 
 `GET /api/data` returns the Plan card ID as `id` and `planId`, and the permanent
-location ID as `placeId`. Planning mutations create, reschedule, reorder, or
-archive Plan cards. Arrival and visit logs remain on the permanent place card
-and complete the earliest outstanding linked Plan card.
+location ID as `placeId`. Planning mutations create, attach, reschedule,
+reorder, or archive Plan cards. Arrival and visit logs remain on the permanent
+place card and mark the earliest outstanding linked Plan card's due date as
+complete. Departure leaves completed and future Plan cards in place so they
+remain as visit history; only an explicit remove action archives one.
 
 During migration, location cards that still have a due date are returned as
 legacy planned visits. An authenticated board member can run the idempotent
