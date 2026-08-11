@@ -173,8 +173,10 @@ notes about that particular visit. Captain's Log resolves the attachment's
 location ID as `placeId`. Planning mutations create, attach, reschedule,
 reorder, or archive Plan cards. Arrival and visit logs remain on the permanent
 place card and mark the earliest outstanding linked Plan card's due date as
-complete. Departure leaves completed and future Plan cards in place so they
-remain as visit history; only an explicit remove action archives one.
+complete. Departure archives that completed occurrence while leaving any later
+visit to the same place untouched. The permanent place card and its log
+comments are the historical record; the Plan list contains only current and
+future itinerary data.
 
 During migration, location cards that still have a due date are returned as
 legacy planned visits. An authenticated board member can run the idempotent

@@ -1480,29 +1480,49 @@ router.post("/api/log-entry", async (req, res, next) => {
     const completesPlannedStop = ["arrived", "visited"].includes(
       normalizedAction,
     );
-    const outstandingPlans = board
-      ? buildPlanningStops(board.cards, board.lists, board.customFields)
-          .filter((stop) => stop.placeId === cardId && !stop.dueComplete)
-          .sort((left, right) => new Date(left.due) - new Date(right.due))
+    const plansForPlace = board
+      ? buildPlanningStops(board.cards, board.lists, board.customFields).filter(
+          (stop) => stop.placeId === cardId,
+        )
       : [];
-    const selectedPlan = planId
+    const outstandingPlans = plansForPlace
+      .filter((stop) => !stop.dueComplete)
+      .sort((left, right) => new Date(left.due) - new Date(right.due));
+    const completedPlans = plansForPlace
+      .filter((stop) => stop.dueComplete && !stop.legacyPlan)
+      .sort((left, right) => new Date(right.due) - new Date(left.due));
+    const planToComplete = planId
       ? outstandingPlans.find((stop) => stop.id === planId)
       : outstandingPlans[0];
-    if (planId && !selectedPlan) {
+    const planToArchive =
+      normalizedAction === "departed"
+        ? planId
+          ? completedPlans.find((stop) => stop.id === planId)
+          : completedPlans[0]
+        : null;
+    if (planId && completesPlannedStop && !planToComplete) {
       return res
         .status(400)
         .json({ error: "The selected planned visit was not found" });
     }
-    const legacyPlan = selectedPlan?.legacyPlan ? selectedPlan : null;
+    if (planId && normalizedAction === "departed" && !planToArchive) {
+      return res
+        .status(400)
+        .json({ error: "The completed planned visit was not found" });
+    }
+    const legacyPlan = planToComplete?.legacyPlan ? planToComplete : null;
     const completedPlanId =
-      completesPlannedStop && selectedPlan ? selectedPlan.planId : null;
+      completesPlannedStop && planToComplete ? planToComplete.planId : null;
+    const archivedPlanId = planToArchive?.planId || null;
     const clearsPlannedStopDueDate =
       normalizedAction === "departed" && Boolean(legacyPlan);
     const updatePlannedVisit = async () => {
-      if (completesPlannedStop && selectedPlan) {
-        await updateTrelloCard(req.user, selectedPlan.id, {
+      if (completesPlannedStop && planToComplete) {
+        await updateTrelloCard(req.user, planToComplete.id, {
           dueComplete: true,
         });
+      } else if (planToArchive) {
+        await updateTrelloCard(req.user, planToArchive.id, { closed: true });
       } else if (clearsPlannedStopDueDate) {
         await updateTrelloCard(req.user, legacyPlan.id, {
           due: "null",
@@ -1551,7 +1571,7 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const mooringLabelAdded = await addMooringLabel();
 
-    if (completesPlannedStop) await updatePlannedVisit();
+    if (completesPlannedStop || planToArchive) await updatePlannedVisit();
 
     currentStopCache = null;
     currentStopCacheExpiresAt = 0;
@@ -1559,9 +1579,11 @@ router.post("/api/log-entry", async (req, res, next) => {
     res.json({
       success: true,
       comment: text,
-      dueComplete: completesPlannedStop && Boolean(selectedPlan),
+      dueComplete: completesPlannedStop && Boolean(planToComplete),
       dueCleared: clearsPlannedStopDueDate,
       completedPlanId,
+      planArchived: Boolean(archivedPlanId),
+      archivedPlanId,
       legacyPlanUpdated: Boolean(legacyPlan),
       mooringLabelAdded,
       journey: journeyChange,
