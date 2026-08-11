@@ -3699,6 +3699,13 @@ function setupLogWizard() {
         if (departedStop) departedStop.due = null;
         writeChartSnapshot();
       }
+      if (logResult.planArchived && logResult.archivedPlanId) {
+        const archivedIndex = stops.findIndex(
+          (stop) => stop.id === logResult.archivedPlanId,
+        );
+        if (archivedIndex !== -1) stops.splice(archivedIndex, 1);
+        writeChartSnapshot();
+      }
 
       let notificationMessage = "No email notification was requested.";
       const notificationMode = selectedNotification();

@@ -161,7 +161,7 @@ test("arriving at or visiting a stop completes the linked Plan card", async (t) 
   }
 });
 
-test("departing a stop preserves linked future Plan cards", async (t) => {
+test("departing archives the completed occurrence and preserves future visits", async (t) => {
   invalidateBoardCache();
   const originalPost = axios.post;
   const originalPut = axios.put;
@@ -176,7 +176,7 @@ test("departing a stop preserves linked future Plan cards", async (t) => {
     return { data: {} };
   };
   axios.put = async (url, body, options) => {
-    operationOrder.push("clear-due-date");
+    operationOrder.push("archive-completed-plan");
     updates.push({ url, body, options });
     return { data: {} };
   };
@@ -192,6 +192,15 @@ test("departing a stop preserves linked future Plan cards", async (t) => {
             shortLink: "channelrock",
             labels: [],
             customFieldItems: [],
+          },
+          {
+            id: "completed-plan-card",
+            idList: "plan-list",
+            name: "Channel Rock Bay",
+            desc: "Current visit notes",
+            attachments: [{ url: "https://trello.com/c/channelrock" }],
+            due: "2026-08-05T07:00:00.000Z",
+            dueComplete: true,
           },
           {
             id: "future-plan-card",
@@ -267,6 +276,8 @@ test("departing a stop preserves linked future Plan cards", async (t) => {
   assert.equal(response.status, 200);
   assert.equal(result.dueComplete, false);
   assert.equal(result.dueCleared, false);
+  assert.equal(result.planArchived, true);
+  assert.equal(result.archivedPlanId, "completed-plan-card");
   assert.equal(result.journey.started, true);
   assert.equal(result.journey.journey.name, "Channel Rock Bay → Wasp Bay");
   assert.equal(journeyRequests.length, 1);
@@ -279,8 +290,17 @@ test("departing a stop preserves linked future Plan cards", async (t) => {
     ),
     true,
   );
-  assert.equal(updates.length, 0);
-  assert.deepEqual(operationOrder, ["start-journey", "log-departed"]);
+  assert.equal(updates.length, 1);
+  assert.equal(
+    updates[0].url,
+    "https://api.trello.com/1/cards/completed-plan-card",
+  );
+  assert.deepEqual(updates[0].options.params, { closed: true });
+  assert.deepEqual(operationOrder, [
+    "start-journey",
+    "log-departed",
+    "archive-completed-plan",
+  ]);
 });
 
 test("records the selected orange mooring label and only adds it when missing", async (t) => {
