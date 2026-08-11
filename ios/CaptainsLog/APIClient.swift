@@ -160,22 +160,32 @@ final class APIClient: Sendable {
     }
 
     @discardableResult
-    func planStop(cardID: String, due: Date, token: String, queueImmediately: Bool = false) async throws -> Bool {
+    func planStop(
+        placeID: String,
+        planID: String? = nil,
+        due: Date,
+        token: String,
+        queueImmediately: Bool = false
+    ) async throws -> Bool {
         let queued = try await performOrQueue(
             path: "api/plan-stop",
             method: "POST",
-            body: PlanStopBody(cardId: cardID, due: due),
+            body: PlanStopBody(placeId: placeID, planId: planID, due: due),
             token: token,
             queueImmediately: queueImmediately
         )
         await updateCachedPlanning { planning in
-            guard let place = (planning.stops + planning.places).first(where: { $0.id == cardID }) else {
+            // Creating a plan produces a server-assigned occurrence ID, so a
+            // queued/offline creation cannot be represented safely as a fake
+            // stop. Existing occurrences can still be updated optimistically.
+            guard let planID,
+                  let place = planning.stops.first(where: { $0.id == planID }) else {
                 return planning
             }
             let updated = place.withPlanningState(due: due, dueComplete: false)
             return PlanningResponse(
-                stops: planning.stops.filter { $0.id != cardID } + [updated],
-                places: planning.places.map { $0.id == cardID ? updated : $0 },
+                stops: planning.stops.map { $0.id == planID ? updated : $0 },
+                places: planning.places,
                 boardLabels: planning.boardLabels,
                 placeLists: planning.placeLists
             )
@@ -184,17 +194,17 @@ final class APIClient: Sendable {
     }
 
     @discardableResult
-    func removeStop(cardID: String, token: String, queueImmediately: Bool = false) async throws -> Bool {
+    func removeStop(planID: String, token: String, queueImmediately: Bool = false) async throws -> Bool {
         let queued = try await performOrQueue(
             path: "api/remove-stop",
             method: "POST",
-            body: ["cardId": cardID],
+            body: ["planId": planID],
             token: token,
             queueImmediately: queueImmediately
         )
         await updateCachedPlanning { planning in
             PlanningResponse(
-                stops: planning.stops.filter { $0.id != cardID },
+                stops: planning.stops.filter { $0.id != planID },
                 places: planning.places,
                 boardLabels: planning.boardLabels,
                 placeLists: planning.placeLists
@@ -212,7 +222,7 @@ final class APIClient: Sendable {
             token: token,
             queueImmediately: queueImmediately
         )
-        let dueByID = Dictionary(uniqueKeysWithValues: updates.map { ($0.cardId, $0.due) })
+        let dueByID = Dictionary(uniqueKeysWithValues: updates.map { ($0.planId, $0.due) })
         await updateCachedPlanning { planning in
             PlanningResponse(
                 stops: planning.stops.map { stop in
@@ -704,7 +714,8 @@ private struct PositionAcceptedResponse: Codable {
 }
 
 private struct PlanStopBody: Codable {
-    let cardId: String
+    let placeId: String
+    let planId: String?
     let due: Date
 }
 

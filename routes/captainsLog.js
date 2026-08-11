@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
+const crypto = require("crypto");
+const oauth1a = require("oauth-1.0a");
 const {
   fetchBoard,
   fetchBoardWithAllComments,
@@ -23,6 +25,12 @@ const {
   fetchJourneyCards,
   findActiveJourney,
 } = require("../services/journeys");
+const {
+  buildPlanDescription,
+  findPlanList,
+  isReservedList,
+  parsePlanMetadata,
+} = require("../services/plans");
 
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
@@ -119,11 +127,66 @@ function isBoardMember(user, members = []) {
 
 function buildPlaceLists(lists = []) {
   return lists
-    .filter(
-      (list) =>
-        !["trips", "journeys"].includes(list.name.trim().toLowerCase()),
-    )
+    .filter((list) => !isReservedList(list))
     .map((list) => ({ id: list.id, name: list.name }));
+}
+
+function trelloOAuth(user) {
+  const credentials = {
+    consumer_key: process.env.TRELLO_OAUTH_KEY,
+    consumer_secret: process.env.TRELLO_OAUTH_SECRET,
+    token: user.token,
+    token_secret: user.tokenSecret,
+  };
+  const client = oauth1a({
+    consumer: {
+      key: credentials.consumer_key,
+      secret: credentials.consumer_secret,
+    },
+    signature_method: "HMAC-SHA1",
+    hash_function(baseString, key) {
+      return crypto.createHmac("sha1", key).update(baseString).digest("base64");
+    },
+  });
+  return { client, credentials };
+}
+
+function trelloHeaders(user, url, method, data) {
+  const { client, credentials } = trelloOAuth(user);
+  return client.toHeader(
+    client.authorize(
+      { url, method, data },
+      { key: credentials.token, secret: credentials.token_secret },
+    ),
+  );
+}
+
+async function updateTrelloCard(user, cardId, values) {
+  const url = `https://api.trello.com/1/cards/${cardId}`;
+  const headers = trelloHeaders(user, url, "PUT", values);
+  const response = await axios.put(url, null, { params: values, headers });
+  invalidateBoardCache();
+  return response.data;
+}
+
+async function createPlanCard(user, planList, placeCard, due, options = {}) {
+  const url = "https://api.trello.com/1/cards";
+  const values = {
+    idList: planList.id,
+    name: placeCard.name,
+    desc: buildPlanDescription({
+      placeCardId: placeCard.id,
+      placeUrl: placeCard.shortUrl,
+      tripCardId: options.tripCardId,
+      migratedFromDue: options.migratedFromDue,
+    }),
+    due,
+    dueComplete: Boolean(options.dueComplete),
+  };
+  const headers = trelloHeaders(user, url, "POST", values);
+  const response = await axios.post(url, null, { params: values, headers });
+  invalidateBoardCache();
+  return response.data;
 }
 
 const colorMap = {
@@ -170,6 +233,8 @@ function buildStopPayload(card, listNames, customFields) {
 
   return {
     id: card.id,
+    planId: null,
+    placeId: card.id,
     name: card.name,
     listName: listNames[card.idList],
     due: card.due,
@@ -181,6 +246,81 @@ function buildStopPayload(card, listNames, customFields) {
     desc: card.desc || "",
     labels,
   };
+}
+
+function buildPlanningStops(cards, lists, customFields) {
+  const listById = new Map(lists.map((list) => [list.id, list]));
+  const listNames = Object.fromEntries(
+    lists.map((list) => [list.id, list.name]),
+  );
+  const planList = findPlanList(lists);
+  const placeCards = new Map(
+    cards
+      .filter((card) => !isReservedList(listById.get(card.idList)))
+      .map((card) => [card.id, card]),
+  );
+
+  const explicit = [];
+  const migratedLegacyKeys = new Set();
+  if (planList) {
+    for (const planCard of cards.filter(
+      (card) => card.idList === planList.id,
+    )) {
+      const metadata = parsePlanMetadata(planCard.desc);
+      const placeCard = metadata && placeCards.get(metadata.placeCardId);
+      if (!metadata || !placeCard || !planCard.due) continue;
+      if (metadata.migratedFromDue) {
+        migratedLegacyKeys.add(
+          `${metadata.placeCardId}:${new Date(metadata.migratedFromDue).toISOString()}`,
+        );
+      }
+      explicit.push({
+        ...buildStopPayload(placeCard, listNames, customFields),
+        id: planCard.id,
+        planId: planCard.id,
+        placeId: placeCard.id,
+        due: planCard.due,
+        dueComplete: planCard.dueComplete,
+        legacyPlan: false,
+        planTrelloUrl: planCard.shortUrl,
+      });
+    }
+  }
+
+  // Temporary compatibility path. Once all old due dates have been migrated,
+  // these entries disappear without requiring a flag day for web or iOS users.
+  const legacy = [];
+  for (const placeCard of placeCards.values()) {
+    if (!placeCard.due) continue;
+    const legacyKey = `${placeCard.id}:${new Date(placeCard.due).toISOString()}`;
+    if (migratedLegacyKeys.has(legacyKey)) continue;
+    legacy.push({
+      ...buildStopPayload(placeCard, listNames, customFields),
+      id: placeCard.id,
+      planId: null,
+      placeId: placeCard.id,
+      due: placeCard.due,
+      dueComplete: placeCard.dueComplete,
+      legacyPlan: true,
+      planTrelloUrl: null,
+    });
+  }
+
+  return [...explicit, ...legacy].sort(
+    (left, right) => new Date(left.due) - new Date(right.due),
+  );
+}
+
+function resolvePlaceCard(cards, lists, cardId) {
+  const card = cards.find((candidate) => candidate.id === cardId);
+  if (!card) return null;
+  const list = lists.find((candidate) => candidate.id === card.idList);
+  if (!isReservedList(list)) return card;
+  if (findPlanList(lists)?.id !== card.idList) return null;
+  const metadata = parsePlanMetadata(card.desc);
+  return metadata
+    ? cards.find((candidate) => candidate.id === metadata.placeCardId) || null
+    : null;
 }
 
 function buildVisitStats(comments) {
@@ -220,7 +360,12 @@ function parseNavilySnapshot(text) {
   const lng = Number(values.lng);
   if (!values.source || Number.isNaN(checkedAt.getTime())) return null;
   const splitList = (value) =>
-    value ? value.split(" | ").map((item) => item.trim()).filter(Boolean) : [];
+    value
+      ? value
+          .split(" | ")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
   return {
     checkedAt: checkedAt.toISOString(),
     sourceUrl: values.source,
@@ -241,7 +386,10 @@ function buildNavilySnapshots(comments) {
     const snapshot = parseNavilySnapshot(action?.data?.text);
     if (!cardId || !snapshot) continue;
     const current = snapshots.get(cardId);
-    if (!current || new Date(snapshot.checkedAt) > new Date(current.checkedAt)) {
+    if (
+      !current ||
+      new Date(snapshot.checkedAt) > new Date(current.checkedAt)
+    ) {
       snapshots.set(cardId, snapshot);
     }
   }
@@ -251,7 +399,11 @@ function buildNavilySnapshots(comments) {
 function cleanSnapshotList(value) {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => String(item || "").replace(/[\r\n|]+/g, " ").trim())
+    .map((item) =>
+      String(item || "")
+        .replace(/[\r\n|]+/g, " ")
+        .trim(),
+    )
     .filter(Boolean)
     .slice(0, 12)
     .map((item) => item.slice(0, 120));
@@ -259,8 +411,6 @@ function cleanSnapshotList(value) {
 
 function deriveCurrentStatus(cards, lists, customFields, comments) {
   const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
-  const tripsList = lists.find((l) => l.name === "Trips");
-  const tripsListId = tripsList ? tripsList.id : null;
 
   const actions = comments
     .filter((a) => a.type === "commentCard" && a.data && a.data.text)
@@ -277,14 +427,10 @@ function deriveCurrentStatus(cards, lists, customFields, comments) {
     .filter((a) => /^departed\b/i.test(a.data.text))
     .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
 
-  const upcomingStops = cards
-    .filter((c) => c.due && !c.dueComplete && c.idList !== tripsListId)
+  const upcomingStops = buildPlanningStops(cards, lists, customFields)
+    .filter((stop) => !stop.dueComplete)
     .sort((a, b) => new Date(a.due) - new Date(b.due));
-  const plannedDestination = buildStopPayload(
-    upcomingStops[0],
-    listNames,
-    customFields,
-  );
+  const plannedDestination = upcomingStops[0] || null;
 
   let result = { status: "unknown", plannedDestination };
 
@@ -555,47 +701,25 @@ router.get("/api/data", async (req, res, next) => {
     const visitStats = buildVisitStats(allComments);
     const navilySnapshots = buildNavilySnapshots(allComments);
 
-    const tripsListId = lists.find((l) => l.name === "Trips").id;
-
     // map of list IDs → names
     const listNames = Object.fromEntries(lists.map((l) => [l.id, l.name]));
+    const listById = new Map(lists.map((list) => [list.id, list]));
 
-    const stops = cards
-      .filter((c) => c.due && c.idList !== tripsListId)
-      .map((c) => {
-        const ratingText = getCFTextOrDropdown(c, customFields, "⭐️");
-        const ratingNum = ratingText != null ? parseInt(ratingText, 10) : null;
-        const labels = (c.labels || []).map((l) => ({
-          id: l.id,
-          name: l.name,
-          color: colorMap[l.color] || "#888",
-          trelloColor: l.color,
-        }));
-
-        return {
-          id: c.id,
-          name: c.name,
-          listName: listNames[c.idList],
-          due: c.due,
-          dueComplete: c.dueComplete,
-          lat: getCFNumber(c, customFields, "Latitude"),
-          lng: getCFNumber(c, customFields, "Longitude"),
-          rating: ratingNum,
-          trelloUrl: c.shortUrl,
-          navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
-          desc: c.desc,
-          labels,
-          navilySnapshot: navilySnapshots.get(c.id) || null,
-          ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
-        };
-      })
-      .sort((a, b) => new Date(a.due) - new Date(b.due));
+    const stops = buildPlanningStops(cards, lists, customFields).map(
+      (stop) => ({
+        ...stop,
+        navilySnapshot: navilySnapshots.get(stop.placeId) || null,
+        ...(visitStats.get(stop.placeId) || {
+          visitCount: 0,
+          lastVisitedAt: null,
+        }),
+      }),
+    );
 
     const places = cards
       .filter(
         (c) =>
-          !c.due &&
-          c.idList !== tripsListId &&
+          !isReservedList(listById.get(c.idList)) &&
           getCFNumber(c, customFields, "Latitude") != null &&
           getCFNumber(c, customFields, "Longitude") != null,
       )
@@ -609,6 +733,8 @@ router.get("/api/data", async (req, res, next) => {
         }));
         return {
           id: c.id,
+          planId: null,
+          placeId: c.id,
           name: c.name,
           listName: listNames[c.idList],
           lat: getCFNumber(c, customFields, "Latitude"),
@@ -1035,7 +1161,7 @@ router.post("/api/log-context", async (req, res, next) => {
     const fallbackCardId =
       mode === "underway"
         ? currentStop.from?.id ||
-          currentStop.destination?.id ||
+          currentStop.destination?.placeId ||
           suggestions[0]?.id ||
           null
         : currentStop.current?.id || suggestions[0]?.id || null;
@@ -1068,7 +1194,7 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const {
       action,
-      cardId,
+      cardId: requestedCardId,
       lat,
       latitude,
       long,
@@ -1082,7 +1208,10 @@ router.post("/api/log-entry", async (req, res, next) => {
       placeName,
       customText,
       mooringLabelId,
+      planId: requestedPlanId,
     } = req.body || {};
+    let cardId = requestedCardId;
+    let planId = requestedPlanId;
 
     const normalizedAction = String(action || "")
       .trim()
@@ -1140,17 +1269,34 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     let mooringLabel = null;
     let destinationCard = null;
+    let board = null;
+    if (
+      ["arrived", "visited", "departed"].includes(normalizedAction) ||
+      mooringLabelId
+    ) {
+      board = await fetchBoard();
+      const requestedCard = (board.cards || []).find(
+        (card) => card.id === cardId,
+      );
+      const requestedPlanMetadata = parsePlanMetadata(requestedCard?.desc);
+      if (
+        requestedPlanMetadata &&
+        requestedCard?.idList === findPlanList(board.lists)?.id
+      ) {
+        planId ||= requestedCard.id;
+        cardId = requestedPlanMetadata.placeCardId;
+      }
+      destinationCard = resolvePlaceCard(board.cards, board.lists, cardId);
+      if (!destinationCard) {
+        return res.status(400).json({ error: "Location card was not found" });
+      }
+    }
     if (normalizedAction === "arrived" && mooringLabelId) {
-      const board = await fetchBoard();
       mooringLabel = (board.labels || []).find(
         (label) => label.id === mooringLabelId && label.color === "orange",
       );
-      destinationCard = (board.cards || []).find((card) => card.id === cardId);
       if (!mooringLabel) {
         return res.status(400).json({ error: "Invalid mooring type" });
-      }
-      if (!destinationCard) {
-        return res.status(400).json({ error: "Location card was not found" });
       }
     }
 
@@ -1310,32 +1456,35 @@ router.post("/api/log-entry", async (req, res, next) => {
     const completesPlannedStop = ["arrived", "visited"].includes(
       normalizedAction,
     );
-    const clearsPlannedStopDueDate = normalizedAction === "departed";
-    const cardUpdate = completesPlannedStop
-      ? { dueComplete: true }
-      : clearsPlannedStopDueDate
-        ? { due: "null" }
-        : null;
-    const updateCard = async () => {
-      if (!cardUpdate) return;
-      const cardUrl = `https://api.trello.com/1/cards/${cardId}`;
-      const updateRequest = {
-        url: cardUrl,
-        method: "PUT",
-        data: cardUpdate,
-      };
-      const updateHeaders = oauthClient.toHeader(
-        oauthClient.authorize(updateRequest, {
-          key: oauth.token,
-          secret: oauth.token_secret,
-        }),
-      );
-
-      await axios.put(cardUrl, null, {
-        params: cardUpdate,
-        headers: updateHeaders,
-      });
-      invalidateBoardCache();
+    const outstandingPlans = board
+      ? buildPlanningStops(board.cards, board.lists, board.customFields)
+          .filter((stop) => stop.placeId === cardId && !stop.dueComplete)
+          .sort((left, right) => new Date(left.due) - new Date(right.due))
+      : [];
+    const selectedPlan = planId
+      ? outstandingPlans.find((stop) => stop.id === planId)
+      : outstandingPlans[0];
+    if (planId && !selectedPlan) {
+      return res
+        .status(400)
+        .json({ error: "The selected planned visit was not found" });
+    }
+    const legacyPlan = selectedPlan?.legacyPlan ? selectedPlan : null;
+    const completedPlanId =
+      completesPlannedStop && selectedPlan ? selectedPlan.planId : null;
+    const clearsPlannedStopDueDate =
+      normalizedAction === "departed" && Boolean(legacyPlan);
+    const updatePlannedVisit = async () => {
+      if (completesPlannedStop && selectedPlan) {
+        await updateTrelloCard(req.user, selectedPlan.id, {
+          dueComplete: true,
+        });
+      } else if (clearsPlannedStopDueDate) {
+        await updateTrelloCard(req.user, legacyPlan.id, {
+          due: "null",
+          dueComplete: false,
+        });
+      }
     };
 
     const addMooringLabel = async () => {
@@ -1368,7 +1517,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       return true;
     };
 
-    if (clearsPlannedStopDueDate) await updateCard();
+    if (clearsPlannedStopDueDate) await updatePlannedVisit();
 
     await axios.post(url, null, {
       params: { text },
@@ -1378,7 +1527,7 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     const mooringLabelAdded = await addMooringLabel();
 
-    if (completesPlannedStop) await updateCard();
+    if (completesPlannedStop) await updatePlannedVisit();
 
     currentStopCache = null;
     currentStopCacheExpiresAt = 0;
@@ -1386,8 +1535,10 @@ router.post("/api/log-entry", async (req, res, next) => {
     res.json({
       success: true,
       comment: text,
-      dueComplete: completesPlannedStop,
+      dueComplete: completesPlannedStop && Boolean(selectedPlan),
       dueCleared: clearsPlannedStopDueDate,
+      completedPlanId,
+      legacyPlanUpdated: Boolean(legacyPlan),
       mooringLabelAdded,
       journey: journeyChange,
     });
@@ -1485,7 +1636,7 @@ router.post("/api/log-notification", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid notification timestamp" });
     }
 
-    const { cards, members } = await fetchBoard();
+    const { cards, lists, members } = await fetchBoard();
     const userId =
       req.user.id ||
       req.user.idMember ||
@@ -1501,7 +1652,7 @@ router.post("/api/log-notification", async (req, res, next) => {
         .json({ error: "Not authorized to send notifications" });
     }
 
-    const card = cards.find((candidate) => candidate.id === cardId);
+    const card = resolvePlaceCard(cards, lists, cardId);
     if (!card) {
       return res.status(404).json({ error: "Location not found" });
     }
@@ -1590,7 +1741,9 @@ router.post("/api/places", async (req, res, next) => {
       return res.status(400).json({ error: "Enter a valid Navily place URL" });
     }
     if (!hasLatitude || !Number.isFinite(lat) || lat < -90 || lat > 90) {
-      return res.status(400).json({ error: "Latitude must be between -90 and 90" });
+      return res
+        .status(400)
+        .json({ error: "Latitude must be between -90 and 90" });
     }
     if (!hasLongitude || !Number.isFinite(lng) || lng < -180 || lng > 180) {
       return res
@@ -1610,7 +1763,9 @@ router.post("/api/places", async (req, res, next) => {
       return res.status(400).json({ error: "Select a valid place list" });
     }
 
-    const latitudeField = customFields.find((field) => field.name === "Latitude");
+    const latitudeField = customFields.find(
+      (field) => field.name === "Latitude",
+    );
     const longitudeField = customFields.find(
       (field) => field.name === "Longitude",
     );
@@ -1681,6 +1836,8 @@ router.post("/api/places", async (req, res, next) => {
       success: true,
       place: {
         id: card.id,
+        planId: null,
+        placeId: card.id,
         name,
         listName: destinationList.name,
         due: null,
@@ -1706,11 +1863,11 @@ router.post("/api/places/:cardId/navily-snapshots", async (req, res, next) => {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
 
     const board = await fetchBoard();
-    const { cards, customFields, members } = board;
+    const { cards, lists, customFields, members } = board;
     if (!isBoardMember(req.user, members)) {
       return res.status(403).json({ error: "Not a board member" });
     }
-    const card = cards.find((item) => item.id === req.params.cardId);
+    const card = resolvePlaceCard(cards, lists, req.params.cardId);
     if (!card) return res.status(404).json({ error: "Place not found" });
 
     const savedUrl = normalizeNavilyUrl(
@@ -1751,7 +1908,9 @@ router.post("/api/places/:cardId/navily-snapshots", async (req, res, next) => {
       seabed.length === 0 &&
       facilities.length === 0
     ) {
-      return res.status(400).json({ error: "Snapshot contains no place details" });
+      return res
+        .status(400)
+        .json({ error: "Snapshot contains no place details" });
     }
 
     const checkedAt = new Date().toISOString();
@@ -1824,54 +1983,85 @@ router.post("/api/places/:cardId/navily-snapshots", async (req, res, next) => {
 router.post("/api/plan-stop", async (req, res, next) => {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
-    // Optionally, check if user is a board member/admin here
+    const { cards, lists, members } = await fetchBoard();
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Board membership is required" });
+    }
 
-    const { cardId, due } = req.body;
-    console.log("Planning stop:", cardId, due);
-    // Update the card's due date via Trello API
-    const oauth = {
-      consumer_key: process.env.TRELLO_OAUTH_KEY,
-      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
-      token: req.user.token,
-      token_secret: req.user.tokenSecret,
-    };
+    const planList = findPlanList(lists);
+    if (!planList) {
+      return res
+        .status(409)
+        .json({ error: 'The Trello list "Plan" was not found' });
+    }
 
-    const url = `https://api.trello.com/1/cards/${cardId}/due`;
+    const due = new Date(req.body?.due);
+    if (Number.isNaN(due.getTime())) {
+      return res.status(400).json({ error: "Invalid due date" });
+    }
 
-    const oauth1a = require("oauth-1.0a");
-    const crypto = require("crypto");
+    const suppliedPlanId = req.body?.planId || null;
+    const suppliedPlaceId = req.body?.placeId || req.body?.cardId || null;
+    let planCard = suppliedPlanId
+      ? cards.find((card) => card.id === suppliedPlanId)
+      : null;
 
-    // Create OAuth1.0a signature
-    const oauthClient = oauth1a({
-      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
-      signature_method: "HMAC-SHA1",
-      hash_function(base_string, key) {
-        return crypto
-          .createHmac("sha1", key)
-          .update(base_string)
-          .digest("base64");
-      },
-    });
+    // Backwards compatibility for an older client passing the plan card as
+    // cardId when editing an already-created occurrence.
+    if (!planCard && suppliedPlaceId) {
+      const candidate = cards.find((card) => card.id === suppliedPlaceId);
+      if (
+        candidate?.idList === planList.id &&
+        parsePlanMetadata(candidate.desc)
+      ) {
+        planCard = candidate;
+      }
+    }
 
-    const request_data = {
-      url,
-      method: "PUT",
-      data: { value: due },
-    };
+    if (planCard) {
+      const metadata = parsePlanMetadata(planCard.desc);
+      if (planCard.idList !== planList.id || !metadata) {
+        return res.status(400).json({ error: "Invalid plan card" });
+      }
+      if (
+        suppliedPlaceId &&
+        suppliedPlanId &&
+        suppliedPlaceId !== metadata.placeCardId
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Plan card does not match this location" });
+      }
+      await updateTrelloCard(req.user, planCard.id, {
+        due: due.toISOString(),
+        dueComplete: false,
+      });
+      return res.json({
+        success: true,
+        id: planCard.id,
+        planId: planCard.id,
+        placeId: metadata.placeCardId,
+      });
+    }
 
-    const headers = oauthClient.toHeader(
-      oauthClient.authorize(request_data, {
-        key: oauth.token,
-        secret: oauth.token_secret,
-      }),
+    const placeCard = cards.find((card) => card.id === suppliedPlaceId);
+    const placeList = lists.find((list) => list.id === placeCard?.idList);
+    if (!placeCard || isReservedList(placeList)) {
+      return res.status(404).json({ error: "Location card was not found" });
+    }
+
+    const created = await createPlanCard(
+      req.user,
+      planList,
+      placeCard,
+      due.toISOString(),
     );
-
-    await axios.put(url, null, {
-      params: { value: due },
-      headers,
+    res.status(201).json({
+      success: true,
+      id: created.id,
+      planId: created.id,
+      placeId: placeCard.id,
     });
-    invalidateBoardCache();
-    res.json({ success: true });
   } catch (err) {
     console.log("Error in /api/plan-stop:", err);
     next(err);
@@ -1882,53 +2072,37 @@ router.post("/api/remove-stop", async (req, res, next) => {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
 
-    const { cardId } = req.body;
-    if (!cardId) return res.status(400).json({ error: "Missing cardId" });
+    const planId = req.body?.planId || req.body?.cardId;
+    if (!planId) return res.status(400).json({ error: "Missing planId" });
 
-    // Use user's Trello OAuth credentials as in /api/plan-stop
-    const oauth = {
-      consumer_key: process.env.TRELLO_OAUTH_KEY,
-      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
-      token: req.user.token,
-      token_secret: req.user.tokenSecret,
-    };
+    const { cards, lists, members } = await fetchBoard();
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Board membership is required" });
+    }
+    const planList = findPlanList(lists);
+    const card = cards.find((candidate) => candidate.id === planId);
+    if (!card)
+      return res.status(404).json({ error: "Planned stop was not found" });
 
-    const url = `https://api.trello.com/1/cards/${cardId}/due`;
+    if (
+      planList &&
+      card.idList === planList.id &&
+      parsePlanMetadata(card.desc)
+    ) {
+      await updateTrelloCard(req.user, card.id, { closed: true });
+      return res.json({ success: true, planId: card.id, archived: true });
+    }
 
-    const oauth1a = require("oauth-1.0a");
-    const crypto = require("crypto");
-
-    const oauthClient = oauth1a({
-      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
-      signature_method: "HMAC-SHA1",
-      hash_function(base_string, key) {
-        return crypto
-          .createHmac("sha1", key)
-          .update(base_string)
-          .digest("base64");
-      },
+    // Temporary fallback for a legacy place card that still carries its due date.
+    const cardList = lists.find((list) => list.id === card.idList);
+    if (isReservedList(cardList) || !card.due) {
+      return res.status(400).json({ error: "Invalid legacy planned stop" });
+    }
+    await updateTrelloCard(req.user, card.id, {
+      due: "null",
+      dueComplete: false,
     });
-
-    const request_data = {
-      url,
-      method: "PUT",
-      data: { value: null },
-    };
-
-    const headers = oauthClient.toHeader(
-      oauthClient.authorize(request_data, {
-        key: oauth.token,
-        secret: oauth.token_secret,
-      }),
-    );
-
-    // Set due to null to "unplan" the stop
-    await axios.put(url, null, {
-      params: { value: null },
-      headers,
-    });
-    invalidateBoardCache();
-    res.json({ success: true });
+    res.json({ success: true, planId: null, placeId: card.id, legacy: true });
   } catch (err) {
     console.log("Error in /api/remove-stop:", err);
     next(err);
@@ -1941,48 +2115,116 @@ router.post("/api/reorder-stops", async (req, res, next) => {
     const { updates } = req.body;
     if (!Array.isArray(updates))
       return res.status(400).json({ error: "Invalid updates" });
-
-    const oauth = {
-      consumer_key: process.env.TRELLO_OAUTH_KEY,
-      consumer_secret: process.env.TRELLO_OAUTH_SECRET,
-      token: req.user.token,
-      token_secret: req.user.tokenSecret,
-    };
-    const oauth1a = require("oauth-1.0a");
-    const crypto = require("crypto");
-    const oauthClient = oauth1a({
-      consumer: { key: oauth.consumer_key, secret: oauth.consumer_secret },
-      signature_method: "HMAC-SHA1",
-      hash_function(base_string, key) {
-        return crypto
-          .createHmac("sha1", key)
-          .update(base_string)
-          .digest("base64");
-      },
-    });
-
-    // Update each card's due date
-    for (const { cardId, due } of updates) {
-      const url = `https://api.trello.com/1/cards/${cardId}/due`;
-      const request_data = { url, method: "PUT", data: { value: due } };
-      const headers = oauthClient.toHeader(
-        oauthClient.authorize(request_data, {
-          key: oauth.token,
-          secret: oauth.token_secret,
-        }),
-      );
-      console.log("Reordering stop:", cardId, due);
-      console.log(`https://trello.com/c/${cardId}`);
-      const response = await axios.put(url, null, {
-        params: { value: due },
-        headers,
-      });
-      console.log("Trello API response:", response.data);
+    const { cards, lists, members } = await fetchBoard();
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Board membership is required" });
     }
-    invalidateBoardCache();
+    const cardsById = new Map(cards.map((card) => [card.id, card]));
+    const listById = new Map(lists.map((list) => [list.id, list]));
+    const planList = findPlanList(lists);
+    const normalized = updates.map((update) => ({
+      planId: update.planId || update.cardId,
+      due: new Date(update.due),
+    }));
+    if (
+      normalized.some(
+        (update) =>
+          !update.planId ||
+          Number.isNaN(update.due.getTime()) ||
+          !cardsById.has(update.planId),
+      )
+    ) {
+      return res.status(400).json({ error: "Invalid plan update" });
+    }
+    const hasInvalidTarget = normalized.some((update) => {
+      const card = cardsById.get(update.planId);
+      const isPlanCard =
+        planList &&
+        card.idList === planList.id &&
+        Boolean(parsePlanMetadata(card.desc));
+      const isLegacyPlace =
+        !isReservedList(listById.get(card.idList)) && Boolean(card.due);
+      return !isPlanCard && !isLegacyPlace;
+    });
+    if (hasInvalidTarget) {
+      return res.status(400).json({ error: "Invalid planned stop" });
+    }
+
+    for (const update of normalized) {
+      await updateTrelloCard(req.user, update.planId, {
+        due: update.due.toISOString(),
+      });
+    }
     res.json({ success: true });
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/api/plan/migrate", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+    const { cards, lists, members, customFields } = await fetchBoard();
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Board membership is required" });
+    }
+    const planList = findPlanList(lists);
+    if (!planList) {
+      return res
+        .status(409)
+        .json({ error: 'The Trello list "Plan" was not found' });
+    }
+
+    const listById = new Map(lists.map((list) => [list.id, list]));
+    const existingMigrationKeys = new Set(
+      cards
+        .filter((card) => card.idList === planList.id)
+        .map((card) => parsePlanMetadata(card.desc))
+        .filter((metadata) => metadata?.migratedFromDue)
+        .map(
+          (metadata) =>
+            `${metadata.placeCardId}:${new Date(metadata.migratedFromDue).toISOString()}`,
+        ),
+    );
+    const legacyCards = cards.filter(
+      (card) =>
+        card.due &&
+        !isReservedList(listById.get(card.idList)) &&
+        getCFNumber(card, customFields, "Latitude") != null &&
+        getCFNumber(card, customFields, "Longitude") != null,
+    );
+
+    const results = [];
+    for (const placeCard of legacyCards) {
+      const migratedFromDue = new Date(placeCard.due).toISOString();
+      const key = `${placeCard.id}:${migratedFromDue}`;
+      let created = null;
+      if (!existingMigrationKeys.has(key)) {
+        created = await createPlanCard(
+          req.user,
+          planList,
+          placeCard,
+          migratedFromDue,
+          {
+            dueComplete: placeCard.dueComplete,
+            migratedFromDue,
+          },
+        );
+      }
+      await updateTrelloCard(req.user, placeCard.id, {
+        due: "null",
+        dueComplete: false,
+      });
+      results.push({
+        placeId: placeCard.id,
+        planId: created?.id || null,
+        alreadyCreated: !created,
+      });
+    }
+
+    res.json({ success: true, migrated: results.length, results });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -1995,7 +2237,7 @@ router.post("/api/rate-place", async (req, res, next) => {
       return res.status(400).json({ error: "Missing cardId or rating" });
 
     const board = await fetchBoard();
-    const { customFields, members } = board;
+    const { cards, lists, customFields, members } = board;
 
     const userId =
       req.user.id ||
@@ -2007,6 +2249,9 @@ router.post("/api/rate-place", async (req, res, next) => {
         (m.memberType === "admin" || m.memberType === "normal"),
     );
     if (!isMember) return res.status(403).json({ error: "Not a board member" });
+
+    const placeCard = resolvePlaceCard(cards, lists, cardId);
+    if (!placeCard) return res.status(404).json({ error: "Place not found" });
 
     const ratingField = customFields.find((f) => f.name === "⭐️");
     if (!ratingField)
@@ -2047,7 +2292,7 @@ router.post("/api/rate-place", async (req, res, next) => {
       },
     });
 
-    const url = `https://api.trello.com/1/cards/${cardId}/customField/${ratingField.id}/item`;
+    const url = `https://api.trello.com/1/cards/${placeCard.id}/customField/${ratingField.id}/item`;
     const request_data = { url, method: "PUT", data: payload };
     const headers = oauthClient.toHeader(
       oauthClient.authorize(request_data, {
@@ -2075,7 +2320,7 @@ router.post("/api/update-labels", async (req, res, next) => {
     }
 
     const board = await fetchBoard();
-    const { members } = board;
+    const { cards, lists, members } = board;
     const userId =
       req.user.id ||
       req.user.idMember ||
@@ -2086,6 +2331,10 @@ router.post("/api/update-labels", async (req, res, next) => {
         (m.memberType === "admin" || m.memberType === "normal"),
     );
     if (!isMember) return res.status(403).json({ error: "Not a board member" });
+
+    const placeCard = resolvePlaceCard(cards, lists, cardId);
+    if (!placeCard) return res.status(404).json({ error: "Place not found" });
+    const placeCardId = placeCard.id;
 
     const oauth = {
       consumer_key: process.env.TRELLO_OAUTH_KEY,
@@ -2106,7 +2355,7 @@ router.post("/api/update-labels", async (req, res, next) => {
       },
     });
 
-    const getUrl = `https://api.trello.com/1/cards/${cardId}?fields=idLabels`;
+    const getUrl = `https://api.trello.com/1/cards/${placeCardId}?fields=idLabels`;
     const getReq = { url: getUrl, method: "GET" };
     const getHeaders = oauthClient.toHeader(
       oauthClient.authorize(getReq, {
@@ -2123,7 +2372,7 @@ router.post("/api/update-labels", async (req, res, next) => {
     const toRemove = current.filter((id) => !labels.includes(id));
 
     for (const id of toAdd) {
-      const url = `https://api.trello.com/1/cards/${cardId}/idLabels`;
+      const url = `https://api.trello.com/1/cards/${placeCardId}/idLabels`;
       const request_data = { url, method: "POST", data: { value: id } };
       const headers = oauthClient.toHeader(
         oauthClient.authorize(request_data, {
@@ -2135,7 +2384,7 @@ router.post("/api/update-labels", async (req, res, next) => {
     }
 
     for (const id of toRemove) {
-      const url = `https://api.trello.com/1/cards/${cardId}/idLabels/${id}`;
+      const url = `https://api.trello.com/1/cards/${placeCardId}/idLabels/${id}`;
       const request_data = { url, method: "DELETE" };
       const headers = oauthClient.toHeader(
         oauthClient.authorize(request_data, {

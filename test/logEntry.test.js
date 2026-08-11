@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const express = require("express");
 const axios = require("axios");
+const { invalidateBoardCache } = require("../services/trello");
 
 process.env.TRELLO_KEY = "test-board-key";
 process.env.TRELLO_TOKEN = "test-board-token";
@@ -10,7 +11,8 @@ process.env.TRELLO_OAUTH_SECRET = "test-oauth-secret";
 
 const captainsLog = require("../routes/captainsLog");
 
-test("arriving at or visiting a stop completes its Trello due date", async (t) => {
+test("arriving at or visiting a stop completes the linked Plan card", async (t) => {
+  invalidateBoardCache();
   const originalPost = axios.post;
   const originalPut = axios.put;
   const originalGet = axios.get;
@@ -27,7 +29,37 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
     requests.push({ method: "PUT", url, body, options });
     return { data: {} };
   };
-  axios.get = async () => ({ data: activeJourneyCards });
+  axios.get = async (url) => {
+    if (String(url).includes("/lists/")) return { data: activeJourneyCards };
+    return {
+      data: {
+        cards: [
+          {
+            id: "stop-card",
+            idList: "places-list",
+            name: "Wasp Bay",
+            labels: [],
+            customFieldItems: [],
+          },
+          {
+            id: "plan-card",
+            idList: "plan-list",
+            name: "Wasp Bay",
+            desc: "captains-log-plan: 1\nplaceCardId: stop-card",
+            due: "2026-08-05T09:00:00.000Z",
+            dueComplete: false,
+          },
+        ],
+        lists: [
+          { id: "places-list", name: "Places" },
+          { id: "plan-list", name: "Plan" },
+        ],
+        customFields: [],
+        labels: [],
+        members: [{ id: "test-member", memberType: "normal" }],
+      },
+    };
+  };
   axios.request = async (options) => {
     journeyRequests.push(options);
     return { data: {} };
@@ -37,6 +69,7 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
     axios.put = originalPut;
     axios.get = originalGet;
     axios.request = originalRequest;
+    invalidateBoardCache();
   });
 
   const app = express();
@@ -85,7 +118,9 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action,
-        cardId: "stop-card",
+        // Older iOS builds identify a planned row by its Plan card ID. The
+        // server resolves that back to the permanent place card.
+        cardId: action === "visited" ? "plan-card" : "stop-card",
         lat: 37.5205,
         lng: 23.4113,
         timestamp: "2026-08-05T09:00:00.000Z",
@@ -95,6 +130,7 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
 
     assert.equal(response.status, 200);
     assert.equal(result.dueComplete, true);
+    assert.equal(result.completedPlanId, "plan-card");
     assert.equal(requests.length, 2);
     assert.equal(requests[0].method, "POST");
     assert.equal(
@@ -102,7 +138,7 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
       "https://api.trello.com/1/cards/stop-card/actions/comments",
     );
     assert.equal(requests[1].method, "PUT");
-    assert.equal(requests[1].url, "https://api.trello.com/1/cards/stop-card");
+    assert.equal(requests[1].url, "https://api.trello.com/1/cards/plan-card");
     assert.deepEqual(requests[1].options.params, { dueComplete: true });
     assert.equal(result.journey.ended, action === "arrived");
     assert.equal(journeyRequests.length, action === "arrived" ? 2 : 0);
@@ -123,7 +159,8 @@ test("arriving at or visiting a stop completes its Trello due date", async (t) =
   }
 });
 
-test("departing a stop clears its Trello due date", async (t) => {
+test("departing a stop preserves linked future Plan cards", async (t) => {
+  invalidateBoardCache();
   const originalPost = axios.post;
   const originalPut = axios.put;
   const originalGet = axios.get;
@@ -141,7 +178,37 @@ test("departing a stop clears its Trello due date", async (t) => {
     updates.push({ url, body, options });
     return { data: {} };
   };
-  axios.get = async () => ({ data: [] });
+  axios.get = async (url) => {
+    if (String(url).includes("/lists/")) return { data: [] };
+    return {
+      data: {
+        cards: [
+          {
+            id: "stop-card",
+            idList: "places-list",
+            name: "Channel Rock Bay",
+            labels: [],
+            customFieldItems: [],
+          },
+          {
+            id: "future-plan-card",
+            idList: "plan-list",
+            name: "Channel Rock Bay",
+            desc: "captains-log-plan: 1\nplaceCardId: stop-card",
+            due: "2026-08-20T09:00:00.000Z",
+            dueComplete: false,
+          },
+        ],
+        lists: [
+          { id: "places-list", name: "Places" },
+          { id: "plan-list", name: "Plan" },
+        ],
+        customFields: [],
+        labels: [],
+        members: [{ id: "test-member", memberType: "normal" }],
+      },
+    };
+  };
   axios.request = async (options) => {
     operationOrder.push("start-journey");
     journeyRequests.push(options);
@@ -152,6 +219,7 @@ test("departing a stop clears its Trello due date", async (t) => {
     axios.put = originalPut;
     axios.get = originalGet;
     axios.request = originalRequest;
+    invalidateBoardCache();
   });
 
   const app = express();
@@ -194,7 +262,7 @@ test("departing a stop clears its Trello due date", async (t) => {
 
   assert.equal(response.status, 200);
   assert.equal(result.dueComplete, false);
-  assert.equal(result.dueCleared, true);
+  assert.equal(result.dueCleared, false);
   assert.equal(result.journey.started, true);
   assert.equal(result.journey.journey.name, "Channel Rock Bay → Wasp Bay");
   assert.equal(journeyRequests.length, 1);
@@ -207,14 +275,8 @@ test("departing a stop clears its Trello due date", async (t) => {
     ),
     true,
   );
-  assert.equal(updates.length, 1);
-  assert.equal(updates[0].url, "https://api.trello.com/1/cards/stop-card");
-  assert.deepEqual(updates[0].options.params, { due: "null" });
-  assert.deepEqual(operationOrder, [
-    "start-journey",
-    "clear-due-date",
-    "log-departed",
-  ]);
+  assert.equal(updates.length, 0);
+  assert.deepEqual(operationOrder, ["start-journey", "log-departed"]);
 });
 
 test("records the selected orange mooring label and only adds it when missing", async (t) => {
@@ -518,6 +580,7 @@ test("adds an optional temperature to an arrival log", async (t) => {
 });
 
 test("keeps the current stop description private and lets a logged-in user update it", async (t) => {
+  invalidateBoardCache();
   const originalGet = axios.get;
   const originalPut = axios.put;
   const updates = [];
@@ -596,6 +659,7 @@ test("keeps the current stop description private and lets a logged-in user updat
   t.after(() => {
     axios.get = originalGet;
     axios.put = originalPut;
+    invalidateBoardCache();
   });
 
   const app = express();

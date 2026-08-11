@@ -160,6 +160,30 @@ fields, and saves the approved result as a versioned Trello comment through
 `POST /api/places/:cardId/navily-snapshots`. Captain's Log shows the most recent
 snapshot returned by `/api/data`; it does not scrape Navily from the server.
 
+## Planned Visits
+
+Place cards are permanent location records. Each scheduled occurrence is a
+separate card in the Trello list named `Plan`, so the same place can appear in
+an itinerary more than once. A Plan card uses Trello's native due date and its
+description links it to the location card:
+
+```text
+captains-log-plan: 1
+placeCardId: <Trello location card ID>
+
+Place: https://trello.com/c/...
+```
+
+`GET /api/data` returns the Plan card ID as `id` and `planId`, and the permanent
+location ID as `placeId`. Planning mutations create, reschedule, reorder, or
+archive Plan cards. Arrival and visit logs remain on the permanent place card
+and complete the earliest outstanding linked Plan card.
+
+During migration, location cards that still have a due date are returned as
+legacy planned visits. An authenticated board member can run the idempotent
+`POST /api/plan/migrate` endpoint to create linked Plan cards and clear those
+legacy due dates only after each replacement card has been created.
+
 ## Public To-do Page
 
 `/to-do` lists open cards in Trello list `62b3554c15a79549f9f3f52d` on board `BUk0xpGt`. Cards can be reordered, marked done, and restored without being archived. The page is intentionally absent from site navigation and does not require authentication, so anyone who knows the URL can update cards in that list. Authenticated users can also add items and switch between the board's open lists, in Trello order, up to and including `Today`.
