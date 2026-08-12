@@ -541,6 +541,126 @@ private struct PlanningDay: Identifiable {
     var id: Date { date }
 }
 
+struct PlaceDetailView<Actions: View>: View {
+    let place: PlaceSummary
+    let due: Date?
+    let api: APIClient
+    let token: String?
+    let onDismiss: () -> Void
+    let onNavilySaved: () -> Void
+    let actions: Actions
+
+    @State private var isCheckingNavily = false
+
+    init(
+        place: PlaceSummary,
+        due: Date?,
+        api: APIClient,
+        token: String?,
+        onDismiss: @escaping () -> Void,
+        onNavilySaved: @escaping () -> Void,
+        @ViewBuilder actions: () -> Actions
+    ) {
+        self.place = place
+        self.due = due
+        self.api = api
+        self.token = token
+        self.onDismiss = onDismiss
+        self.onNavilySaved = onNavilySaved
+        self.actions = actions()
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: place.mooringSystemImage)
+                            .font(.title2)
+                            .frame(width: 46, height: 46)
+                            .foregroundStyle(.white)
+                            .background(Chartroom.ink, in: Circle())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(place.name)
+                                .font(.system(.title2, design: .serif, weight: .semibold))
+                            if let listName = place.listName {
+                                Text(listName).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if let description = place.desc?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                        Text(description)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let rating = place.rating {
+                            Label("\(rating) out of 5 stars", systemImage: "star.fill")
+                        }
+                        if let mooring = place.mooringSummary {
+                            Label(mooring, systemImage: place.mooringSystemImage)
+                        }
+                        if let visits = place.visitCount, visits > 0 {
+                            Label("Visited \(visits) \(visits == 1 ? "time" : "times")", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                        }
+                        if let lastVisitedAt = place.lastVisitedAt {
+                            Label("Last visit \(lastVisitedAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
+                        }
+                        if let due {
+                            Label("Planned for \(due.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar.badge.clock")
+                        }
+                        if let snapshot = place.navilySnapshot {
+                            Label(
+                                "Navily checked \(snapshot.checkedAt.formatted(date: .abbreviated, time: .omitted))",
+                                systemImage: "checkmark.icloud"
+                            )
+                        }
+                    }
+                    .foregroundStyle(Chartroom.ink)
+
+                    HStack(spacing: 16) {
+                        if let trelloUrl = place.trelloUrl { Link("Trello", destination: trelloUrl) }
+                        if let navilyUrl = place.navilyUrl { Link("Navily", destination: navilyUrl) }
+                    }
+
+                    if place.navilyUrl != nil {
+                        Button {
+                            isCheckingNavily = true
+                        } label: {
+                            Label("Check Navily", systemImage: "arrow.trianglehead.2.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(token == nil)
+                    }
+
+                    actions
+                }
+                .padding(22)
+            }
+            .background(Chartroom.paper)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+            .sheet(isPresented: $isCheckingNavily) {
+                if let token {
+                    NavilyCheckView(
+                        place: place,
+                        api: api,
+                        token: token,
+                        onSaved: { _ in
+                            isCheckingNavily = false
+                            onNavilySaved()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @EnvironmentObject private var tracker: JourneyTracker
@@ -557,7 +677,6 @@ struct PlanView: View {
     @State private var searchText = ""
     @State private var workingCardID: String?
     @State private var selectedMapPlace: PlaceSummary?
-    @State private var checkingNavilyPlace: PlaceSummary?
     @State private var isAddingPlace = false
     @State private var plannedDueOverrides: [String: Date] = [:]
     @State private var planningOrderMessage: String?
@@ -951,68 +1070,18 @@ struct PlanView: View {
     }
 
     private func placeCard(_ place: PlaceSummary) -> some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: place.mooringSystemImage)
-                            .font(.title2)
-                            .frame(width: 46, height: 46)
-                            .foregroundStyle(.white)
-                            .background(Chartroom.ink, in: Circle())
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(place.name)
-                                .font(.system(.title2, design: .serif, weight: .semibold))
-                            if let listName = place.listName {
-                                Text(listName).font(.subheadline).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    if let description = place.desc?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
-                        Text(description)
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let rating = place.rating {
-                            Label("\(rating) out of 5 stars", systemImage: "star.fill")
-                        }
-                        if let mooring = place.mooringSummary {
-                            Label(mooring, systemImage: place.mooringSystemImage)
-                        }
-                        if let visits = place.visitCount, visits > 0 {
-                            Label("Visited \(visits) \(visits == 1 ? "time" : "times")", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
-                        }
-                        if let lastVisitedAt = place.lastVisitedAt {
-                            Label("Last visit \(lastVisitedAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
-                        }
-                        if let due = effectiveDue(for: place) {
-                            Label("Planned for \(due.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar.badge.clock")
-                        }
-                        if let snapshot = place.navilySnapshot {
-                            Label(
-                                "Navily checked \(snapshot.checkedAt.formatted(date: .abbreviated, time: .omitted))",
-                                systemImage: "checkmark.icloud"
-                            )
-                        }
-                    }
-                    .foregroundStyle(Chartroom.ink)
-
-                    HStack(spacing: 16) {
-                        if let trelloUrl = place.trelloUrl { Link("Trello", destination: trelloUrl) }
-                        if let navilyUrl = place.navilyUrl { Link("Navily", destination: navilyUrl) }
-                    }
-
-                    if place.navilyUrl != nil {
-                        Button {
-                            checkingNavilyPlace = place
-                        } label: {
-                            Label("Check Navily", systemImage: "arrow.trianglehead.2.clockwise")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
+        PlaceDetailView(
+            place: place,
+            due: effectiveDue(for: place),
+            api: authentication.api,
+            token: authentication.token,
+            onDismiss: { selectedMapPlace = nil },
+            onNavilySaved: {
+                selectedMapPlace = nil
+                Task { await load() }
+            }
+        ) {
+            Group {
                     if place.due != nil {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Already in your plan", systemImage: "checkmark.circle.fill")
@@ -1068,28 +1137,6 @@ struct PlanView: View {
                         .tint(Chartroom.sea)
                         .disabled(workingCardID != nil)
                     }
-                }
-                .padding(22)
-            }
-            .background(Chartroom.paper)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { selectedMapPlace = nil }
-                }
-            }
-            .sheet(item: $checkingNavilyPlace) { checkedPlace in
-                if let token = authentication.token {
-                    NavilyCheckView(
-                        place: checkedPlace,
-                        api: authentication.api,
-                        token: token,
-                        onSaved: { _ in
-                            checkingNavilyPlace = nil
-                            selectedMapPlace = nil
-                            Task { await load() }
-                        }
-                    )
-                }
             }
         }
     }

@@ -153,6 +153,7 @@ private struct CurrentPositionView: View {
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
     @State private var plannedRoute: PlanningRouteResponse?
+    @State private var selectedMapPlace: PlaceSummary?
     @State private var isEditingDescription = false
     @State private var descriptionDraft = ""
     @State private var isSavingDescription = false
@@ -200,6 +201,20 @@ private struct CurrentPositionView: View {
                 tracker.resumeTracking()
             }
             .refreshable { await refreshMapData() }
+            .sheet(item: $selectedMapPlace) { place in
+                PlaceDetailView(
+                    place: place,
+                    due: place.due,
+                    api: authentication.api,
+                    token: authentication.token,
+                    onDismiss: { selectedMapPlace = nil },
+                    onNavilySaved: {
+                        selectedMapPlace = nil
+                        Task { await refreshMapData() }
+                    }
+                ) { EmptyView() }
+                .presentationDetents([.medium, .large])
+            }
             .onChange(of: tracker.currentStatus?.current?.id) {
                 isEditingDescription = false
                 descriptionError = nil
@@ -326,17 +341,25 @@ private struct CurrentPositionView: View {
                 }
             } else if let place = tracker.currentStatus?.current, let coordinate = place.coordinate {
                 Annotation(place.name, coordinate: coordinate) {
-                    Image(systemName: "sailboat.fill")
-                        .padding(10)
-                        .foregroundStyle(Chartroom.ink)
-                        .background(Chartroom.surface, in: Circle())
-                        .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
+                    Button { selectedMapPlace = place } label: {
+                        Image(systemName: "sailboat.fill")
+                            .padding(10)
+                            .foregroundStyle(Chartroom.ink)
+                            .background(Chartroom.surface, in: Circle())
+                            .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(place.name)")
                 }
             }
             ForEach(plannedStops ?? []) { stop in
                 if let coordinate = stop.coordinate {
                     Annotation(stop.name, coordinate: coordinate) {
-                        plannedStopMarker(stop)
+                        Button { selectedMapPlace = stop } label: {
+                            plannedStopMarker(stop)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens place details")
                     }
                 }
             }
