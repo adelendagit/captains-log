@@ -115,24 +115,42 @@ enum NavilyPageParser {
         ["anchorages close", "marinas close", "mouillages à proximité", "ports à proximité"],
     ]
 
-    static func draft(url: URL, title: String?, text: String) -> NavilySnapshotDraft {
+    static func draft(
+        url: URL,
+        title: String?,
+        text: String,
+        dinghyFacilities: [String]? = nil
+    ) -> NavilySnapshotDraft {
         let lines = normalizedLines(text)
         let characteristics = merged(
             section(aliases: headings[0], lines: lines),
             section(aliases: headings[3], lines: lines)
         )
         let seabed = section(aliases: headings[1], lines: lines)
+        let shops = section(aliases: headings[5], lines: lines)
+            .filter { !isEmptyFacilityMessage($0) }
         let facilities = merged(
-            section(aliases: headings[2], lines: lines),
-            section(aliases: headings[5], lines: lines)
+            dinghyFacilities ?? section(aliases: headings[2], lines: lines),
+            shops
         )
         let name = cleanTitle(title) ?? NavilyShareParser.suggestedName(from: url)
         let coordinate = NavilyShareParser.coordinate(in: text)
-        let parts = [
+        var parts = [
             characteristics.isEmpty ? nil : "Characteristics: \(characteristics.joined(separator: ", ")).",
             seabed.isEmpty ? nil : "Seabed: \(seabed.joined(separator: ", ")).",
-            facilities.isEmpty ? nil : "Facilities: \(facilities.joined(separator: ", ")).",
         ].compactMap { $0 }
+        if let dinghyFacilities {
+            parts.append(
+                dinghyFacilities.isEmpty
+                    ? "Reachable by dinghy: None."
+                    : "Reachable by dinghy: \(dinghyFacilities.joined(separator: ", "))."
+            )
+            if !shops.isEmpty {
+                parts.append("Shops nearby: \(shops.joined(separator: ", ")).")
+            }
+        } else if !facilities.isEmpty {
+            parts.append("Facilities: \(facilities.joined(separator: ", ")).")
+        }
         return NavilySnapshotDraft(
             sourceUrl: url,
             name: name,
@@ -192,6 +210,14 @@ enum NavilyPageParser {
                 result.append(value)
             }
         }
+    }
+
+    private static func isEmptyFacilityMessage(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return lower.hasPrefix("no shops listed") ||
+            lower.hasPrefix("no shop listed") ||
+            lower.hasPrefix("aucun commerce") ||
+            lower.hasPrefix("pas de commerce")
     }
 
     private static func isHeading(_ line: String) -> Bool {

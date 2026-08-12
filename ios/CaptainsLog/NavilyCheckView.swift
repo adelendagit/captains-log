@@ -10,8 +10,9 @@ struct NavilyCheckView: View {
     let onSaved: (NavilySnapshot) -> Void
 
     @State private var draft: NavilySnapshotDraft?
+    @State private var unavailableDinghyFacilities: [String] = []
     @State private var summary = ""
-    @State private var reloadID = 0
+    @State private var extractionID = 0
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -19,9 +20,15 @@ struct NavilyCheckView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if let url = place.navilyUrl {
-                    NavilyWebView(url: url, reloadID: reloadID) { title, text in
-                        let captured = NavilyPageParser.draft(url: url, title: title, text: text)
+                    NavilyWebView(url: url, extractionID: extractionID) { page in
+                        let captured = NavilyPageParser.draft(
+                            url: url,
+                            title: page.title,
+                            text: page.text,
+                            dinghyFacilities: page.dinghyFacilities
+                        )
                         draft = captured
+                        unavailableDinghyFacilities = page.unavailableDinghyFacilities
                         summary = captured.summary
                         errorMessage = nil
                     } onError: { message in
@@ -54,6 +61,11 @@ struct NavilyCheckView: View {
                             detail("Characteristics", values: draft.characteristics)
                             detail("Seabed", values: draft.seabed)
                             detail("Facilities", values: draft.facilities)
+                            detail(
+                                "Not reachable by dinghy",
+                                values: unavailableDinghyFacilities,
+                                unavailable: true
+                            )
                             if draft.characteristics.isEmpty &&
                                 draft.seabed.isEmpty &&
                                 draft.facilities.isEmpty {
@@ -103,7 +115,7 @@ struct NavilyCheckView: View {
                 }
                 ToolbarItemGroup(placement: .confirmationAction) {
                     Button {
-                        reloadID += 1
+                        extractionID += 1
                     } label: {
                         Label("Extract Again", systemImage: "arrow.clockwise")
                     }
@@ -121,11 +133,16 @@ struct NavilyCheckView: View {
     }
 
     @ViewBuilder
-    private func detail(_ label: String, values: [String]) -> some View {
+    private func detail(
+        _ label: String,
+        values: [String],
+        unavailable: Bool = false
+    ) -> some View {
         if !values.isEmpty {
             LabeledContent(label) {
                 Text(values.joined(separator: ", "))
                     .multilineTextAlignment(.trailing)
+                    .foregroundStyle(unavailable ? .secondary : .primary)
             }
         }
     }
@@ -165,10 +182,17 @@ struct NavilyCheckView: View {
     }
 }
 
+private struct NavilyPageCapture {
+    let title: String?
+    let text: String
+    let dinghyFacilities: [String]?
+    let unavailableDinghyFacilities: [String]
+}
+
 private struct NavilyWebView: UIViewRepresentable {
     let url: URL
-    let reloadID: Int
-    let onCapture: (String?, String) -> Void
+    let extractionID: Int
+    let onCapture: (NavilyPageCapture) -> Void
     let onError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -187,26 +211,59 @@ private struct NavilyWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.parent = self
-        guard context.coordinator.lastReloadID != reloadID else { return }
-        context.coordinator.lastReloadID = reloadID
-        webView.reload()
+        guard context.coordinator.lastExtractionID != extractionID else { return }
+        context.coordinator.lastExtractionID = extractionID
+        context.coordinator.capture(webView)
     }
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
         var parent: NavilyWebView
-        var lastReloadID = 0
+        var lastExtractionID = 0
 
         init(parent: NavilyWebView) {
             self.parent = parent
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.capture(webView)
+            }
+        }
+
+        func capture(_ webView: WKWebView) {
             let script = """
-            (() => ({
-              title: document.querySelector('h1')?.innerText?.trim() || document.title,
-              text: document.body?.innerText?.slice(0, 60000) || ''
-            }))()
+            (() => {
+              const normalized = value => (value || '').replace(/\\s+/g, ' ').trim();
+              const serviceList = [...document.querySelectorAll('ul.services')].find(list =>
+                [...list.querySelectorAll('img')].some(image =>
+                  (image.getAttribute('src') || '').includes('/icons/services/')
+                )
+              );
+              const items = serviceList?.querySelectorAll('li');
+              const available = [];
+              const unavailable = [];
+              for (const item of items || []) {
+                const label = normalized(item.querySelector('p')?.innerText || item.innerText);
+                if (!label) continue;
+                const images = [...item.querySelectorAll('img')];
+                const isUnavailable = images.some(image => {
+                  const alt = normalized(image.alt).toLowerCase();
+                  const source = (image.getAttribute('src') || '').toLowerCase();
+                  return source.includes('red-cancel') || source.includes('-disabled') ||
+                    alt.includes('indisponible') || alt.includes('unavailable');
+                });
+                (isUnavailable ? unavailable : available).push(label);
+              }
+              return {
+                title: document.querySelector('h1')?.innerText?.trim() || document.title,
+                text: document.body?.innerText?.slice(0, 60000) || '',
+                hasDinghySection: Boolean(serviceList),
+                dinghyFacilities: available,
+                unavailableDinghyFacilities: unavailable
+              };
+            })()
             """
             webView.evaluateJavaScript(script) { [weak self] result, error in
                 guard let self else { return }
@@ -220,7 +277,17 @@ private struct NavilyWebView: UIViewRepresentable {
                     self.parent.onError("Navily returned an empty page.")
                     return
                 }
-                self.parent.onCapture(values["title"] as? String, text)
+                let hasDinghySection = values["hasDinghySection"] as? Bool == true
+                self.parent.onCapture(
+                    NavilyPageCapture(
+                        title: values["title"] as? String,
+                        text: text,
+                        dinghyFacilities: hasDinghySection
+                            ? (values["dinghyFacilities"] as? [String] ?? [])
+                            : nil,
+                        unavailableDinghyFacilities: values["unavailableDinghyFacilities"] as? [String] ?? []
+                    )
+                )
             }
         }
 
