@@ -21,6 +21,9 @@ struct CaptainsLogApp: App {
                 .onChange(of: tracker.isUnderway, initial: true) { _, isUnderway in
                     UIApplication.shared.isIdleTimerDisabled = isUnderway
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .captainsLogDidChange)) { _ in
+                    Task { await tracker.refresh() }
+                }
         }
     }
 }

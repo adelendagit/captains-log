@@ -25,6 +25,7 @@
 		B20000000000000000000008 /* CaptainsLogShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* CaptainsLogShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B20000000000000000000009 /* NavilyPreprocessing.js in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* NavilyPreprocessing.js */; };
 		C20000000000000000000001 /* NavilyCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* NavilyCheckView.swift */; };
+		D20000000000000000000001 /* CaptainsLogIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000001 /* CaptainsLogIntent.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +72,7 @@
 		B10000000000000000000006 /* NavilyPreprocessing.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = NavilyPreprocessing.js; sourceTree = "<group>"; };
 		B10000000000000000000007 /* CaptainsLogShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CaptainsLogShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000000000000000000001 /* NavilyCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavilyCheckView.swift; sourceTree = "<group>"; };
+		D10000000000000000000001 /* CaptainsLogIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptainsLogIntent.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +115,7 @@
 				B10000000000000000000001 /* AddPlaceView.swift */,
 				B10000000000000000000002 /* KeychainStore.swift */,
 				C10000000000000000000001 /* NavilyCheckView.swift */,
+				D10000000000000000000001 /* CaptainsLogIntent.swift */,
 				A10000000000000000000007 /* Info.plist */,
 				A10000000000000000000009 /* Assets.xcassets */,
 				A10000000000000000000010 /* CaptainsLog.entitlements */,
@@ -250,6 +253,7 @@
 				B20000000000000000000001 /* AddPlaceView.swift in Sources */,
 				B20000000000000000000002 /* KeychainStore.swift in Sources */,
 				C20000000000000000000001 /* NavilyCheckView.swift in Sources */,
+				D20000000000000000000001 /* CaptainsLogIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

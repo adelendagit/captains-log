@@ -1,4 +1,4 @@
-# Skibidi
+# Captain's Log
 
 This project now supports optional Trello authentication so that users can sign in with their Trello accounts. Without signing in the app continues to show read‑only board data; after authentication it will have read/write access to the user's Trello data which will enable future editing features.
 

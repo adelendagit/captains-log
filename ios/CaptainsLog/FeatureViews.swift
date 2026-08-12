@@ -270,21 +270,7 @@ struct AddLogEntryView: View {
     }
 
     private var actions: [(key: String, label: String, icon: String)] {
-        [
-            ("arrived", "Arrived", "sailboat.fill"),
-            ("departed", "Departed", "sailboat"),
-            ("visited", "Visited", "mappin.and.ellipse"),
-            ("water", "Water", "drop.fill"),
-            ("diesel", "Diesel", "fuelpump"),
-            ("temperature", "Sea Temp", "thermometer.medium"),
-            ("bins", "Bins", "trash"),
-            ("bbq-gas-change", "BBQ Gas Change", "flame.fill"),
-            ("gas-tank-change", "Gas Tank Change", "cylinder.fill"),
-            ("water-tank-change", "Water Tank Change", "drop.triangle.fill"),
-            ("power", "Shore power", "bolt.fill"),
-            ("boom", "Boom", "wrench.and.screwdriver"),
-            ("other", "Other", "square.and.pencil")
-        ]
+        CaptainLogAction.allCases.map { ($0.rawValue, $0.label, $0.systemImage) }
     }
 
     private var selectedPlace: PlaceSummary? {
