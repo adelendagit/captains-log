@@ -78,7 +78,8 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
 struct CaptainsLogVoiceIntent: AppIntent {
     static let title: LocalizedStringResource = "Captain’s Log"
     static let description = IntentDescription("Adds an entry to the captain’s log using a spoken conversation.")
-    static let openAppWhenRun = true
+    static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Log type")
     var action: CaptainLogAction?

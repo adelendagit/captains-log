@@ -627,11 +627,19 @@ struct PlaceDetailView<Actions: View>: View {
                         Button {
                             isCheckingNavily = true
                         } label: {
-                            Label("Check Navily", systemImage: "arrow.trianglehead.2.clockwise")
-                                .frame(maxWidth: .infinity)
+                            if isCheckingNavily {
+                                HStack {
+                                    ProgressView()
+                                    Text("Opening Navily…")
+                                }
+                            } else {
+                                Label("Check Navily", systemImage: "arrow.trianglehead.2.clockwise")
+                            }
                         }
+                        .frame(maxWidth: .infinity)
                         .buttonStyle(.bordered)
-                        .disabled(token == nil)
+                        .disabled(token == nil || isCheckingNavily)
+                        .accessibilityLabel(isCheckingNavily ? "Opening Navily" : "Check Navily")
                     }
 
                     actions

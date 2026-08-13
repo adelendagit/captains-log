@@ -10,6 +10,7 @@ struct CaptainsLogApp: App {
         let authentication = AuthenticationManager()
         _authentication = StateObject(wrappedValue: authentication)
         _tracker = StateObject(wrappedValue: JourneyTracker(authentication: authentication))
+        CaptainsLogShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
