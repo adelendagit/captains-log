@@ -1,4 +1,5 @@
 import AppIntents
+import CoreLocation
 import Foundation
 
 enum CaptainLogAction: String, AppEnum, CaseIterable {
@@ -119,7 +120,11 @@ struct CaptainsLogVoiceIntent: AppIntent {
         let (planning, status, journey) = try await (planningRequest, statusRequest, journeyRequest)
 
         let places = uniquePlaces(from: planning, status: status)
-        let place = try await resolvedPlace(from: places)
+        let place = try await resolvedPlace(
+            from: places,
+            status: status,
+            coordinate: journey.position?.coordinate
+        )
         let mooringLabelID = try await resolvedMooringLabelID(
             for: resolvedAction,
             labels: planning.boardLabels ?? []
@@ -227,12 +232,24 @@ struct CaptainsLogVoiceIntent: AppIntent {
         }
     }
 
-    private func resolvedPlace(from places: [PlaceSummary]) async throws -> PlaceSummary {
+    private func resolvedPlace(
+        from places: [PlaceSummary],
+        status: CurrentStatusResponse,
+        coordinate: CLLocationCoordinate2D?
+    ) async throws -> PlaceSummary {
         let spokenName = placeName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let answer = if let spokenName, !spokenName.isEmpty {
-            spokenName
+        let answer: String
+        if let spokenName, !spokenName.isEmpty {
+            answer = spokenName
+        } else if let suggestion = suggestedPlace(from: places, status: status, coordinate: coordinate) {
+            let confirmed = try await $placeName.requestConfirmation(
+                for: suggestion.name,
+                dialog: IntentDialog(stringLiteral: "I think you’re at \(suggestion.name). Is that correct?")
+            )
+            if confirmed { return suggestion }
+            answer = try await $placeName.requestValue("What is the name of the place?")
         } else {
-            try await $placeName.requestValue("Where?")
+            answer = try await $placeName.requestValue("What is the name of the place?")
         }
 
         let matches = fuzzyMatches(answer, in: places, name: \PlaceSummary.name)
@@ -244,6 +261,29 @@ struct CaptainsLogVoiceIntent: AppIntent {
             dialog: "Which place did you mean?"
         )
         return matches.first { $0.name == chosenName } ?? matches[0]
+    }
+
+    private func suggestedPlace(
+        from places: [PlaceSummary],
+        status: CurrentStatusResponse,
+        coordinate: CLLocationCoordinate2D?
+    ) -> PlaceSummary? {
+        if let coordinate {
+            let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            let closest = places
+                .compactMap { place -> (place: PlaceSummary, distance: CLLocationDistance)? in
+                    guard let placeCoordinate = place.coordinate else { return nil }
+                    let location = CLLocation(
+                        latitude: placeCoordinate.latitude,
+                        longitude: placeCoordinate.longitude
+                    )
+                    return (place, origin.distance(from: location))
+                }
+                .min { $0.distance < $1.distance }
+            if let closest { return closest.place }
+        }
+
+        return status.current ?? status.from ?? status.destination ?? status.plannedDestination ?? places.first
     }
 
     private func resolvedMooringLabelID(for action: CaptainLogAction, labels: [PlaceLabel]) async throws -> String? {
