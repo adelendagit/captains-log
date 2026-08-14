@@ -549,7 +549,7 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
         type = "Water";
       } else {
         const dieselMatch = text.match(
-          /^diesel\s*([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?/i,
+          /^diesel(?:\s+([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?)?\b/i,
         );
         const tempMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\u00B0/);
         const gasChangeMatch = /^gas tank change\b/i.test(text);
@@ -561,7 +561,7 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
 
         if (dieselMatch) {
           type = "Diesel";
-          dieselLitres = parseFloat(dieselMatch[1]);
+          dieselLitres = dieselMatch[1] ? parseFloat(dieselMatch[1]) : null;
         } else if (tempMatch) {
           type = "Sea Temperature";
           seaTemp = parseFloat(tempMatch[1]);

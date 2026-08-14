@@ -219,6 +219,7 @@ struct LogEntry: Codable, Identifiable {
     let cardId: String
     let lat: Double?
     let lng: Double?
+    let dieselLitres: Double?
 }
 
 struct LogsResponse: Codable {

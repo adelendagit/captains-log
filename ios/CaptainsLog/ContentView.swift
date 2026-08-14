@@ -153,6 +153,7 @@ private struct CurrentPositionView: View {
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
     @State private var plannedRoute: PlanningRouteResponse?
+    @State private var supplyLogs: [LogEntry] = []
     @State private var selectedMapPlace: PlaceSummary?
     @State private var isEditingDescription = false
     @State private var descriptionDraft = ""
@@ -170,6 +171,7 @@ private struct CurrentPositionView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     statusCard
+                    suppliesSection
                     map
                     journeyControls
                     if let error = tracker.errorMessage {
@@ -372,6 +374,70 @@ private struct CurrentPositionView: View {
         }
     }
 
+    private var suppliesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Supplies")
+                    .font(.system(.title2, design: .serif, weight: .semibold))
+                Spacer()
+                Text("Estimated from the logbook")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(supplyInsights) { insight in
+                    supplyCard(insight)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func supplyCard(_ insight: SupplyInsight) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: insight.systemImage)
+                    .foregroundStyle(Chartroom.sea)
+                Text(insight.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            Text(insight.value)
+                .font(.system(.title3, design: .rounded, weight: .bold))
+                .foregroundStyle(Chartroom.ink)
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+            Text(insight.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var supplyInsights: [SupplyInsight] {
+        SupplyEstimator.insights(
+            from: supplyLogs,
+            additionalDieselDistanceNM: activeJourneyDistanceNM
+        )
+    }
+
+    private var activeJourneyDistanceNM: Double {
+        guard tracker.currentJourney?.active == true,
+              let track = tracker.currentJourney?.track,
+              track.count > 1 else { return 0 }
+        return zip(track, track.dropFirst()).reduce(0) { total, pair in
+            let from = CLLocation(latitude: pair.0.lat, longitude: pair.0.lng)
+            let to = CLLocation(latitude: pair.1.lat, longitude: pair.1.lng)
+            return total + from.distance(from: to) / 1_852
+        }
+    }
+
     private func plannedStopMarker(_ stop: PlaceSummary) -> some View {
         let index = (plannedStops?.firstIndex(where: { $0.id == stop.id }) ?? 0) + 1
         let rating = stop.rating.map { min(5, max(1, $0)) }
@@ -475,7 +541,20 @@ private struct CurrentPositionView: View {
     @MainActor private func refreshMapData() async {
         async let trackerRefresh: Void = tracker.refresh()
         async let planningRefresh: Void = refreshPlanningStatus()
-        _ = await (trackerRefresh, planningRefresh)
+        async let suppliesRefresh: Void = refreshSupplyLogs()
+        _ = await (trackerRefresh, planningRefresh, suppliesRefresh)
+    }
+
+    @MainActor private func refreshSupplyLogs() async {
+        if supplyLogs.isEmpty, let cached = await authentication.api.cachedLogs() {
+            supplyLogs = cached.logs
+        }
+        guard let token = authentication.token, !authentication.isOffline else { return }
+        do {
+            supplyLogs = try await authentication.api.logs(token: token).logs
+        } catch {
+            // Keep cached estimates visible when connectivity is intermittent.
+        }
     }
 
     @MainActor private func refreshPlanningStatus() async {
@@ -712,5 +791,189 @@ private struct CurrentPositionView: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SupplyInsight: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let value: String
+    let detail: String
+}
+
+private enum SupplyEstimator {
+    private static let dieselCapacityLitres = 140.0
+    private static let secondsPerDay = 86_400.0
+
+    static func insights(
+        from logs: [LogEntry],
+        now: Date = Date(),
+        additionalDieselDistanceNM: Double = 0
+    ) -> [SupplyInsight] {
+        [
+            dieselInsight(from: logs, additionalDistanceNM: additionalDieselDistanceNM),
+            cycleInsight(
+                id: "water",
+                title: "Water",
+                systemImage: "drop.fill",
+                eventTypes: ["water"],
+                action: "filled",
+                logs: logs,
+                now: now
+            ),
+            cycleInsight(
+                id: "gas",
+                title: "Cooking gas",
+                systemImage: "cylinder.fill",
+                eventTypes: ["gas tank change", "gas tank refill"],
+                action: "changed",
+                logs: logs,
+                now: now
+            ),
+            cycleInsight(
+                id: "bbq-gas",
+                title: "BBQ gas",
+                systemImage: "flame.fill",
+                eventTypes: ["bbq gas change"],
+                action: "changed",
+                logs: logs,
+                now: now
+            ),
+            cycleInsight(
+                id: "water-tank",
+                title: "Water tank",
+                systemImage: "drop.triangle.fill",
+                eventTypes: ["water tank change"],
+                action: "changed",
+                logs: logs,
+                now: now
+            ),
+        ]
+    }
+
+    private static func dieselInsight(
+        from logs: [LogEntry],
+        additionalDistanceNM: Double
+    ) -> SupplyInsight {
+        let ordered = logs.sorted { $0.timestamp < $1.timestamp }
+        var distanceSinceFill = 0.0
+        var efficiencies: [Double] = []
+        var lastPoint: CLLocation?
+        var lastFill: Date?
+
+        for entry in ordered {
+            let point = coordinate(for: entry)
+            switch entry.type.lowercased() {
+            case "departed":
+                lastPoint = point
+            case "visited":
+                if let lastPoint, let point {
+                    distanceSinceFill += lastPoint.distance(from: point) / 1_852
+                }
+                lastPoint = point
+            case "arrived":
+                if let lastPoint, let point {
+                    distanceSinceFill += lastPoint.distance(from: point) / 1_852
+                }
+                lastPoint = nil
+            case "diesel":
+                if let litres = entry.dieselLitres, litres > 0, distanceSinceFill > 0 {
+                    efficiencies.append(distanceSinceFill / litres)
+                }
+                distanceSinceFill = 0
+                lastFill = entry.timestamp
+            default:
+                break
+            }
+        }
+
+        guard let lastFill else {
+            return SupplyInsight(
+                id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
+                value: "No fill logged", detail: "Log a diesel fill to start tracking range."
+            )
+        }
+        guard let economy = efficiencies.last, economy.isFinite, economy > 0 else {
+            return SupplyInsight(
+                id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
+                value: "Learning economy", detail: "Last filled \(relativeAge(lastFill)). A completed fuel cycle is needed."
+            )
+        }
+
+        distanceSinceFill += max(0, additionalDistanceNM)
+        let remainingLitres = max(0, min(dieselCapacityLitres, dieselCapacityLitres - distanceSinceFill / economy))
+        let range = remainingLitres * economy
+        return SupplyInsight(
+            id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
+            value: "≈\(Int(range.rounded())) NM range",
+            detail: String(format: "%.0f L left · %.2f NM/L · filled %@", remainingLitres, economy, relativeAge(lastFill))
+        )
+    }
+
+    private static func cycleInsight(
+        id: String,
+        title: String,
+        systemImage: String,
+        eventTypes: Set<String>,
+        action: String,
+        logs: [LogEntry],
+        now: Date
+    ) -> SupplyInsight {
+        let events = logs
+            .filter { eventTypes.contains($0.type.lowercased()) }
+            .map(\.timestamp)
+            .sorted()
+        guard let lastEvent = events.last else {
+            return SupplyInsight(
+                id: id, title: title, systemImage: systemImage,
+                value: "No change logged", detail: "Log each \(title.lowercased()) change to learn usage."
+            )
+        }
+
+        let recentIntervals = zip(events, events.dropFirst())
+            .map { $1.timeIntervalSince($0) / secondsPerDay }
+            .filter { $0 > 0 }
+            .suffix(4)
+            .sorted()
+        guard !recentIntervals.isEmpty else {
+            return SupplyInsight(
+                id: id, title: title, systemImage: systemImage,
+                value: "Learning usage", detail: "Last \(action) \(relativeAge(lastEvent, now: now)). Log one more change for an estimate."
+            )
+        }
+
+        let typicalDays = median(recentIntervals)
+        let elapsedDays = max(0, now.timeIntervalSince(lastEvent) / secondsPerDay)
+        let remainingDays = max(0, typicalDays - elapsedDays)
+        return SupplyInsight(
+            id: id, title: title, systemImage: systemImage,
+            value: "≈\(Int(remainingDays.rounded())) days left",
+            detail: "Typical \(formattedDays(typicalDays))-day cycle · \(action) \(relativeAge(lastEvent, now: now))"
+        )
+    }
+
+    private static func coordinate(for entry: LogEntry) -> CLLocation? {
+        guard let lat = entry.lat, let lng = entry.lng else { return nil }
+        return CLLocation(latitude: lat, longitude: lng)
+    }
+
+    private static func median(_ values: [Double]) -> Double {
+        let middle = values.count / 2
+        if values.count.isMultiple(of: 2) {
+            return (values[middle - 1] + values[middle]) / 2
+        }
+        return values[middle]
+    }
+
+    private static func formattedDays(_ value: Double) -> String {
+        String(format: value < 10 ? "%.1f" : "%.0f", value)
+    }
+
+    private static func relativeAge(_ date: Date, now: Date = Date()) -> String {
+        let days = max(0, Int((now.timeIntervalSince(date) / secondsPerDay).rounded(.down)))
+        if days == 0 { return "today" }
+        if days == 1 { return "1 day ago" }
+        return "\(days) days ago"
     }
 }
