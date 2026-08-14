@@ -3,6 +3,7 @@ import CoreLocation
 import Foundation
 
 enum CaptainLogAction: String, AppEnum, CaseIterable {
+    case todo
     case arrived
     case departed
     case visited
@@ -17,9 +18,10 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
     case boom
     case other
 
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Log type")
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Action")
 
     static let caseDisplayRepresentations: [CaptainLogAction: DisplayRepresentation] = [
+        .todo: DisplayRepresentation(title: "To Do", synonyms: ["Task", "To-do", "Reminder"]),
         .arrived: DisplayRepresentation(title: "Arrived", synonyms: ["Arrival", "We arrived"]),
         .departed: DisplayRepresentation(title: "Departed", synonyms: ["Departure", "We left", "Set off"]),
         .visited: DisplayRepresentation(title: "Visited", synonyms: ["Visit"]),
@@ -37,6 +39,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
 
     var label: String {
         switch self {
+        case .todo: "To Do"
         case .arrived: "Arrived"
         case .departed: "Departed"
         case .visited: "Visited"
@@ -55,6 +58,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
 
     var systemImage: String {
         switch self {
+        case .todo: "checklist"
         case .arrived: "sailboat.fill"
         case .departed: "sailboat"
         case .visited: "mappin.and.ellipse"
@@ -78,11 +82,11 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
 
 struct CaptainsLogVoiceIntent: AppIntent {
     static let title: LocalizedStringResource = "Captain’s Log"
-    static let description = IntentDescription("Adds an entry to the captain’s log using a spoken conversation.")
+    static let description = IntentDescription("Adds a log entry or to-do using a spoken conversation.")
     static let openAppWhenRun = false
     static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
-    @Parameter(title: "Log type")
+    @Parameter(title: "Action")
     var action: CaptainLogAction?
 
     @Parameter(title: "Place")
@@ -103,8 +107,14 @@ struct CaptainsLogVoiceIntent: AppIntent {
     @Parameter(title: "Details")
     var details: String?
 
+    @Parameter(title: "Task name")
+    var todoName: String?
+
+    @Parameter(title: "To-do list")
+    var todoListName: String?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Log \(\.$action)")
+        Summary("Add \(\.$action)")
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -114,6 +124,17 @@ struct CaptainsLogVoiceIntent: AppIntent {
         }
 
         let api = APIClient()
+        if resolvedAction == .todo {
+            let lists = try await api.todoData(token: token).lists
+            let list = try await resolvedTodoList(from: lists)
+            let name = try await resolvedTodoName()
+            _ = try await api.addTodo(name: name, listID: list.id, token: token)
+            await MainActor.run {
+                NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
+            }
+            return .result(dialog: "Added \(name) to \(list.name).")
+        }
+
         async let planningRequest = api.planning(token: token)
         async let statusRequest = api.currentStatus(token: token)
         async let journeyRequest = api.currentJourney(token: token)
@@ -216,7 +237,41 @@ struct CaptainsLogVoiceIntent: AppIntent {
 
     private func resolvedAction() async throws -> CaptainLogAction {
         if let action { return action }
-        return try await $action.requestValue("What would you like to log?")
+        return try await $action.requestValue("What would you like to add?")
+    }
+
+    private func resolvedTodoName() async throws -> String {
+        let answer: String
+        if let suppliedName = nonempty(todoName) {
+            answer = suppliedName
+        } else {
+            answer = try await $todoName.requestValue("What should I add to your to-do list?")
+        }
+        let name = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw CaptainsLogIntentError.missingTodoName }
+        return String(name.prefix(512))
+    }
+
+    private func resolvedTodoList(from lists: [TodoList]) async throws -> TodoList {
+        guard !lists.isEmpty else { throw CaptainsLogIntentError.noTodoLists }
+
+        if let suppliedName = nonempty(todoListName) {
+            let matches = fuzzyMatches(suppliedName, in: lists, name: \TodoList.name)
+            guard !matches.isEmpty else { throw CaptainsLogIntentError.todoListNotFound(suppliedName) }
+            if matches.count == 1 { return matches[0] }
+            let chosenName = try await $todoListName.requestDisambiguation(
+                among: matches.map(\.name),
+                dialog: "Which to-do list did you mean?"
+            )
+            return matches.first { $0.name == chosenName } ?? matches[0]
+        }
+
+        if lists.count == 1 { return lists[0] }
+        let chosenName = try await $todoListName.requestDisambiguation(
+            among: lists.map(\.name),
+            dialog: "Which list should I add it to?"
+        )
+        return lists.first { $0.name == chosenName } ?? lists[0]
     }
 
     private func uniquePlaces(from planning: PlanningResponse, status: CurrentStatusResponse) -> [PlaceSummary] {
@@ -429,6 +484,7 @@ struct CaptainsLogShortcuts: AppShortcutsProvider {
                 "Make an entry in \(.applicationName)",
                 "Add an entry to \(.applicationName)",
                 "Add to the log with \(.applicationName)",
+                "Add a to-do with \(.applicationName)",
             ],
             shortTitle: "Captain’s Log",
             systemImageName: "book.closed.fill"
@@ -447,6 +503,9 @@ private enum CaptainsLogIntentError: LocalizedError {
     case invalidQuantity
     case invalidTemperature
     case missingDetails
+    case noTodoLists
+    case todoListNotFound(String)
+    case missingTodoName
 
     var errorDescription: String? {
         switch self {
@@ -458,10 +517,14 @@ private enum CaptainsLogIntentError: LocalizedError {
         case .invalidQuantity: "The quantity needs to be a number of litres, or skip."
         case .invalidTemperature: "The sea temperature needs to be a number."
         case .missingDetails: "Please describe what happened."
+        case .noTodoLists: "No to-do lists are available."
+        case .todoListNotFound(let name): "I couldn’t find a to-do list matching \(name)."
+        case .missingTodoName: "Please say what task you want to add."
         }
     }
 }
 
 extension Notification.Name {
     static let captainsLogDidChange = Notification.Name("CaptainsLogDidChange")
+    static let captainsLogTodoDidChange = Notification.Name("CaptainsLogTodoDidChange")
 }

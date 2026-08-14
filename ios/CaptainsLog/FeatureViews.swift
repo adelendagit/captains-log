@@ -49,20 +49,25 @@ struct AddLogEntryView: View {
     @State private var litres = ""
     @State private var temperature = ""
     @State private var customText = ""
+    @State private var todoLists: [TodoList] = []
+    @State private var selectedTodoListID = ""
+    @State private var todoName = ""
     @State private var timestamp = Date()
     @State private var notificationMode: LogNotificationMode
     @State private var isSaving = false
     @State private var logWasSaved = false
     @State private var errorMessage: String?
+    @State private var todoLoadErrorMessage: String?
 
     private let initialAction: String?
     private let nearbyPlaceLimit = 10
     private let logTextLimit = 160
 
-    init(initialAction: String?) {
+    init(initialAction: String?, initialTodoListID: String? = nil) {
         self.initialAction = initialAction
         let action = initialAction ?? ""
         _action = State(initialValue: action)
+        _selectedTodoListID = State(initialValue: initialTodoListID ?? "")
         _notificationMode = State(initialValue: Self.defaultNotificationMode(for: action))
     }
 
@@ -92,7 +97,39 @@ struct AddLogEntryView: View {
                                 .buttonStyle(.plain)
                             }
                         } header: {
-                            Text("What would you like to log?")
+                            Text("What would you like to add?")
+                        }
+                    }
+                    .scrollContentBackground(.hidden)
+                    .background(Chartroom.paper)
+                } else if action == "todo" {
+                    Form {
+                        Section("List") {
+                            if todoLists.isEmpty {
+                                ProgressView("Loading lists…")
+                            } else {
+                                Picker("To-do list", selection: $selectedTodoListID) {
+                                    ForEach(todoLists) { list in
+                                        Text(list.name).tag(list.id)
+                                    }
+                                }
+                            }
+                        }
+
+                        Section("Task") {
+                            TextField("Name", text: $todoName)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    if canSave { Task { await save() } }
+                                }
+                        }
+
+                        if let todoErrorMessage = errorMessage ?? todoLoadErrorMessage {
+                            Section {
+                                Label(todoErrorMessage, systemImage: "exclamationmark.triangle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            }
                         }
                     }
                     .scrollContentBackground(.hidden)
@@ -242,6 +279,9 @@ struct AddLogEntryView: View {
                 selectClosestPlaceForArrival()
                 updateSuggestedJourneyName()
                 notificationMode = Self.defaultNotificationMode(for: action)
+                if action == "todo", todoLists.isEmpty {
+                    Task { await refreshTodoLists() }
+                }
             }
             .task { await load() }
         }
@@ -252,7 +292,8 @@ struct AddLogEntryView: View {
     }
 
     private var navigationTitle: String {
-        if action.isEmpty { return "New Log Entry" }
+        if action.isEmpty { return "Add" }
+        if action == "todo" { return "New To Do" }
         switch initialAction {
         case "departed": return "Start Journey"
         case "arrived": return "End Journey"
@@ -262,6 +303,7 @@ struct AddLogEntryView: View {
 
     private var confirmationButtonTitle: String {
         if logWasSaved { return "Done" }
+        if action == "todo" { return "Add" }
         switch initialAction {
         case "departed": return "Start"
         case "arrived": return "End"
@@ -310,7 +352,11 @@ struct AddLogEntryView: View {
     }
 
     private var canSave: Bool {
-        selectedPlace != nil &&
+        if action == "todo" {
+            return !selectedTodoListID.isEmpty &&
+                !todoName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return selectedPlace != nil &&
             logCoordinate != nil &&
             (action != "arrived" || !selectedMooringLabelID.isEmpty) &&
             (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -366,6 +412,14 @@ struct AddLogEntryView: View {
     }
 
     @MainActor private func load() async {
+        if let cachedTodo = await authentication.api.cachedTodoData() {
+            applyTodoData(cachedTodo)
+        }
+        if action == "todo" {
+            await refreshTodoLists()
+            return
+        }
+
         locator.locate()
         seedKnownPlace()
         guard let token = authentication.token else { return }
@@ -379,6 +433,27 @@ struct AddLogEntryView: View {
             applyPlanning(planning)
         } catch {
             errorMessage = error.localizedDescription
+        }
+
+        if action.isEmpty {
+            await refreshTodoLists()
+        }
+    }
+
+    @MainActor private func refreshTodoLists() async {
+        guard let token = authentication.token else { return }
+        do {
+            applyTodoData(try await authentication.api.todoData(token: token))
+            todoLoadErrorMessage = nil
+        } catch {
+            todoLoadErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyTodoData(_ data: TodoDataResponse) {
+        todoLists = data.lists
+        if !todoLists.contains(where: { $0.id == selectedTodoListID }) {
+            selectedTodoListID = todoLists.first?.id ?? ""
         }
     }
 
@@ -423,10 +498,29 @@ struct AddLogEntryView: View {
     }
 
     @MainActor private func save() async {
-        guard let token = authentication.token, let place = selectedPlace, let coordinate = logCoordinate else { return }
+        guard let token = authentication.token else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
+
+        if action == "todo" {
+            let name = todoName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !selectedTodoListID.isEmpty else { return }
+            do {
+                _ = try await authentication.api.addTodo(
+                    name: name,
+                    listID: selectedTodoListID,
+                    token: token
+                )
+                NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
+
+        guard let place = selectedPlace, let coordinate = logCoordinate else { return }
         do {
             if action == "arrived", tracker.currentJourney?.active == true {
                 try await tracker.flushPendingPositions()
@@ -1896,12 +1990,11 @@ struct TodoView: View {
     @EnvironmentObject private var tracker: JourneyTracker
     @State private var lists: [TodoList] = []
     @State private var selectedListID = ""
-    @State private var newItem = ""
     @State private var errorMessage: String?
     @State private var actionErrorMessage: String?
     @State private var pendingCardIDs: Set<String> = []
     @State private var editingCard: TodoCard?
-    @State private var isAdding = false
+    @State private var isShowingAddTask = false
     @State private var queuedReorders: [String: PendingTodoOrder] = [:]
     @State private var isSavingOrder = false
     @State private var loading = true
@@ -1913,41 +2006,30 @@ struct TodoView: View {
                 if loading { ProgressView("Loading tasks…") }
                 else if let errorMessage, lists.isEmpty { ContentUnavailableView("Couldn’t load tasks", systemImage: "exclamationmark.triangle", description: Text(errorMessage)) }
                 else {
-                    List {
-                        Section {
-                            HStack {
-                                TextField("New task", text: $newItem)
-                                    .disabled(isAdding)
-                                Button("Add") { Task { await addItem() } }
-                                    .disabled(isAdding || newItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    VStack(spacing: 0) {
+                        listPills
+                        List {
+                            Section("Open") {
+                                ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
+                                    todoRow(card)
+                                }
+                                .onMove(perform: moveOpenCards)
                             }
-                        }
-                        Section("Open") {
-                            ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
-                                todoRow(card)
-                            }
-                            .onMove(perform: moveOpenCards)
-                        }
-                        Section("Completed") {
-                            ForEach(selectedList?.cards.filter(\.dueComplete) ?? []) { card in
-                                todoRow(card)
+                            Section("Completed") {
+                                ForEach(selectedList?.cards.filter(\.dueComplete) ?? []) { card in
+                                    todoRow(card)
+                                }
                             }
                         }
                     }
                 }
             }
             .navigationTitle("To Do")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if lists.count > 1 {
-                        Picker("List", selection: $selectedListID) {
-                            ForEach(lists) { Text($0.name).tag($0.id) }
-                        }
-                    }
-                }
-            }
             .task { await load() }
             .refreshable { await load() }
+            .onReceive(NotificationCenter.default.publisher(for: .captainsLogTodoDidChange)) { _ in
+                Task { await load() }
+            }
             .onAppear(perform: beginKeepAwakeWindow)
             .onDisappear(perform: endKeepAwakeWindow)
             .onChange(of: tracker.isUnderway) { _, isUnderway in
@@ -1971,6 +2053,9 @@ struct TodoView: View {
                     }
                 )
             }
+            .sheet(isPresented: $isShowingAddTask) {
+                AddLogEntryView(initialAction: "todo", initialTodoListID: selectedListID)
+            }
             .alert("Couldn’t update task", isPresented: actionErrorIsPresented) {
                 Button("OK", role: .cancel) { actionErrorMessage = nil }
             } message: {
@@ -1988,6 +2073,45 @@ struct TodoView: View {
 
     private var selectedList: TodoList? {
         lists.first { $0.id == selectedListID } ?? lists.first
+    }
+
+    private var listPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(lists) { list in
+                    Button {
+                        selectedListID = list.id
+                    } label: {
+                        Text(list.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(selectedListID == list.id ? .white : Chartroom.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                selectedListID == list.id ? Chartroom.sea : Chartroom.surface,
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedListID == list.id ? .isSelected : [])
+                }
+
+                Button {
+                    isShowingAddTask = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Chartroom.ink, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add task")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+        }
+        .background(Chartroom.paper)
     }
 
     private func todoRow(_ card: TodoCard) -> some View {
@@ -2045,59 +2169,6 @@ struct TodoView: View {
             if !lists.contains(where: { $0.id == selectedListID }) { selectedListID = lists.first?.id ?? "" }
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
-    }
-
-    @MainActor private func addItem() async {
-        guard !isAdding,
-              let token = authentication.token,
-              let listID = selectedList?.id else { return }
-        let name = newItem.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-
-        let temporaryID = "pending-\(UUID().uuidString)"
-        let temporaryCard = TodoCard(
-            id: temporaryID,
-            name: name,
-            desc: nil,
-            due: nil,
-            dueComplete: false,
-            pos: (selectedList?.cards.compactMap(\.pos).max() ?? 0) + 16384,
-            attachments: []
-        )
-
-        isAdding = true
-        newItem = ""
-        pendingCardIDs.insert(temporaryID)
-        withAnimation {
-            updateCards(in: listID) { $0 + [temporaryCard] }
-        }
-
-        do {
-            let cardID = try await authentication.api.addTodo(name: name, listID: listID, token: token)
-            replaceCard(
-                temporaryID,
-                with: TodoCard(
-                    id: cardID,
-                    name: name,
-                    desc: nil,
-                    due: nil,
-                    dueComplete: false,
-                    pos: temporaryCard.pos,
-                    attachments: []
-                )
-            )
-            pendingCardIDs.remove(temporaryID)
-        } catch {
-            withAnimation {
-                updateCards(in: listID) { cards in
-                    cards.filter { $0.id != temporaryID }
-                }
-            }
-            pendingCardIDs.remove(temporaryID)
-            newItem = name
-            actionErrorMessage = error.localizedDescription
-        }
-        isAdding = false
     }
 
     @MainActor private func toggle(_ card: TodoCard) async {
