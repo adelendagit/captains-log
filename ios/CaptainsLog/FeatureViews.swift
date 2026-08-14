@@ -108,11 +108,12 @@ struct AddLogEntryView: View {
                             if todoLists.isEmpty {
                                 ProgressView("Loading lists…")
                             } else {
-                                Picker("To-do list", selection: $selectedTodoListID) {
-                                    ForEach(todoLists) { list in
-                                        Text(list.name).tag(list.id)
-                                    }
-                                }
+                                TodoListPills(
+                                    lists: todoLists,
+                                    selectedListID: $selectedTodoListID,
+                                    showsAddButton: false,
+                                    onAdd: nil
+                                )
                             }
                         }
 
@@ -1985,6 +1986,53 @@ private struct LogbookMapMarker: Identifiable {
     let coordinate: CLLocationCoordinate2D
 }
 
+private struct TodoListPills: View {
+    let lists: [TodoList]
+    @Binding var selectedListID: String
+    let showsAddButton: Bool
+    let onAdd: (() -> Void)?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(lists) { list in
+                    let isSelected = selectedListID == list.id
+                    Button {
+                        selectedListID = list.id
+                    } label: {
+                        Text(list.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                isSelected ? Chartroom.sea : Color.secondary.opacity(0.16),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+
+                if showsAddButton {
+                    Button {
+                        onAdd?()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Chartroom.sea, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add task")
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
 struct TodoView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @EnvironmentObject private var tracker: JourneyTracker
@@ -2006,19 +2054,26 @@ struct TodoView: View {
                 if loading { ProgressView("Loading tasks…") }
                 else if let errorMessage, lists.isEmpty { ContentUnavailableView("Couldn’t load tasks", systemImage: "exclamationmark.triangle", description: Text(errorMessage)) }
                 else {
-                    VStack(spacing: 0) {
-                        listPills
-                        List {
-                            Section("Open") {
-                                ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
-                                    todoRow(card)
-                                }
-                                .onMove(perform: moveOpenCards)
+                    List {
+                        TodoListPills(
+                            lists: lists,
+                            selectedListID: $selectedListID,
+                            showsAddButton: true,
+                            onAdd: { isShowingAddTask = true }
+                        )
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 0))
+                        .listRowBackground(Chartroom.paper)
+                        .listRowSeparator(.hidden)
+
+                        Section("Open") {
+                            ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
+                                todoRow(card)
                             }
-                            Section("Completed") {
-                                ForEach(selectedList?.cards.filter(\.dueComplete) ?? []) { card in
-                                    todoRow(card)
-                                }
+                            .onMove(perform: moveOpenCards)
+                        }
+                        Section("Completed") {
+                            ForEach(selectedList?.cards.filter(\.dueComplete) ?? []) { card in
+                                todoRow(card)
                             }
                         }
                     }
@@ -2073,45 +2128,6 @@ struct TodoView: View {
 
     private var selectedList: TodoList? {
         lists.first { $0.id == selectedListID } ?? lists.first
-    }
-
-    private var listPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(lists) { list in
-                    Button {
-                        selectedListID = list.id
-                    } label: {
-                        Text(list.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selectedListID == list.id ? .white : Chartroom.ink)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                selectedListID == list.id ? Chartroom.sea : Chartroom.surface,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectedListID == list.id ? .isSelected : [])
-                }
-
-                Button {
-                    isShowingAddTask = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(Chartroom.ink, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add task")
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-        }
-        .background(Chartroom.paper)
     }
 
     private func todoRow(_ card: TodoCard) -> some View {
