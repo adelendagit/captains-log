@@ -1666,6 +1666,7 @@ struct LogbookView: View {
     @State private var errorMessage: String?
     @State private var loading = true
     @State private var mapCamera: MapCameraPosition = .automatic
+    @State private var estimatedBreadcrumbRoutes: [PlanningRouteResponse] = []
 
     var body: some View {
         NavigationStack {
@@ -1727,10 +1728,25 @@ struct LogbookView: View {
 
     private var logbookMap: some View {
         Map(position: $mapCamera) {
+            ForEach(Array(estimatedBreadcrumbRoutes.enumerated()), id: \.offset) { _, route in
+                ForEach(Array(route.legs.enumerated()), id: \.offset) { _, leg in
+                    if leg.mapCoordinates.count > 1 {
+                        MapPolyline(coordinates: leg.mapCoordinates)
+                            .stroke(
+                                ChartroomRouteKind.estimated.color,
+                                style: ChartroomRouteKind.estimated.strokeStyle
+                            )
+                    }
+                }
+            }
+
             ForEach(filteredJourneyHistory) { journey in
                 if journey.track.count > 1 {
                     MapPolyline(coordinates: journey.track.map(\.coordinate))
-                        .stroke(Chartroom.route, lineWidth: 3)
+                        .stroke(
+                            ChartroomRouteKind.recorded.color,
+                            style: ChartroomRouteKind.recorded.strokeStyle
+                        )
                 }
             }
 
@@ -1752,8 +1768,14 @@ struct LogbookView: View {
         .mapStyle(.standard(elevation: .realistic))
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(alignment: .bottomTrailing) {
+            BreadcrumbLegend()
+        }
         .onChange(of: mapContentKey, initial: true) {
             mapCamera = .automatic
+        }
+        .task(id: mapContentKey) {
+            await loadEstimatedBreadcrumbRoutes()
         }
         .accessibilityLabel("Logbook map")
     }
@@ -1848,6 +1870,76 @@ struct LogbookView: View {
             )
         }
         return markers
+    }
+
+    private var estimatedBreadcrumbGroups: [[LogbookMapMarker]] {
+        var groups: [[LogbookMapMarker]] = []
+        var current: [LogbookMapMarker] = []
+
+        for marker in historicalMapEntries.sorted(by: { $0.entry.timestamp < $1.entry.timestamp }) {
+            if isCoveredByRecordedJourney(marker.entry.timestamp) {
+                if current.count > 1 { groups.append(current) }
+                current = []
+            } else {
+                current.append(marker)
+            }
+        }
+        if current.count > 1 { groups.append(current) }
+        return groups
+    }
+
+    private func isCoveredByRecordedJourney(_ timestamp: Date) -> Bool {
+        filteredJourneyHistory.contains { journey in
+            timestamp >= journey.startedAt && timestamp <= (journey.endedAt ?? journey.startedAt)
+        }
+    }
+
+    @MainActor private func loadEstimatedBreadcrumbRoutes() async {
+        let requestKey = mapContentKey
+        let pointGroups = estimatedBreadcrumbGroups.compactMap { group -> [PlanningRoutePoint]? in
+            var points: [PlanningRoutePoint] = []
+            for marker in group {
+                let point = PlanningRoutePoint(
+                    lat: marker.coordinate.latitude,
+                    lng: marker.coordinate.longitude
+                )
+                if points.last?.lat != point.lat || points.last?.lng != point.lng {
+                    points.append(point)
+                }
+            }
+            return points.count > 1 ? points : nil
+        }
+
+        guard !pointGroups.isEmpty else {
+            estimatedBreadcrumbRoutes = []
+            return
+        }
+
+        var routes: [PlanningRouteResponse] = []
+        for points in pointGroups {
+            if let cached = await authentication.api.cachedPlanningRoute(points: points) {
+                routes.append(cached)
+            }
+        }
+        if mapContentKey == requestKey {
+            estimatedBreadcrumbRoutes = routes
+        }
+
+        guard let token = authentication.token, !authentication.isOffline else { return }
+        routes = []
+        for points in pointGroups {
+            guard !Task.isCancelled else { return }
+            do {
+                routes.append(try await authentication.api.planningRoute(points: points, token: token))
+            } catch {
+                if let cached = await authentication.api.cachedPlanningRoute(points: points) {
+                    routes.append(cached)
+                }
+            }
+        }
+        if !Task.isCancelled, mapContentKey == requestKey {
+            estimatedBreadcrumbRoutes = routes
+        }
     }
 
     private var mapContentKey: String {

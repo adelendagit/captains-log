@@ -38,6 +38,13 @@ struct PlaceLabel: Codable, Identifiable {
     let trelloColor: String?
 }
 
+struct PlacePresentation: Codable {
+    let icon: String
+    let iosSystemImage: String
+    let webIconClass: String
+    let mooringSummary: String?
+}
+
 struct PlaceSummary: Codable, Identifiable {
     let id: String
     let planId: String?
@@ -56,6 +63,7 @@ struct PlaceSummary: Codable, Identifiable {
     let navilySnapshot: NavilySnapshot?
     let visitCount: Int?
     let lastVisitedAt: Date?
+    let presentation: PlacePresentation?
 
     var placeCardID: String { placeId ?? id }
     var planCardID: String? { planId }
@@ -83,7 +91,8 @@ struct PlaceSummary: Codable, Identifiable {
             navilyUrl: navilyUrl,
             navilySnapshot: navilySnapshot,
             visitCount: visitCount,
-            lastVisitedAt: lastVisitedAt
+            lastVisitedAt: lastVisitedAt,
+            presentation: presentation
         )
     }
 
@@ -100,11 +109,13 @@ struct PlaceSummary: Codable, Identifiable {
     }
 
     var mooringSummary: String? {
+        if let summary = presentation?.mooringSummary { return summary }
         let names = mooringLabels.map(\.name)
         return names.isEmpty ? nil : names.joined(separator: ", ")
     }
 
     var mooringSystemImage: String {
+        if let systemImage = presentation?.iosSystemImage { return systemImage }
         let text = mooringLabels.map(\.name).joined(separator: " ").lowercased()
         if text.range(of: "buoy|mooring", options: .regularExpression) != nil { return "lifepreserver.fill" }
         if text.range(of: "marina|berth|pontoon|quay|dock|harbou?r|port", options: .regularExpression) != nil { return "building.2.fill" }

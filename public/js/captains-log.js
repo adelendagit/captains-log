@@ -18,6 +18,7 @@ let plannedOnlyToggle = null;
 let logLayerGroup = null;
 let planningRouteLayerGroup = null;
 let planningStopLayerGroup = null;
+let planningPlaceLayerGroup = null;
 const planningStopMarkers = new Map();
 
 let mostRecentTripRange = null;
@@ -47,6 +48,24 @@ let requestedPlanningRouteKey = null;
 let planningRouteDrawVersion = 0;
 let planningTableRequestKey = null;
 const INITIAL_MAP_RADIUS_METERS = 1000;
+const ROUTE_STYLES = Object.freeze({
+  planned: Object.freeze({
+    color: "#0077cc",
+    weight: 3,
+    opacity: 0.8,
+  }),
+  estimated: Object.freeze({
+    color: "#526874",
+    weight: 3,
+    opacity: 0.62,
+    dashArray: "8 8",
+  }),
+  recorded: Object.freeze({
+    color: "#e9784a",
+    weight: 4,
+    opacity: 0.95,
+  }),
+});
 const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOGBOOK_CACHE_KEY = "captains-log:logbook-snapshot:v1";
@@ -72,6 +91,26 @@ const PLANNING_PERIODS = [
   { key: "late-afternoon", label: "Late afternoon", hour: 16 },
   { key: "evening", label: "Evening", hour: 20 },
 ];
+
+function routeStyle(kind, overrides = {}) {
+  return { ...ROUTE_STYLES[kind], ...overrides };
+}
+
+function addBreadcrumbLegend(map) {
+  const legend = L.control({ position: "bottomright" });
+  legend.onAdd = () => {
+    const container = L.DomUtil.create("div", "breadcrumb-legend");
+    container.setAttribute("role", "group");
+    container.setAttribute("aria-label", "Breadcrumb map key");
+    container.innerHTML = `
+      <span><i class="breadcrumb-key breadcrumb-key--recorded" aria-hidden="true"></i>Recorded GPS</span>
+      <span><i class="breadcrumb-key breadcrumb-key--estimated" aria-hidden="true"></i>Estimated from logbook</span>
+    `;
+    L.DomEvent.disableClickPropagation(container);
+    return container;
+  };
+  legend.addTo(map);
+}
 
 function planningPeriodForDue(due) {
   const hour = new Date(due).getHours();
@@ -383,11 +422,7 @@ function renderJourneyOnMap() {
   const track = Array.isArray(currentJourney.track) ? currentJourney.track : [];
   const coordinates = track.map((point) => [point.lat, point.lng]);
   if (coordinates.length > 1) {
-    L.polyline(coordinates, {
-      color: "#e9784a",
-      weight: 4,
-      opacity: 0.85,
-    }).addTo(journeyLayerGroup);
+    L.polyline(coordinates, routeStyle("recorded")).addTo(journeyLayerGroup);
   }
 
   const point = currentJourney.position;
@@ -554,7 +589,7 @@ async function loadHistoricalSeaRoute(markers) {
   return { key, segments: await historicalSeaRouteCache.get(key) };
 }
 
-function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
+function renderHistoricalSeaRoute(markers, target, routeContext) {
   const key = historicalRouteKey(markers);
   let version;
   if (routeContext === "planning") {
@@ -578,7 +613,7 @@ function renderHistoricalSeaRoute(markers, target, pathOptions, routeContext) {
           logbookHistoricalRouteVersion === version &&
           window.histMap === target));
     if (!isCurrent || route.segments.length === 0) return;
-    L.polyline(route.segments, pathOptions).addTo(target);
+    L.polyline(route.segments, routeStyle("estimated")).addTo(target);
   });
 }
 
@@ -596,13 +631,7 @@ function journeyHistoryInRange(journey, range) {
   );
 }
 
-function renderHistoricalRoutes(
-  markers,
-  target,
-  pathOptions,
-  routeContext,
-  range = null,
-) {
+function renderHistoricalRoutes(markers, target, routeContext, range = null) {
   const journeys = journeyHistoryCache.filter(
     (journey) =>
       journeyHistoryInRange(journey, range) &&
@@ -616,11 +645,7 @@ function renderHistoricalRoutes(
       .map((point) => [point.lat, point.lng])
       .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
     if (coordinates.length < 2) return;
-    L.polyline(coordinates, {
-      ...pathOptions,
-      dashArray: null,
-      opacity: Math.max(pathOptions.opacity || 0, 0.85),
-    })
+    L.polyline(coordinates, routeStyle("recorded"))
       .addTo(target)
       .bindTooltip(journey.name);
     recordedCoordinates.push(...coordinates);
@@ -639,7 +664,7 @@ function renderHistoricalRoutes(
     journeys.length > 0
       ? markers.filter((marker) => !isCoveredByRecordedJourney(marker))
       : markers;
-  renderHistoricalSeaRoute(fallbackMarkers, target, pathOptions, routeContext);
+  renderHistoricalSeaRoute(fallbackMarkers, target, routeContext);
   return recordedCoordinates;
 }
 
@@ -1144,6 +1169,9 @@ function mooringLabelsForPlace(place) {
 }
 
 function mooringMarkerIcon(place) {
+  if (place?.presentation?.webIconClass) {
+    return place.presentation.webIconClass;
+  }
   const text = mooringLabelsForPlace(place)
     .map((label) => label.name)
     .join(" ")
@@ -1207,10 +1235,19 @@ function stopMarkerIcon(
 
 function placePopupFacts(place) {
   const facts = [];
-  const moorings = mooringLabelsForPlace(place).map((label) => label.name);
-  if (moorings.length)
+  if (place.listName) {
     facts.push(
-      `<span><strong>Mooring:</strong> ${escapeMarkup(moorings.join(", "))}</span>`,
+      `<span><strong>Area:</strong> ${escapeMarkup(place.listName)}</span>`,
+    );
+  }
+  const mooringSummary =
+    place?.presentation?.mooringSummary ||
+    mooringLabelsForPlace(place)
+      .map((label) => label.name)
+      .join(", ");
+  if (mooringSummary)
+    facts.push(
+      `<span><strong>Mooring:</strong> ${escapeMarkup(mooringSummary)}</span>`,
     );
   const visits = Math.max(0, Number(place.visitCount) || 0);
   if (visits)
@@ -1220,6 +1257,11 @@ function placePopupFacts(place) {
   if (place.lastVisitedAt) {
     facts.push(
       `<span><strong>Last visit:</strong> ${new Date(place.lastVisitedAt).toLocaleDateString()}</span>`,
+    );
+  }
+  if (place.navilySnapshot?.checkedAt) {
+    facts.push(
+      `<span><strong>Navily checked:</strong> ${new Date(place.navilySnapshot.checkedAt).toLocaleDateString()}</span>`,
     );
   }
   return facts.length
@@ -1477,7 +1519,11 @@ function addPlanningDirectionArrows(polyline, target) {
         symbol: arrowHeadFn({
           pixelSize: 12,
           polygon: false,
-          pathOptions: { stroke: true, color: "#0077cc", weight: 2 },
+          pathOptions: {
+            stroke: true,
+            color: ROUTE_STYLES.planned.color,
+            weight: 2,
+          },
         }),
       },
     ],
@@ -1503,10 +1549,10 @@ function renderPlanningRouteOnMap(plannedStops, target, map) {
         planningLegKey(sequence[index], sequence[index + 1]),
       );
       if (!mappedLeg || mappedLeg.coordinates.length < 2) return;
-      const polyline = L.polyline(mappedLeg.coordinates, {
-        color: "#555",
-        weight: 2,
-      }).addTo(target);
+      const polyline = L.polyline(
+        mappedLeg.coordinates,
+        routeStyle("planned"),
+      ).addTo(target);
       addPlanningDirectionArrows(polyline, target);
     });
   });
@@ -1525,6 +1571,7 @@ function initMap(stops, places, logs = null) {
     );
     leafletMap = map;
     mapWasCreated = true;
+    addBreadcrumbLegend(map);
   }
 
   const mapStops = [...stops];
@@ -1559,6 +1606,12 @@ function initMap(stops, places, logs = null) {
     planningStopLayerGroup = L.layerGroup().addTo(map);
   }
   planningStopMarkers.clear();
+
+  if (planningPlaceLayerGroup) {
+    planningPlaceLayerGroup.clearLayers();
+  } else {
+    planningPlaceLayerGroup = L.layerGroup().addTo(map);
+  }
 
   // plot planned stops only
   mapStops.forEach((s) => {
@@ -1676,7 +1729,7 @@ function initMap(stops, places, logs = null) {
       L.marker(ll, {
         icon: stopMarkerIcon(p),
       })
-        .addTo(map)
+        .addTo(planningPlaceLayerGroup)
         .bindPopup(popupHtml)
         .bindTooltip(p.name, {
           permanent: false,
@@ -1740,12 +1793,6 @@ function initMap(stops, places, logs = null) {
     renderHistoricalRoutes(
       logMarkers,
       logLayerGroup,
-      {
-        color: "#888",
-        weight: 2,
-        opacity: 0.5,
-        dashArray: "4 6",
-      },
       "planning",
       mostRecentTripRange,
     );
@@ -1815,7 +1862,10 @@ function initMap(stops, places, logs = null) {
   underwayInterval = setInterval(updateUnderwayMarker, 60000);
 
   // Attach event listener for plan/remove button when popup opens
-  map.on("popupopen", function (e) {
+  if (map._captainsLogPopupOpenHandler) {
+    map.off("popupopen", map._captainsLogPopupOpenHandler);
+  }
+  const popupOpenHandler = function (e) {
     const btn = e.popup._contentNode.querySelector(".plan-btn");
     if (btn) {
       btn.addEventListener("click", async (ev) => {
@@ -1857,7 +1907,8 @@ function initMap(stops, places, logs = null) {
         } else {
           btn.disabled = false;
           btn.textContent = originalText;
-          alert("Failed to plan stop.");
+          const error = await res.json().catch(() => null);
+          alert(error?.error || "Failed to plan stop.");
         }
       });
     }
@@ -1929,7 +1980,9 @@ function initMap(stops, places, logs = null) {
         });
       }
     }
-  });
+  };
+  map._captainsLogPopupOpenHandler = popupOpenHandler;
+  map.on("popupopen", popupOpenHandler);
 
   return map;
 }
@@ -2973,6 +3026,7 @@ function renderLogMap(logs = [], stops = [], range = null) {
 
   // create map
   window.histMap = L.map(mapDiv).setView([0, 0], 2);
+  addBreadcrumbLegend(window.histMap);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(
     window.histMap,
   );
@@ -3006,7 +3060,6 @@ function renderLogMap(logs = [], stops = [], range = null) {
   const recordedCoordinates = renderHistoricalRoutes(
     markers,
     historicalMap,
-    { color: "#555", weight: 2 },
     "logbook",
     range,
   );
@@ -3017,12 +3070,10 @@ function renderLogMap(logs = [], stops = [], range = null) {
   //   plannedCoords.forEach(ll => bounds.push(ll));
   // }
   if (plannedCoords.length > 1) {
-    L.polyline(plannedCoords, {
-      color: "#0077cc", // Brighter blue
-      weight: 4, // Thicker line
-      dashArray: "6 6", // More visible dashes
-      opacity: 0.85,
-    }).addTo(window.histMap);
+    L.polyline(
+      plannedCoords,
+      routeStyle("planned", { dashArray: "6 6" }),
+    ).addTo(window.histMap);
     plannedCoords.forEach((ll) => bounds.push(ll));
   }
   plannedCoords.forEach((ll) => {

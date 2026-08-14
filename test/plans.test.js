@@ -178,6 +178,12 @@ test("API data returns distinct Plan occurrences joined to one place", async (t)
     "aegina",
     "poros",
   ]);
+  assert.deepEqual(result.places[0].presentation, {
+    icon: "place",
+    iosSystemImage: "mappin",
+    webIconClass: "fa-location-dot",
+    mooringSummary: null,
+  });
   assert.deepEqual(result.placeLists, [{ id: "places-list", name: "Saronic" }]);
 });
 

@@ -33,6 +33,7 @@ const {
   removeLegacyPlanMetadata,
   resolvePlanPlaceCard,
 } = require("../services/plans");
+const { withPlacePresentation } = require("../services/places");
 
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
@@ -248,7 +249,7 @@ function buildStopPayload(card, listNames, customFields) {
     trelloColor: l.color,
   }));
 
-  return {
+  return withPlacePresentation({
     id: card.id,
     planId: null,
     placeId: card.id,
@@ -262,7 +263,7 @@ function buildStopPayload(card, listNames, customFields) {
     rating: ratingNum,
     desc: card.desc || "",
     labels,
-  };
+  });
 }
 
 function buildPlanningStops(cards, lists, customFields) {
@@ -740,31 +741,11 @@ router.get("/api/data", async (req, res, next) => {
           getCFNumber(c, customFields, "Latitude") != null &&
           getCFNumber(c, customFields, "Longitude") != null,
       )
-      .map((c) => {
-        const ratingText = getCFTextOrDropdown(c, customFields, "⭐️");
-        const labels = (c.labels || []).map((l) => ({
-          id: l.id,
-          name: l.name,
-          color: colorMap[l.color] || "#888",
-          trelloColor: l.color,
-        }));
-        return {
-          id: c.id,
-          planId: null,
-          placeId: c.id,
-          name: c.name,
-          listName: listNames[c.idList],
-          lat: getCFNumber(c, customFields, "Latitude"),
-          lng: getCFNumber(c, customFields, "Longitude"),
-          rating: ratingText !== null ? parseInt(ratingText, 10) : null,
-          trelloUrl: c.shortUrl,
-          navilyUrl: getCFTextOrDropdown(c, customFields, "Navily"),
-          desc: c.desc,
-          labels,
-          navilySnapshot: navilySnapshots.get(c.id) || null,
-          ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
-        };
-      });
+      .map((c) => ({
+        ...buildStopPayload(c, listNames, customFields),
+        navilySnapshot: navilySnapshots.get(c.id) || null,
+        ...(visitStats.get(c.id) || { visitCount: 0, lastVisitedAt: null }),
+      }));
 
     const boardLabels = (boardLabelsRaw || []).map((l) => ({
       id: l.id,
@@ -1890,7 +1871,7 @@ router.post("/api/places", async (req, res, next) => {
     invalidateBoardCache();
     res.status(201).json({
       success: true,
-      place: {
+      place: withPlacePresentation({
         id: card.id,
         planId: null,
         placeId: card.id,
@@ -1907,7 +1888,7 @@ router.post("/api/places", async (req, res, next) => {
         navilyUrl,
         visitCount: 0,
         lastVisitedAt: null,
-      },
+      }),
     });
   } catch (error) {
     next(error);

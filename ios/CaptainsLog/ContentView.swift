@@ -325,13 +325,19 @@ private struct CurrentPositionView: View {
                 ForEach(Array(plannedRoute.legs.enumerated()), id: \.offset) { _, leg in
                     if leg.mapCoordinates.count > 1 {
                         MapPolyline(coordinates: leg.mapCoordinates)
-                            .stroke(Chartroom.route, style: StrokeStyle(lineWidth: 4, dash: [8, 6]))
+                            .stroke(
+                                ChartroomRouteKind.planned.color,
+                                style: ChartroomRouteKind.planned.strokeStyle
+                            )
                     }
                 }
             }
             if let track = tracker.currentJourney?.track, track.count > 1 {
                 MapPolyline(coordinates: track.map(\.coordinate))
-                    .stroke(Chartroom.signal, lineWidth: 4)
+                    .stroke(
+                        ChartroomRouteKind.recorded.color,
+                        style: ChartroomRouteKind.recorded.strokeStyle
+                    )
             }
             if let point = tracker.currentJourney?.position {
                 Annotation("Skibidi", coordinate: point.coordinate) {
