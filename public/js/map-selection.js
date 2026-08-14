@@ -1,0 +1,30 @@
+/* global module */
+
+(function exposeMapSelection(root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.CaptainsLogMapSelection = api;
+})(typeof globalThis === "object" ? globalThis : this, function mapSelection() {
+  function hasCoordinates(place) {
+    return Number.isFinite(place?.lat) && Number.isFinite(place?.lng);
+  }
+
+  function isUpcomingStop(stop) {
+    return Boolean(!stop?.dueComplete && stop?.due && hasCoordinates(stop));
+  }
+
+  function hasUpcomingStops(stops = []) {
+    return stops.some(isUpcomingStop);
+  }
+
+  function showSavedPlacesByDefault(stops = []) {
+    return !hasUpcomingStops(stops);
+  }
+
+  return {
+    hasCoordinates,
+    hasUpcomingStops,
+    isUpcomingStop,
+    showSavedPlacesByDefault,
+  };
+});

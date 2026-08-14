@@ -1,3 +1,4 @@
+/* global CaptainsLogMapSelection */
 // public/js/captains-log.js
 
 let leafletMap = null;
@@ -13,12 +14,14 @@ let voyageSelectionInitialized = false;
 
 let stops = [];
 let places = [];
-let plannedOnlyToggle = null;
 
 let logLayerGroup = null;
 let planningRouteLayerGroup = null;
 let planningStopLayerGroup = null;
 let planningPlaceLayerGroup = null;
+let planningLayersControl = null;
+let savedPlacesPreference = null;
+let recentVoyagePreference = null;
 const planningStopMarkers = new Map();
 
 let mostRecentTripRange = null;
@@ -710,13 +713,7 @@ function planningRouteSequence(plannedStops) {
 }
 
 function planningStopsVisibleOnMap(plannedStops) {
-  const future = plannedStops.filter(
-    (stop) =>
-      !stop.dueComplete &&
-      stop.due &&
-      Number.isFinite(stop.lat) &&
-      Number.isFinite(stop.lng),
-  );
+  const future = plannedStops.filter(CaptainsLogMapSelection.isUpcomingStop);
   const start = currentStatus ? planningStartStop(plannedStops) : null;
   if (
     !start ||
@@ -1005,12 +1002,16 @@ function resetPlanningMap() {
     clearInterval(underwayInterval);
     underwayInterval = null;
   }
-  if (leafletMap) leafletMap.remove();
+  if (leafletMap) {
+    leafletMap.remove();
+  }
   leafletMap = null;
   journeyLayerGroup = null;
   logLayerGroup = null;
   planningRouteLayerGroup = null;
   planningStopLayerGroup = null;
+  planningPlaceLayerGroup = null;
+  planningLayersControl = null;
   planningStopMarkers.clear();
   underwayMarker = null;
   planningMapViewportSource = null;
@@ -1023,13 +1024,10 @@ async function refreshCurrentStatus() {
     currentStatus = await response.json();
     writeChartSnapshot();
     renderJourneyStatus();
-    if (plannedOnlyToggle) {
-      resetPlanningMap();
-      renderMapWithToggle();
-      const speed =
-        parseFloat(document.getElementById("speed-input")?.value) || 0;
-      renderTable(stops, speed);
-    }
+    resetPlanningMap();
+    renderMapWithToggle();
+    const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
+    renderTable(stops, speed);
   } catch (error) {
     console.warn(error.message);
   }
@@ -1610,7 +1608,21 @@ function initMap(stops, places, logs = null) {
   if (planningPlaceLayerGroup) {
     planningPlaceLayerGroup.clearLayers();
   } else {
-    planningPlaceLayerGroup = L.layerGroup().addTo(map);
+    planningPlaceLayerGroup = L.markerClusterGroup
+      ? L.markerClusterGroup({
+          showCoverageOnHover: false,
+          maxClusterRadius: 48,
+          disableClusteringAtZoom: 15,
+        })
+      : L.layerGroup();
+  }
+  const showSavedPlaces =
+    savedPlacesPreference ??
+    CaptainsLogMapSelection.showSavedPlacesByDefault(stops);
+  if (showSavedPlaces && !map.hasLayer(planningPlaceLayerGroup)) {
+    planningPlaceLayerGroup.addTo(map);
+  } else if (!showSavedPlaces && map.hasLayer(planningPlaceLayerGroup)) {
+    map.removeLayer(planningPlaceLayerGroup);
   }
 
   // plot planned stops only
@@ -1744,7 +1756,48 @@ function initMap(stops, places, logs = null) {
   if (logLayerGroup) {
     logLayerGroup.clearLayers();
   } else {
-    logLayerGroup = L.layerGroup().addTo(map);
+    logLayerGroup = L.layerGroup();
+  }
+  const showRecentVoyage = recentVoyagePreference ?? true;
+  if (showRecentVoyage && !map.hasLayer(logLayerGroup)) {
+    logLayerGroup.addTo(map);
+  } else if (!showRecentVoyage && map.hasLayer(logLayerGroup)) {
+    map.removeLayer(logLayerGroup);
+  }
+
+  if (!planningLayersControl) {
+    planningLayersControl = L.control
+      .layers(
+        null,
+        {
+          '<span class="map-layer-label"><i class="fa-solid fa-route" aria-hidden="true"></i> Recent voyage</span>':
+            logLayerGroup,
+          [`<span class="map-layer-label"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Saved places <small>${places.length}</small></span>`]:
+            planningPlaceLayerGroup,
+        },
+        { collapsed: false, position: "topright" },
+      )
+      .addTo(map);
+    const layerList = planningLayersControl
+      .getContainer()
+      .querySelector(".leaflet-control-layers-list");
+    if (layerList) {
+      const title = document.createElement("strong");
+      title.className = "map-layer-title";
+      title.innerHTML =
+        '<i class="fa-solid fa-layer-group" aria-hidden="true"></i> Layers';
+      layerList.prepend(title);
+    }
+    const [recentVoyageInput, savedPlacesInput] =
+      planningLayersControl
+        .getContainer()
+        .querySelectorAll(".leaflet-control-layers-overlays input");
+    recentVoyageInput?.addEventListener("change", () => {
+      recentVoyagePreference = recentVoyageInput.checked;
+    });
+    savedPlacesInput?.addEventListener("change", () => {
+      savedPlacesPreference = savedPlacesInput.checked;
+    });
   }
 
   renderJourneyOnMap();
@@ -3114,17 +3167,7 @@ function renderMapWithToggle() {
     );
   }
   const visibleStops = planningStopsVisibleOnMap(stops);
-  if (!leafletMap) {
-    // First time: create the map
-    if (plannedOnlyToggle.checked) {
-      leafletMap = initMap(visibleStops, [], logs);
-    } else {
-      leafletMap = initMap(visibleStops, places, logs);
-    }
-  } else {
-    // Map exists: just update log layer and planned/places markers
-    initMap(visibleStops, plannedOnlyToggle.checked ? [] : places, logs);
-  }
+  initMap(visibleStops, places, logs);
 }
 
 function showPlanningStopOnMap(stopId) {
@@ -3886,14 +3929,12 @@ async function loadJourneyHistory() {
 
 async function init() {
   const speedInput = document.getElementById("speed-input");
-  plannedOnlyToggle = document.getElementById("planned-only-toggle");
 
   const snapshot = readChartSnapshot();
   if (snapshot) {
     stops = snapshot.stops;
     places = snapshot.places;
     currentStatus = snapshot.currentStatus || null;
-    if (stops.length === 0) plannedOnlyToggle.checked = false;
     renderJourneyStatus();
     renderMapWithToggle();
     renderTable(stops, parseFloat(speedInput.value));
@@ -3929,9 +3970,6 @@ async function init() {
     places = data.places;
     boardLabels = data.boardLabels || boardLabels;
 
-    // When there are no planned stops, show all places so users can plan the first one
-    if (stops.length === 0) plannedOnlyToggle.checked = false;
-
     writeChartSnapshot();
     resetPlanningMap();
     renderMapWithToggle();
@@ -3953,8 +3991,6 @@ async function init() {
     renderTable(stops, speed);
     renderMapWithToggle();
   });
-
-  plannedOnlyToggle.addEventListener("change", renderMapWithToggle);
 
   journeyRefreshInterval = setInterval(refreshCurrentJourney, 30000);
 }

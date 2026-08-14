@@ -18,6 +18,8 @@
   rel="stylesheet"
   href="https://unpkg.com/leaflet/dist/leaflet.css"
 />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.4.2/css/all.min.css">
 <link rel="stylesheet" href="/css/captains-log.css">
 </head>
@@ -104,7 +106,6 @@
           </header>
           <div class="controls hidden" aria-hidden="true">
             <input type="hidden" id="speed-input" value="6">
-            <input type="checkbox" id="planned-only-toggle" checked tabindex="-1">
           </div>
           <% if (user) { %>
             <section class="log-launch-panel">
@@ -311,12 +312,14 @@
 
 <!-– Leaflet core ––>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
 
 <!-– Sortable core ––>
 <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js"></script>
 
 <!–– Your app JS ––>
+<script src="/js/map-selection.js"></script>
 <script src="/js/captains-log.js"></script>
 </body>
 </html>
