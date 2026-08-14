@@ -2423,13 +2423,6 @@ summary:focus-visible {
   background: rgba(244, 240, 231, 0.62);
 }
 
-@media (min-width: 900px) {
-  .log-left {
-    position: sticky;
-    top: 7rem;
-  }
-}
-
 @media (max-width: 760px) {
   .site-title-link span {
     font-size: 1.1rem;
