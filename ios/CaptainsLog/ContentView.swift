@@ -403,11 +403,15 @@ private struct CurrentPositionView: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
             }
-            Text(insight.value)
-                .font(.system(.title3, design: .rounded, weight: .bold))
-                .foregroundStyle(Chartroom.ink)
-                .minimumScaleFactor(0.8)
-                .lineLimit(1)
+            HStack(spacing: 8) {
+                Text(insight.value)
+                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .minimumScaleFactor(0.72)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                supplyGauge(insight)
+            }
             Text(insight.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -418,6 +422,26 @@ private struct CurrentPositionView: View {
         .padding(14)
         .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 18))
         .accessibilityElement(children: .combine)
+    }
+
+    private func supplyGauge(_ insight: SupplyInsight) -> some View {
+        let fraction = min(1, max(0, insight.fractionRemaining ?? 0))
+        return ZStack {
+            Circle()
+                .stroke(.secondary.opacity(0.18), lineWidth: 6)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(
+                    insight.fractionRemaining == nil ? Color.secondary.opacity(0.25) : Chartroom.sea,
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+            Text(insight.fractionRemaining.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
+                .font(.caption2.bold())
+                .foregroundStyle(.primary)
+        }
+        .frame(width: 48, height: 48)
+        .accessibilityLabel(insight.fractionRemaining.map { "\(Int(($0 * 100).rounded())) percent remaining" } ?? "Level unavailable")
     }
 
     private var supplyInsights: [SupplyInsight] {
@@ -800,10 +824,13 @@ private struct SupplyInsight: Identifiable {
     let systemImage: String
     let value: String
     let detail: String
+    let fractionRemaining: Double?
 }
 
 private enum SupplyEstimator {
     private static let dieselCapacityLitres = 140.0
+    private static let waterTankCapacityLitres = 140.0
+    private static let waterCapacityLitres = 280.0
     private static let secondsPerDay = 86_400.0
 
     static func insights(
@@ -813,15 +840,7 @@ private enum SupplyEstimator {
     ) -> [SupplyInsight] {
         [
             dieselInsight(from: logs, additionalDistanceNM: additionalDieselDistanceNM),
-            cycleInsight(
-                id: "water",
-                title: "Water",
-                systemImage: "drop.fill",
-                eventTypes: ["water"],
-                action: "filled",
-                logs: logs,
-                now: now
-            ),
+            waterInsight(from: logs, now: now),
             cycleInsight(
                 id: "gas",
                 title: "Cooking gas",
@@ -836,15 +855,6 @@ private enum SupplyEstimator {
                 title: "BBQ gas",
                 systemImage: "flame.fill",
                 eventTypes: ["bbq gas change"],
-                action: "changed",
-                logs: logs,
-                now: now
-            ),
-            cycleInsight(
-                id: "water-tank",
-                title: "Water tank",
-                systemImage: "drop.triangle.fill",
-                eventTypes: ["water tank change"],
                 action: "changed",
                 logs: logs,
                 now: now
@@ -891,13 +901,15 @@ private enum SupplyEstimator {
         guard let lastFill else {
             return SupplyInsight(
                 id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
-                value: "No fill logged", detail: "Log a diesel fill to start tracking range."
+                value: "No fill logged", detail: "Log a diesel fill to start tracking range.",
+                fractionRemaining: nil
             )
         }
         guard let economy = efficiencies.last, economy.isFinite, economy > 0 else {
             return SupplyInsight(
                 id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
-                value: "Learning economy", detail: "Last filled \(relativeAge(lastFill)). A completed fuel cycle is needed."
+                value: "Learning economy", detail: "Last filled \(relativeAge(lastFill)). A completed fuel cycle is needed.",
+                fractionRemaining: nil
             )
         }
 
@@ -907,7 +919,70 @@ private enum SupplyEstimator {
         return SupplyInsight(
             id: "diesel", title: "Diesel", systemImage: "fuelpump.fill",
             value: "≈\(Int(range.rounded())) NM range",
-            detail: String(format: "%.0f L left · %.2f NM/L · filled %@", remainingLitres, economy, relativeAge(lastFill))
+            detail: String(format: "%.0f L left · %.2f NM/L · filled %@", remainingLitres, economy, relativeAge(lastFill)),
+            fractionRemaining: remainingLitres / dieselCapacityLitres
+        )
+    }
+
+    private static func waterInsight(from logs: [LogEntry], now: Date) -> SupplyInsight {
+        let events = logs
+            .filter { ["water", "water tank change"].contains($0.type.lowercased()) }
+            .sorted { $0.timestamp < $1.timestamp }
+        guard let lastTopUpIndex = events.lastIndex(where: { $0.type.caseInsensitiveCompare("Water") == .orderedSame }) else {
+            return SupplyInsight(
+                id: "water", title: "Water", systemImage: "drop.fill",
+                value: "No top-up logged", detail: "A Water log resets both 140 L tanks.",
+                fractionRemaining: nil
+            )
+        }
+
+        var completedTankCycles: [Double] = []
+        var cycleStartedAt: Date?
+        for event in events {
+            if event.type.caseInsensitiveCompare("Water") == .orderedSame {
+                cycleStartedAt = event.timestamp
+            } else if event.type.caseInsensitiveCompare("Water Tank Change") == .orderedSame {
+                if let cycleStartedAt {
+                    let days = event.timestamp.timeIntervalSince(cycleStartedAt) / secondsPerDay
+                    if days > 0 { completedTankCycles.append(days) }
+                }
+                cycleStartedAt = event.timestamp
+            }
+        }
+
+        let lastTopUp = events[lastTopUpIndex]
+        let changesSinceTopUp = events[(lastTopUpIndex + 1)...]
+            .filter { $0.type.caseInsensitiveCompare("Water Tank Change") == .orderedSame }
+        let wholeTanksRemaining = max(0, 2 - changesSinceTopUp.count)
+        let currentCycleStartedAt = changesSinceTopUp.last?.timestamp ?? lastTopUp.timestamp
+        let recentCycles = completedTankCycles.suffix(4).sorted()
+
+        guard !recentCycles.isEmpty else {
+            let knownLitres = Double(wholeTanksRemaining) * waterTankCapacityLitres
+            return SupplyInsight(
+                id: "water", title: "Water", systemImage: "drop.fill",
+                value: "Up to \(Int(knownLitres)) L",
+                detail: "Topped up \(relativeAge(lastTopUp.timestamp, now: now)) · learning usage",
+                fractionRemaining: knownLitres / waterCapacityLitres
+            )
+        }
+
+        let tankCycleDays = median(recentCycles)
+        let elapsedInCurrentTank = max(0, now.timeIntervalSince(currentCycleStartedAt) / secondsPerDay)
+        let currentTankFraction = max(0, 1 - elapsedInCurrentTank / tankCycleDays)
+        let untouchedTanks = max(0, wholeTanksRemaining - 1)
+        let remainingLitres = wholeTanksRemaining == 0 ? 0 : min(
+            waterCapacityLitres,
+            Double(untouchedTanks) * waterTankCapacityLitres + currentTankFraction * waterTankCapacityLitres
+        )
+        let dailyUse = waterTankCapacityLitres / tankCycleDays
+        let remainingDays = remainingLitres / dailyUse
+
+        return SupplyInsight(
+            id: "water", title: "Water", systemImage: "drop.fill",
+            value: "≈\(Int(remainingDays.rounded())) days left",
+            detail: String(format: "≈%.0f L left · %.0f L/day · topped up %@", remainingLitres, dailyUse, relativeAge(lastTopUp.timestamp, now: now)),
+            fractionRemaining: remainingLitres / waterCapacityLitres
         )
     }
 
@@ -927,7 +1002,8 @@ private enum SupplyEstimator {
         guard let lastEvent = events.last else {
             return SupplyInsight(
                 id: id, title: title, systemImage: systemImage,
-                value: "No change logged", detail: "Log each \(title.lowercased()) change to learn usage."
+                value: "No change logged", detail: "Log each \(title.lowercased()) change to learn usage.",
+                fractionRemaining: nil
             )
         }
 
@@ -939,7 +1015,8 @@ private enum SupplyEstimator {
         guard !recentIntervals.isEmpty else {
             return SupplyInsight(
                 id: id, title: title, systemImage: systemImage,
-                value: "Learning usage", detail: "Last \(action) \(relativeAge(lastEvent, now: now)). Log one more change for an estimate."
+                value: "Learning usage", detail: "Last \(action) \(relativeAge(lastEvent, now: now)). Log one more change for an estimate.",
+                fractionRemaining: nil
             )
         }
 
@@ -949,7 +1026,8 @@ private enum SupplyEstimator {
         return SupplyInsight(
             id: id, title: title, systemImage: systemImage,
             value: "≈\(Int(remainingDays.rounded())) days left",
-            detail: "Typical \(formattedDays(typicalDays))-day cycle · \(action) \(relativeAge(lastEvent, now: now))"
+            detail: "Typical \(formattedDays(typicalDays))-day cycle · \(action) \(relativeAge(lastEvent, now: now))",
+            fractionRemaining: typicalDays > 0 ? remainingDays / typicalDays : 0
         )
     }
 
