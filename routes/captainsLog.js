@@ -99,6 +99,46 @@ function getCFTextOrDropdown(card, boardCFs, name) {
   return null;
 }
 
+function findCustomField(boardCFs, name) {
+  const normalizedName = String(name).trim().toLowerCase();
+  return boardCFs.find(
+    (field) => String(field.name || "").trim().toLowerCase() === normalizedName,
+  );
+}
+
+function decimalCoordinateToDMS(value, positive, negative) {
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutesValue = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesValue);
+  let seconds = Number(((minutesValue - minutes) * 60).toFixed(2));
+  let normalizedMinutes = minutes;
+  let normalizedDegrees = degrees;
+  if (seconds === 60) {
+    seconds = 0;
+    normalizedMinutes += 1;
+  }
+  if (normalizedMinutes === 60) {
+    normalizedMinutes = 0;
+    normalizedDegrees += 1;
+  }
+  const hemisphere = value >= 0 ? positive : negative;
+  return `${normalizedDegrees}\u00b0 ${normalizedMinutes}' ${seconds}" ${hemisphere}`;
+}
+
+function coordinatesToDMS(lat, lng) {
+  return `${decimalCoordinateToDMS(lat, "N", "S")}, ${decimalCoordinateToDMS(lng, "E", "W")}`;
+}
+
+async function updateTrelloCustomField(user, cardId, field, value) {
+  const url = `https://api.trello.com/1/cards/${cardId}/customField/${field.id}/item`;
+  const payload = { value: { text: value } };
+  const headers = trelloHeaders(user, url, "PUT", payload);
+  const response = await axios.put(url, payload, { headers });
+  invalidateBoardCache();
+  return response.data;
+}
+
 function normalizeNavilyUrl(value) {
   let parsed;
   try {
@@ -1008,61 +1048,121 @@ router.get("/api/current-stop", async (req, res, next) => {
   }
 });
 
-router.put("/api/current-stop/description", async (req, res, next) => {
+async function updateCurrentStop(req, res, next) {
   try {
     if (!req.user) return res.status(403).json({ error: "Not authenticated" });
 
-    const description = String(req.body?.description ?? "").replace(
-      /\r\n/g,
-      "\n",
-    );
-    if (description.length > 16_384) {
+    const hasName = Object.hasOwn(req.body || {}, "name");
+    const hasDescription = Object.hasOwn(req.body || {}, "description");
+    const hasLatitude = Object.hasOwn(req.body || {}, "lat");
+    const hasLongitude = Object.hasOwn(req.body || {}, "lng");
+    if (!hasName && !hasDescription && !hasLatitude && !hasLongitude) {
+      return res.status(400).json({ error: "No stop changes were supplied" });
+    }
+    if (hasLatitude !== hasLongitude) {
+      return res
+        .status(400)
+        .json({ error: "Latitude and longitude must be supplied together" });
+    }
+
+    const name = hasName ? String(req.body.name ?? "").trim() : null;
+    const description = hasDescription
+      ? String(req.body.description ?? "").replace(/\r\n/g, "\n")
+      : null;
+    const lat = hasLatitude ? Number(req.body.lat) : null;
+    const lng = hasLongitude ? Number(req.body.lng) : null;
+
+    if (hasName && !name) {
+      return res.status(400).json({ error: "Place name is required" });
+    }
+    if (name && name.length > 256) {
+      return res
+        .status(400)
+        .json({ error: "Place name must be 256 characters or fewer" });
+    }
+    if (description != null && description.length > 16_384) {
       return res
         .status(400)
         .json({ error: "Description must be 16,384 characters or fewer" });
     }
+    if (hasLatitude && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
+      return res
+        .status(400)
+        .json({ error: "Latitude must be between -90 and 90" });
+    }
+    if (hasLongitude && (!Number.isFinite(lng) || lng < -180 || lng > 180)) {
+      return res
+        .status(400)
+        .json({ error: "Longitude must be between -180 and 180" });
+    }
 
-    const status = await getCurrentStatus();
+    const [status, board] = await Promise.all([getCurrentStatus(), fetchBoard()]);
     if (status.status !== "arrived" || !status.current?.id) {
       return res
         .status(409)
         .json({ error: "There is no current stop to update" });
     }
-
-    const url = `https://api.trello.com/1/cards/${status.current.id}`;
-    const oauth1a = require("oauth-1.0a");
-    const crypto = require("crypto");
-    const oauthClient = oauth1a({
-      consumer: {
-        key: process.env.TRELLO_OAUTH_KEY,
-        secret: process.env.TRELLO_OAUTH_SECRET,
-      },
-      signature_method: "HMAC-SHA1",
-      hash_function(baseString, key) {
-        return crypto
-          .createHmac("sha1", key)
-          .update(baseString)
-          .digest("base64");
-      },
-    });
-    const requestData = { url, method: "PUT", data: { desc: description } };
-    const headers = oauthClient.toHeader(
-      oauthClient.authorize(requestData, {
-        key: req.user.token,
-        secret: req.user.tokenSecret,
-      }),
-    );
-
-    await axios.put(url, null, { params: { desc: description }, headers });
-    invalidateBoardCache();
-    if (currentStopCache?.current?.id === status.current.id) {
-      currentStopCache.current.desc = description;
+    if (
+      Array.isArray(board.members) &&
+      !isBoardMember(req.user, board.members)
+    ) {
+      return res.status(403).json({ error: "Board membership is required" });
     }
-    res.json({ success: true, description });
+
+    const card = resolvePlaceCard(board.cards, board.lists, status.current.id);
+    if (!card) return res.status(404).json({ error: "Current stop not found" });
+    const dmsField = hasLatitude ? findCustomField(board.customFields, "DMS") : null;
+    if (hasLatitude && (!dmsField || dmsField.type !== "text")) {
+      return res.status(500).json({
+        error:
+          "A text custom field named DMS is required to update the stop location",
+      });
+    }
+
+    const cardValues = {};
+    if (hasName) cardValues.name = name;
+    if (hasDescription) cardValues.desc = description;
+    if (Object.keys(cardValues).length) {
+      await updateTrelloCard(req.user, card.id, cardValues);
+    }
+    if (hasLatitude) {
+      await updateTrelloCustomField(
+        req.user,
+        card.id,
+        dmsField,
+        coordinatesToDMS(lat, lng),
+      );
+    }
+
+    if (currentStopCache?.current?.id === card.id) {
+      if (hasName) currentStopCache.current.name = name;
+      if (hasDescription) currentStopCache.current.desc = description;
+      if (hasLatitude) {
+        // The Trello trigger will populate the decimal custom fields. Keep the
+        // API response responsive with the position the user just selected.
+        currentStopCache.current.lat = lat;
+        currentStopCache.current.lng = lng;
+      }
+    }
+    const place = {
+      ...status.current,
+      ...(hasName ? { name } : {}),
+      ...(hasDescription ? { desc: description } : {}),
+      ...(hasLatitude ? { lat, lng } : {}),
+    };
+    res.json({
+      success: true,
+      place,
+      ...(hasDescription ? { description } : {}),
+      ...(hasLatitude ? { dms: coordinatesToDMS(lat, lng) } : {}),
+    });
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.put("/api/current-stop", updateCurrentStop);
+router.put("/api/current-stop/description", updateCurrentStop);
 
 router.get("/api/voyages", async (req, res, next) => {
   try {
@@ -1722,6 +1822,10 @@ router.get("/", (req, res) => {
   // Keep the initial HTML independent of Trello so the page shell can render
   // immediately. Chart, logbook, and voyage data are filled in asynchronously.
   res.render("captains-log", { user: req.user, activePage: "planning" });
+});
+
+router.get("/current-stop", (req, res) => {
+  res.render("current-stop", { user: req.user, activePage: "stop" });
 });
 
 router.get("/logbook", (req, res) => {

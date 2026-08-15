@@ -3041,6 +3041,118 @@ body {
   white-space: nowrap;
 }
 
+/* Current stop overview */
+.stop-overview-page {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.stop-state {
+  min-height: 55vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.8rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--ink, #071d36);
+}
+
+.stop-state > i { font-size: 2rem; color: #0077cc; }
+.stop-state h1, .stop-state p { margin: 0; }
+.stop-primary-link { color: #0077cc; font-weight: 700; }
+
+.stop-overview {
+  padding: clamp(1.25rem, 3vw, 3rem);
+}
+
+.stop-overview-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 3.5rem);
+  color: white;
+  background: #071d36;
+  border-radius: 28px 28px 0 0;
+}
+
+.stop-overview-hero h1 {
+  margin: 0.15rem 0 0;
+  font: 600 clamp(2.2rem, 7vw, 5.6rem)/0.98 Georgia, serif;
+  letter-spacing: -0.04em;
+}
+
+.stop-area { margin: 0.8rem 0 0; color: rgb(255 255 255 / 68%); }
+.stop-overview-actions { display: flex; gap: 0.65rem; flex-wrap: wrap; }
+
+.stop-action-button,
+.stop-text-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.72rem 1.05rem;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.stop-action-button { color: #071d36; background: #f5f0e8; }
+.stop-action-button--primary { background: #f2b84b; }
+.stop-action-button:disabled { opacity: 0.55; cursor: wait; }
+.stop-text-button { padding-inline: 0.45rem; color: #526874; background: transparent; }
+
+.stop-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  background: #f5f0e8;
+}
+
+.stop-map-card { min-width: 0; }
+#stop-map { min-height: 460px; height: 100%; }
+.stop-coordinate-note { margin: 0; padding: 0.65rem 1rem; color: #526874; font-size: 0.82rem; }
+
+.stop-facts-card,
+.stop-description-card,
+.stop-editor,
+.stop-plan-form {
+  padding: clamp(1.4rem, 3vw, 2.5rem);
+  background: white;
+}
+
+.stop-facts-card h2,
+.stop-description-card h2,
+.stop-editor h2 { margin: 0 0 1.2rem; font-family: Georgia, serif; }
+.stop-facts { margin: 0; }
+.stop-facts > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.8rem 0; border-bottom: 1px solid #dfe4e7; }
+.stop-facts dt { color: #526874; }
+.stop-facts dd { margin: 0; text-align: right; font-weight: 700; }
+.stop-labels { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 1rem; }
+.stop-labels span { padding: 0.3rem 0.55rem; border-left: 4px solid var(--label-color, #526874); border-radius: 5px; background: #f5f0e8; font-size: 0.82rem; }
+.stop-links { display: flex; gap: 1rem; margin-top: 1.25rem; }
+.stop-links a { color: #0077cc; font-weight: 700; }
+
+.stop-description-card { margin-top: 1rem; border-radius: 18px; }
+.stop-description { margin: 0; white-space: pre-wrap; line-height: 1.65; }
+.stop-editor, .stop-plan-form { margin-top: 1rem; border-radius: 18px; box-shadow: 0 14px 40px rgb(7 29 54 / 10%); }
+.stop-editor-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.stop-editor label, .stop-plan-form label { display: grid; gap: 0.45rem; margin-top: 1rem; color: #526874; font-weight: 700; }
+.stop-editor input, .stop-editor textarea, .stop-plan-form input { width: 100%; box-sizing: border-box; padding: 0.8rem; border: 1px solid #b8c3ca; border-radius: 9px; font: inherit; color: #071d36; background: white; }
+.stop-editor-help { color: #526874; font-size: 0.88rem; line-height: 1.5; }
+.stop-editor-actions { display: flex; justify-content: flex-end; }
+.stop-plan-form { display: flex; align-items: end; gap: 0.8rem; flex-wrap: wrap; }
+.stop-plan-form.hidden { display: none; }
+.stop-plan-form > div { flex: 1 1 280px; }
+.stop-form-status { flex-basis: 100%; margin: 0.4rem 0 0; color: #256c61; }
+.stop-form-status.error { color: #b3261e; }
+
+@media (max-width: 760px) {
+  .stop-overview { padding: 0; }
+  .stop-overview-hero { align-items: flex-start; flex-direction: column; border-radius: 0; }
+  .stop-overview-grid { grid-template-columns: 1fr; }
+  #stop-map { min-height: 360px; }
+  .stop-facts-card { order: -1; }
+}
+
 @media (max-width: 1080px) {
   .site-header {
     grid-template-columns: minmax(17rem, 1fr) auto auto;

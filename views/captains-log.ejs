@@ -38,6 +38,7 @@
   </div>
   <nav class="tab-nav" aria-label="Primary navigation">
     <a href="/" data-tab="planning" <% if (activePage === "planning") { %>aria-current="page"<% } %>>Map</a>
+    <a href="/current-stop" data-tab="stop">Current stop</a>
     <a href="/logbook" data-tab="log" <% if (activePage === "log") { %>aria-current="page"<% } %>>Logbook</a>
     <% if (user) { %>
       <a href="/to-do" class="tab-nav-link">To Do</a>

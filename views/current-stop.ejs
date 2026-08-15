@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Current stop · Skibidi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/icons/logo.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#071d36">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="/css/captains-log.css">
+</head>
+<body data-authenticated="<%= user ? 'true' : 'false' %>">
+<main class="page stop-overview-page">
+  <header class="site-header">
+    <div class="site-title">
+      <a href="/" class="site-title-link">
+        <img src="/icons/logo.svg" alt="" class="site-logo">
+        <span class="site-wordmark">Skibidi</span>
+        <span class="brand-tagline">Where is Skibidi?</span>
+      </a>
+    </div>
+    <nav class="tab-nav" aria-label="Primary navigation">
+      <a href="/">Map</a>
+      <a href="/current-stop" aria-current="page">Current stop</a>
+      <a href="/logbook">Logbook</a>
+      <% if (user) { %><a href="/to-do">To Do</a><% } %>
+    </nav>
+    <div class="site-user">
+      <% if (user) { %>
+        <form action="/auth/logout" method="get"><button type="submit" class="user-btn logged-in">Log out</button></form>
+      <% } else { %>
+        <a href="/auth/trello" class="user-btn">Sign in</a>
+      <% } %>
+    </div>
+  </header>
+
+  <section id="stop-loading" class="stop-state" aria-live="polite">
+    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+    <p>Reading the ship’s log…</p>
+  </section>
+
+  <section id="stop-empty" class="stop-state hidden">
+    <i class="fa-regular fa-compass" aria-hidden="true"></i>
+    <h1>No current stop</h1>
+    <p>Skibidi is underway or an arrival has not been logged yet.</p>
+    <a href="/" class="stop-primary-link">Open the map</a>
+  </section>
+
+  <article id="stop-overview" class="stop-overview hidden">
+    <header class="stop-overview-hero">
+      <div>
+        <p id="stop-eyebrow" class="chartroom-eyebrow">Current stop</p>
+        <h1 id="stop-name">—</h1>
+        <p id="stop-area" class="stop-area"></p>
+      </div>
+      <% if (user) { %>
+        <div class="stop-overview-actions">
+          <button type="button" id="stop-plan-button" class="stop-action-button stop-action-button--primary">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i> Plan
+          </button>
+          <button type="button" id="stop-edit-button" class="stop-action-button">
+            <i class="fa-solid fa-pen" aria-hidden="true"></i> Edit
+          </button>
+        </div>
+      <% } %>
+    </header>
+
+    <div class="stop-overview-grid">
+      <section class="stop-map-card" aria-label="Stop location">
+        <div id="stop-map"></div>
+        <p id="stop-coordinate-note" class="stop-coordinate-note"></p>
+      </section>
+
+      <section class="stop-facts-card" aria-labelledby="stop-facts-title">
+        <h2 id="stop-facts-title">At a glance</h2>
+        <dl class="stop-facts">
+          <div><dt>Arrived</dt><dd id="stop-arrived">—</dd></div>
+          <div><dt>Visits</dt><dd id="stop-visits">—</dd></div>
+          <div><dt>Mooring</dt><dd id="stop-mooring">—</dd></div>
+          <div><dt>Sea temperature</dt><dd id="stop-temperature">—</dd></div>
+          <div><dt>Rating</dt><dd id="stop-rating">—</dd></div>
+          <div><dt>Position</dt><dd id="stop-position">—</dd></div>
+        </dl>
+        <div id="stop-labels" class="stop-labels"></div>
+        <div class="stop-links">
+          <a id="stop-trello-link" class="hidden" target="_blank" rel="noopener">Trello</a>
+          <a id="stop-navily-link" class="hidden" target="_blank" rel="noopener">Navily</a>
+        </div>
+      </section>
+    </div>
+
+    <% if (user) { %>
+      <section class="stop-description-card" aria-labelledby="stop-description-title">
+        <h2 id="stop-description-title">Description</h2>
+        <p id="stop-description" class="stop-description"></p>
+      </section>
+
+      <form id="stop-edit-form" class="stop-editor hidden">
+        <div class="stop-editor-heading">
+          <div><p class="chartroom-eyebrow">Edit place</p><h2>Update this stop</h2></div>
+          <button type="button" id="stop-edit-cancel" class="stop-text-button">Cancel</button>
+        </div>
+        <label>Place name <input id="stop-name-input" name="name" maxlength="256" required></label>
+        <label>Description <textarea id="stop-description-input" name="description" maxlength="16384" rows="7"></textarea></label>
+        <p class="stop-editor-help">Drag the pin to fine-tune the location. Its DMS value is saved to Trello; the board automation updates Latitude and Longitude.</p>
+        <div class="stop-editor-actions">
+          <button type="submit" id="stop-save-button" class="stop-action-button stop-action-button--primary">Save changes</button>
+        </div>
+        <p id="stop-edit-status" class="stop-form-status" role="status"></p>
+      </form>
+
+      <form id="stop-plan-form" class="stop-plan-form hidden">
+        <div>
+          <label for="stop-plan-date">Plan another visit</label>
+          <input type="datetime-local" id="stop-plan-date" required>
+        </div>
+        <button type="submit" id="stop-plan-save" class="stop-action-button stop-action-button--primary">Add to plan</button>
+        <button type="button" id="stop-plan-cancel" class="stop-text-button">Cancel</button>
+        <p id="stop-plan-status" class="stop-form-status" role="status"></p>
+      </form>
+    <% } %>
+  </article>
+</main>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="/js/current-stop.js"></script>
+</body>
+</html>

@@ -621,6 +621,7 @@ test("keeps the current stop description private and lets a logged-in user updat
   const originalPut = axios.put;
   const updates = [];
   const board = {
+    members: [{ id: "test-member", memberType: "normal" }],
     lists: [{ id: "list-1", name: "Saronic Gulf" }],
     cards: [
       {
@@ -640,6 +641,7 @@ test("keeps the current stop description private and lets a logged-in user updat
       { id: "longitude", name: "Longitude" },
       { id: "rating", name: "⭐️" },
       { id: "navily", name: "Navily" },
+      { id: "dms", name: "DMS", type: "text" },
     ],
   };
   const comments = [
@@ -769,6 +771,41 @@ test("keeps the current stop description private and lets a logged-in user updat
     desc: "Sheltered, with good holding.",
   });
 
+  const editResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/current-stop`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-test-user": "yes",
+      },
+      body: JSON.stringify({
+        name: "Poros Town",
+        description: "Close to the quay.",
+        lat: 37.51,
+        lng: 23.41,
+      }),
+    },
+  );
+  const editResult = await editResponse.json();
+
+  assert.equal(editResponse.status, 200);
+  assert.equal(editResult.place.name, "Poros Town");
+  assert.equal(editResult.place.lat, 37.51);
+  assert.equal(editResult.dms, `37\u00b0 30' 36" N, 23\u00b0 24' 36" E`);
+  assert.equal(updates.length, 3);
+  assert.deepEqual(updates[1].options.params, {
+    name: "Poros Town",
+    desc: "Close to the quay.",
+  });
+  assert.equal(
+    updates[2].url,
+    "https://api.trello.com/1/cards/stop-card/customField/dms/item",
+  );
+  assert.deepEqual(updates[2].body, {
+    value: { text: `37\u00b0 30' 36" N, 23\u00b0 24' 36" E` },
+  });
+
   const unauthenticatedUpdate = await fetch(
     `http://127.0.0.1:${server.address().port}/api/current-stop/description`,
     {
@@ -778,5 +815,5 @@ test("keeps the current stop description private and lets a logged-in user updat
     },
   );
   assert.equal(unauthenticatedUpdate.status, 403);
-  assert.equal(updates.length, 1);
+  assert.equal(updates.length, 3);
 });
