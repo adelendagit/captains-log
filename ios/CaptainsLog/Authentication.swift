@@ -16,6 +16,7 @@ final class AuthenticationManager: NSObject, ObservableObject {
     private var webSession: ASWebAuthenticationSession?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "CaptainsLogConnectivity")
+    private var mutationRetryTask: Task<Void, Never>?
 
     var canOpenApp: Bool {
         token != nil || (!signedOutExplicitly && isOffline && api.hasCachedPlanning)
@@ -94,8 +95,32 @@ final class AuthenticationManager: NSObject, ObservableObject {
             await refreshPendingMutationCount()
             return
         }
-        try? await api.flushPendingMutations(token: token)
+        let countBeforeSync = await api.pendingMutationCount()
+        do {
+            try await api.flushPendingMutations(token: token)
+        } catch {
+            // The durable queue remains intact and is retried with a short
+            // delay as well as on the next connectivity change.
+            schedulePendingMutationRetry()
+        }
         await refreshPendingMutationCount()
+        if pendingMutationCount == 0 {
+            mutationRetryTask?.cancel()
+            mutationRetryTask = nil
+        }
+        if countBeforeSync > pendingMutationCount {
+            NotificationCenter.default.post(name: .captainsLogDidChange, object: nil)
+        }
+    }
+
+    private func schedulePendingMutationRetry() {
+        guard mutationRetryTask == nil else { return }
+        mutationRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled, let self else { return }
+            self.mutationRetryTask = nil
+            await self.syncPendingMutations()
+        }
     }
 
     private func connectionChanged(isOffline: Bool) async {

@@ -117,9 +117,12 @@ function normalizePosition(body) {
 
 router.get("/current", async (req, res, next) => {
   try {
+    // This is authenticated, rapidly changing state. A cached inactive
+    // response immediately after departure can make iOS offer Start Journey
+    // again even though Trello already accepted the first request.
+    res.set("Cache-Control", "private, no-store");
     const active = findActiveJourney(await fetchJourneyCards());
     if (!active) {
-      res.set("Cache-Control", "public, max-age=15");
       return res.json({ active: false });
     }
 
@@ -130,7 +133,6 @@ router.get("/current", async (req, res, next) => {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     const position = track[track.length - 1] || null;
 
-    res.set("Cache-Control", "public, max-age=15");
     res.json({
       active: true,
       journey: {

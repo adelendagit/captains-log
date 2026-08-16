@@ -1300,6 +1300,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       longitude,
       timestamp,
       source,
+      requestId,
       litres,
       temperature,
       journeyName,
@@ -1363,6 +1364,15 @@ router.post("/api/log-entry", async (req, res, next) => {
     }
     if (suppliedCustomText.length > 160) {
       return res.status(400).json({ error: "Custom log text is too long" });
+    }
+    const normalizedRequestId = String(requestId || "").trim();
+    if (
+      normalizedRequestId &&
+      (normalizedRequestId.length < 8 ||
+        normalizedRequestId.length > 120 ||
+        !/^[a-zA-Z0-9_-]+$/.test(normalizedRequestId))
+    ) {
+      return res.status(400).json({ error: "Invalid log request ID" });
     }
 
     let mooringLabel = null;
@@ -1465,6 +1475,9 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     if (source) {
       commentLines.push(`source: ${String(source).trim()}`);
+    }
+    if (normalizedRequestId) {
+      commentLines.push(`requestId: ${normalizedRequestId}`);
     }
     if (mooringLabel) {
       commentLines.push(`mooring: ${mooringLabel.name}`);
@@ -1647,11 +1660,24 @@ router.post("/api/log-entry", async (req, res, next) => {
 
     if (clearsPlannedStopDueDate) await clearLegacyPlanDueDate();
 
-    await axios.post(url, null, {
-      params: { text },
-      headers,
-    });
-    invalidateCommentCache();
+    let logEntryAlreadyRecorded = false;
+    if (normalizedRequestId) {
+      const recentComments = await fetchRecentComments(1000);
+      logEntryAlreadyRecorded = recentComments.some(
+        (comment) =>
+          comment.data?.card?.id === cardId &&
+          String(comment.data?.text || "").includes(
+            `requestId: ${normalizedRequestId}`,
+          ),
+      );
+    }
+    if (!logEntryAlreadyRecorded) {
+      await axios.post(url, null, {
+        params: { text },
+        headers,
+      });
+      invalidateCommentCache();
+    }
 
     const mooringLabelAdded = await addMooringLabel();
 
@@ -1670,6 +1696,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       archivedPlanId,
       legacyPlanUpdated: Boolean(legacyPlan),
       mooringLabelAdded,
+      duplicate: logEntryAlreadyRecorded,
       journey: journeyChange,
     });
   } catch (error) {

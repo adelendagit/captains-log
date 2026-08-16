@@ -186,6 +186,7 @@ test("departing archives the completed occurrence and preserves future visits", 
   };
   axios.get = async (url) => {
     if (String(url).includes("/lists/")) return { data: [] };
+    if (String(url).includes("/actions?")) return { data: [] };
     return {
       data: {
         cards: [
@@ -273,6 +274,7 @@ test("departing archives the completed occurrence and preserves future visits", 
       lat: 37.5228,
       lng: 23.4262,
       timestamp: "2026-08-05T08:00:00.000Z",
+      requestId: "ios-departure-1234",
       journeyName: "Channel Rock Bay → Wasp Bay",
       placeName: "Channel Rock Bay",
     }),

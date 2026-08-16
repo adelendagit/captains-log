@@ -67,6 +67,7 @@ private struct SignInView: View {
 
 private struct ChartroomView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
+    @EnvironmentObject private var tracker: JourneyTracker
     @State private var selectedTab = ChartroomTab.now
     @State private var logEntryIntent: LogEntryIntent?
 
@@ -99,7 +100,7 @@ private struct ChartroomView: View {
             AddLogEntryView(initialAction: intent.action)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if authentication.isOffline || authentication.pendingMutationCount > 0 {
+            if authentication.isOffline || authentication.pendingMutationCount > 0 || tracker.isJourneyStartPending {
                 HStack(spacing: 8) {
                     Image(systemName: authentication.isOffline ? "wifi.slash" : "arrow.trianglehead.2.clockwise.rotate.90")
                     Text(connectionMessage)
@@ -129,12 +130,17 @@ private struct ChartroomView: View {
 
     private var connectionMessage: String {
         let count = authentication.pendingMutationCount
+        if tracker.isJourneyStartPending {
+            return authentication.isOffline
+                ? "Journey started on this iPhone — saved and waiting for connection."
+                : "Journey started — syncing with Captain’s Log…"
+        }
         if authentication.isOffline {
             return count == 0
                 ? "Offline — showing saved data."
-                : "Offline — showing saved data; \(count) plan change\(count == 1 ? "" : "s") queued."
+                : "Offline — showing saved data; \(count) change\(count == 1 ? "" : "s") queued."
         }
-        return "Syncing \(count) queued plan change\(count == 1 ? "" : "s")…"
+        return "Syncing \(count) queued change\(count == 1 ? "" : "s")…"
     }
 }
 
@@ -646,12 +652,26 @@ private struct CurrentPositionView: View {
     private var journeyControls: some View {
         if tracker.currentJourney?.active == true {
             VStack(spacing: 12) {
+                if tracker.isJourneyStartPending {
+                    Label(
+                        authentication.isOffline
+                            ? "Start saved on this iPhone · waiting for connection"
+                            : "Start saved · syncing now",
+                        systemImage: authentication.isOffline ? "iphone.and.arrow.forward" : "arrow.trianglehead.2.clockwise.rotate.90"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Chartroom.ink)
+                }
                 Label(
-                    tracker.isTracking ? "Live position is public" : "Location sharing is paused",
+                    tracker.isJourneyStartPending
+                        ? "GPS recording is active on this iPhone"
+                        : tracker.isTracking ? "Live position is public" : "Location sharing is paused",
                     systemImage: tracker.isTracking ? "location.fill" : "location.slash"
                 )
                 .font(.headline)
-                .foregroundStyle(tracker.isTracking ? Chartroom.sea : .secondary)
+                .foregroundStyle(
+                    tracker.isTracking && !tracker.isJourneyStartPending ? Chartroom.sea : .secondary
+                )
                 Button("End Journey", role: .destructive) {
                     onEndJourney()
                 }
@@ -685,6 +705,7 @@ private struct CurrentPositionView: View {
     }
 
     private var statusEyebrow: String {
+        if tracker.isJourneyStartPending { return "Underway · Saved locally" }
         if tracker.currentJourney?.active == true { return "Underway · Live position" }
         if let place = tracker.currentStatus?.current, tracker.currentStatus?.status == "arrived" {
             return place.looksLikeAnchorage ? "At anchor" : "Current stop"

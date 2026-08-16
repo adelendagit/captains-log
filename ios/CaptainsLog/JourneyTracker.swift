@@ -7,12 +7,14 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
     @Published private(set) var currentStatus: CurrentStatusResponse?
     @Published private(set) var isTracking = false
     @Published private(set) var isWorking = false
+    @Published private(set) var isJourneyStartPending = false
     @Published var errorMessage: String?
 
     private let locationManager = CLLocationManager()
     private let authentication: AuthenticationManager
     private var lastAcceptedAt: Date?
     private let activeJourneyKey = "active-journey-id"
+    private let pendingJourneyKey = "pending-local-journey"
 
     var isUnderway: Bool {
         currentJourney?.active == true || currentStatus?.status == "underway"
@@ -20,6 +22,14 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
 
     init(authentication: AuthenticationManager) {
         self.authentication = authentication
+        if
+            let data = UserDefaults.standard.data(forKey: pendingJourneyKey),
+            let journey = try? JSONDecoder.captainsLog.decode(CurrentJourneyResponse.self, from: data),
+            journey.active
+        {
+            currentJourney = journey
+            isJourneyStartPending = true
+        }
         super.init()
         locationManager.delegate = self
         locationManager.activityType = .otherNavigation
@@ -51,7 +61,11 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             async let journey = authentication.api.currentJourney(token: authentication.token)
             async let status = authentication.api.currentStatus(token: authentication.token)
             let (journeyResponse, statusResponse) = try await (journey, status)
-            currentJourney = journeyWithPendingPositions(journeyResponse)
+            if isJourneyStartPending, journeyResponse.active {
+                reconcilePendingJourney(with: journeyResponse)
+            } else if !isJourneyStartPending {
+                currentJourney = journeyWithPendingPositions(journeyResponse)
+            }
             currentStatus = statusResponse
             if
                 currentJourney?.active == true,
@@ -59,7 +73,7 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             {
                 UserDefaults.standard.set(journeyID, forKey: activeJourneyKey)
                 if !isTracking { beginLocationUpdates() }
-            } else {
+            } else if !isJourneyStartPending {
                 stopLocationUpdates()
             }
         } catch {
@@ -89,6 +103,29 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
         }
     }
 
+    func startJourneyLocally(name: String, startedAt: Date) {
+        guard currentJourney?.active != true else { return }
+        let journey = CurrentJourneyResponse(
+            active: true,
+            journey: JourneySummary(
+                id: "local-\(UUID().uuidString)",
+                name: name,
+                startedAt: startedAt
+            ),
+            position: nil,
+            track: []
+        )
+        currentJourney = journey
+        isJourneyStartPending = true
+        UserDefaults.standard.set(
+            try? JSONEncoder.captainsLog.encode(journey),
+            forKey: pendingJourneyKey
+        )
+        UserDefaults.standard.set(journey.journey?.id, forKey: activeJourneyKey)
+        errorMessage = nil
+        beginLocationUpdates()
+    }
+
     func resumeTracking() {
         guard currentJourney?.active == true else { return }
         beginLocationUpdates()
@@ -97,7 +134,8 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
     func flushPendingPositions() async throws {
         guard
             let token = authentication.token,
-            let journeyID = currentJourney?.journey?.id
+            let journeyID = currentJourney?.journey?.id,
+            !isJourneyStartPending
         else { return }
         try await flushPending(journeyID: journeyID, token: token)
     }
@@ -199,6 +237,10 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             let token = authentication.token,
             let journeyID = currentJourney?.journey?.id
         else { return }
+        if isJourneyStartPending {
+            queue(point, journeyID: journeyID)
+            return
+        }
         do {
             try await flushPending(journeyID: journeyID, token: token)
             try await authentication.api.uploadPosition(point, journeyID: journeyID, token: token)
@@ -215,7 +257,7 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
 
     private func queue(_ point: PositionPoint, journeyID: String) {
         var points = pendingPoints(journeyID: journeyID)
-        points.append(point)
+        if !points.contains(where: { $0.id == point.id }) { points.append(point) }
         points = Array(points.suffix(200))
         UserDefaults.standard.set(
             try? JSONEncoder.captainsLog.encode(points),
@@ -238,5 +280,43 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
             try await authentication.api.uploadPosition(point, journeyID: journeyID, token: token)
         }
         UserDefaults.standard.removeObject(forKey: pendingKey(for: journeyID))
+    }
+
+    private func reconcilePendingJourney(with serverJourney: CurrentJourneyResponse) {
+        guard
+            let localJourney = currentJourney,
+            let localID = localJourney.journey?.id,
+            let serverID = serverJourney.journey?.id
+        else { return }
+
+        let localPoints = pendingPoints(journeyID: localID)
+        var serverPoints = pendingPoints(journeyID: serverID)
+        let serverPointIDs = Set(serverPoints.map(\.id))
+        serverPoints.append(contentsOf: localPoints.filter { !serverPointIDs.contains($0.id) })
+        serverPoints.sort { $0.timestamp < $1.timestamp }
+        if serverPoints.isEmpty {
+            UserDefaults.standard.removeObject(forKey: pendingKey(for: serverID))
+        } else {
+            UserDefaults.standard.set(
+                try? JSONEncoder.captainsLog.encode(Array(serverPoints.suffix(200))),
+                forKey: pendingKey(for: serverID)
+            )
+        }
+        if localID != serverID {
+            UserDefaults.standard.removeObject(forKey: pendingKey(for: localID))
+        }
+
+        currentJourney = journeyWithPendingPositions(serverJourney)
+        isJourneyStartPending = false
+        UserDefaults.standard.removeObject(forKey: pendingJourneyKey)
+        UserDefaults.standard.set(serverID, forKey: activeJourneyKey)
+        errorMessage = nil
+
+        if let token = authentication.token {
+            Task {
+                try? await flushPending(journeyID: serverID, token: token)
+                await refresh()
+            }
+        }
     }
 }

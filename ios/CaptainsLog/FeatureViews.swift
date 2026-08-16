@@ -529,11 +529,14 @@ struct AddLogEntryView: View {
             let quantity = Double(litres)
             let temperatureValue = parsedTemperature
             let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-            try await authentication.api.addLogEntry(
+            let startsJourney = action == "departed"
+            let requestID = UUID().uuidString
+            _ = try await authentication.api.addLogEntry(
                 action: action,
                 cardID: place.placeCardID,
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
+                requestID: requestID,
                 journeyName: action == "departed" ? journeyName : nil,
                 mooringLabelID: action == "arrived" ? selectedMooringLabelID : nil,
                 placeName: place.name,
@@ -541,9 +544,17 @@ struct AddLogEntryView: View {
                 timestamp: timestamp,
                 litres: quantity,
                 temperature: temperatureValue,
-                token: token
+                token: token,
+                queueImmediately: startsJourney
             )
             logWasSaved = true
+            if startsJourney {
+                let localName = journeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+                tracker.startJourneyLocally(
+                    name: localName.isEmpty ? "Journey from \(place.name)" : localName,
+                    startedAt: timestamp
+                )
+            }
             if notificationMode != .none {
                 do {
                     _ = try await authentication.api.sendLogNotification(
@@ -556,13 +567,29 @@ struct AddLogEntryView: View {
                         litres: quantity,
                         temperature: temperatureValue,
                         customText: details,
-                        token: token
+                        token: token,
+                        queueImmediately: startsJourney
                     )
                 } catch {
+                    if startsJourney {
+                        tracker.errorMessage = "Journey started and saved on this iPhone, but the notification could not be queued: \(error.localizedDescription)"
+                        await authentication.refreshPendingMutationCount()
+                        dismiss()
+                        Task { await authentication.syncPendingMutations() }
+                        return
+                    }
                     await tracker.refresh()
                     errorMessage = "The log was saved, but the email could not be sent: \(error.localizedDescription)"
                     return
                 }
+            }
+            if startsJourney {
+                await authentication.refreshPendingMutationCount()
+                dismiss()
+                Task {
+                    await authentication.syncPendingMutations()
+                }
+                return
             }
             await tracker.refresh()
             dismiss()

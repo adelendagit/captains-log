@@ -369,11 +369,13 @@ final class APIClient: Sendable {
         return data
     }
 
+    @discardableResult
     func addLogEntry(
         action: String,
         cardID: String,
         latitude: Double,
         longitude: Double,
+        requestID: String? = nil,
         journeyName: String? = nil,
         mooringLabelID: String? = nil,
         placeName: String? = nil,
@@ -381,27 +383,40 @@ final class APIClient: Sendable {
         timestamp: Date = Date(),
         litres: Double? = nil,
         temperature: Double? = nil,
-        token: String
-    ) async throws {
+        token: String,
+        queueImmediately: Bool = false
+    ) async throws -> Bool {
+        let body = LogEntryBody(
+            action: action,
+            cardId: cardID,
+            lat: latitude,
+            lng: longitude,
+            timestamp: timestamp,
+            source: "ios",
+            requestId: requestID,
+            litres: litres,
+            temperature: temperature,
+            journeyName: journeyName,
+            mooringLabelId: mooringLabelID,
+            placeName: placeName,
+            customText: customText
+        )
+        if queueImmediately {
+            return try await performOrQueue(
+                path: "api/log-entry",
+                method: "POST",
+                body: body,
+                token: token,
+                queueImmediately: true
+            )
+        }
         let _: SuccessResponse = try await send(
             path: "api/log-entry",
             method: "POST",
-            encodableBody: LogEntryBody(
-                action: action,
-                cardId: cardID,
-                lat: latitude,
-                lng: longitude,
-                timestamp: timestamp,
-                source: "ios",
-                litres: litres,
-                temperature: temperature,
-                journeyName: journeyName,
-                mooringLabelId: mooringLabelID,
-                placeName: placeName,
-                customText: customText
-            ),
+            encodableBody: body,
             token: token
         )
+        return false
     }
 
     func sendLogNotification(
@@ -415,9 +430,31 @@ final class APIClient: Sendable {
         litres: Double? = nil,
         temperature: Double? = nil,
         customText: String? = nil,
-        token: String
-    ) async throws -> LogNotificationResponse {
-        try await send(
+        token: String,
+        queueImmediately: Bool = false
+    ) async throws -> LogNotificationResponse? {
+        if queueImmediately {
+            _ = try await performOrQueue(
+                path: "api/log-notification",
+                method: "POST",
+                body: LogNotificationBody(
+                    mode: mode,
+                    requestId: requestID,
+                    action: action,
+                    cardId: cardID,
+                    lat: latitude,
+                    lng: longitude,
+                    timestamp: timestamp,
+                    litres: litres,
+                    temperature: temperature,
+                    customText: customText
+                ),
+                token: token,
+                queueImmediately: true
+            )
+            return nil
+        }
+        return try await send(
             path: "api/log-notification",
             method: "POST",
             encodableBody: LogNotificationBody(
@@ -776,6 +813,7 @@ private struct LogEntryBody: Codable {
     let lng: Double
     let timestamp: Date
     let source: String
+    let requestId: String?
     let litres: Double?
     let temperature: Double?
     let journeyName: String?
