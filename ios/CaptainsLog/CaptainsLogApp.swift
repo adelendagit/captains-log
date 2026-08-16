@@ -53,7 +53,7 @@ enum ChartroomRouteKind {
 
     var strokeStyle: StrokeStyle {
         switch self {
-        case .planned: StrokeStyle(lineWidth: 3)
+        case .planned: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10, 7])
         case .estimated: StrokeStyle(lineWidth: 3, dash: [8, 8])
         case .recorded: StrokeStyle(lineWidth: 4)
         }

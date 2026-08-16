@@ -158,9 +158,13 @@ private struct CurrentPositionView: View {
     @State private var camera: MapCameraPosition = .automatic
     @State private var mapViewportSource: String?
     @State private var plannedStops: [PlaceSummary]?
+    @State private var savedPlaces: [PlaceSummary] = []
     @State private var plannedRoute: PlanningRouteResponse?
     @State private var supplyLogs: [LogEntry] = []
     @State private var selectedMapPlace: PlaceSummary?
+    @State private var prefersUnderwayMap = true
+    @State private var followsBoat = true
+    @State private var courseUp = true
     @State private var isEditingDescription = false
     @State private var descriptionDraft = ""
     @State private var isSavingDescription = false
@@ -174,23 +178,43 @@ private struct CurrentPositionView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    statusCard
-                    suppliesSection
-                    map
-                    journeyControls
-                    if let error = tracker.errorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if showsUnderwayMap {
+                    underwayMap
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            if tracker.isUnderway {
+                                Button {
+                                    prefersUnderwayMap = true
+                                    followsBoat = true
+                                    followBoat()
+                                } label: {
+                                    Label("Open Underway View", systemImage: "location.north.line.fill")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Chartroom.sea)
+                            }
+                            statusCard
+                            suppliesSection
+                            map
+                            journeyControls
+                            if let error = tracker.errorMessage {
+                                Text(error)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding()
                     }
+                    .background(Chartroom.paper)
                 }
-                .padding()
             }
-            .background(Chartroom.paper)
             .navigationTitle("Skibidi")
+            .toolbar(showsUnderwayMap ? .hidden : .visible, for: .navigationBar)
+            .toolbar(showsUnderwayMap ? .hidden : .visible, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -227,7 +251,29 @@ private struct CurrentPositionView: View {
                 isEditingDescription = false
                 descriptionError = nil
             }
+            .onChange(of: tracker.isUnderway) { _, isUnderway in
+                if isUnderway {
+                    prefersUnderwayMap = true
+                    followsBoat = true
+                    followBoat()
+                    Task { await refreshUnderwayRoute() }
+                }
+            }
+            .onChange(of: tracker.liveLocation?.timestamp) {
+                guard showsUnderwayMap, followsBoat else { return }
+                followBoat()
+            }
+            .onChange(of: tracker.currentJourney?.position?.id) {
+                guard tracker.isUnderway else { return }
+                Task { await refreshUnderwayRoute() }
+                guard showsUnderwayMap, followsBoat, tracker.liveLocation == nil else { return }
+                followBoat()
+            }
         }
+    }
+
+    private var showsUnderwayMap: Bool {
+        tracker.isUnderway && prefersUnderwayMap
     }
 
     private var statusCard: some View {
@@ -325,6 +371,247 @@ private struct CurrentPositionView: View {
         }
     }
 
+    private var underwayMap: some View {
+        ZStack {
+            Map(position: $camera, interactionModes: .all) {
+                if let plannedRoute {
+                    ForEach(Array(plannedRoute.legs.enumerated()), id: \.offset) { _, leg in
+                        if leg.mapCoordinates.count > 1 {
+                            MapPolyline(coordinates: leg.mapCoordinates)
+                                .stroke(
+                                    ChartroomRouteKind.planned.color,
+                                    style: ChartroomRouteKind.planned.strokeStyle
+                                )
+                        }
+                    }
+                } else if let boatCoordinate, let destinationCoordinate {
+                    MapPolyline(coordinates: [boatCoordinate, destinationCoordinate])
+                        .stroke(
+                            ChartroomRouteKind.planned.color,
+                            style: ChartroomRouteKind.planned.strokeStyle
+                        )
+                }
+
+                if routeUsesCoastline, let boatCoordinate, let destinationCoordinate {
+                    MapPolyline(coordinates: [boatCoordinate, destinationCoordinate])
+                        .stroke(
+                            ChartroomRouteKind.estimated.color.opacity(0.55),
+                            style: StrokeStyle(lineWidth: 2, dash: [5, 7])
+                        )
+                }
+
+                if let track = tracker.currentJourney?.track, track.count > 1 {
+                    MapPolyline(coordinates: track.map(\.coordinate))
+                        .stroke(
+                            ChartroomRouteKind.recorded.color,
+                            style: ChartroomRouteKind.recorded.strokeStyle
+                        )
+                }
+
+                ForEach(otherSavedPlaces) { place in
+                    if let coordinate = place.coordinate {
+                        Annotation(place.name, coordinate: coordinate) {
+                            Button { selectedMapPlace = place } label: {
+                                Image(systemName: place.mooringSystemImage)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Chartroom.ink.opacity(0.72))
+                                    .frame(width: 24, height: 24)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().stroke(.white.opacity(0.75), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open \(place.name)")
+                        }
+                    }
+                }
+
+                ForEach(underwayPlannedStops) { stop in
+                    if let coordinate = stop.coordinate {
+                        Annotation(stop.name, coordinate: coordinate) {
+                            Button { selectedMapPlace = stop } label: {
+                                plannedStopMarker(stop)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens place details")
+                        }
+                    }
+                }
+
+                if let destination = activeDestination, let coordinate = destination.coordinate {
+                    Annotation(destination.name, coordinate: coordinate) {
+                        Button { selectedMapPlace = destination } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: "flag.checkered")
+                                    .font(.headline.bold())
+                                    .foregroundStyle(.white)
+                                    .frame(width: 42, height: 42)
+                                    .background(Chartroom.sea, in: Circle())
+                                    .overlay(Circle().stroke(.white, lineWidth: 3))
+                                    .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+                                Text(destination.name)
+                                    .font(.caption2.bold())
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .foregroundStyle(Chartroom.ink)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Destination, \(destination.name)")
+                    }
+                }
+
+                if let boatCoordinate {
+                    Annotation("Skibidi", coordinate: boatCoordinate, anchor: .center) {
+                        Image(systemName: "location.north.fill")
+                            .font(.system(size: 25, weight: .bold))
+                            .foregroundStyle(Chartroom.ink)
+                            .padding(9)
+                            .background(Chartroom.signal, in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 3))
+                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                            .rotationEffect(.degrees(courseUp ? 0 : displayCourse ?? 0))
+                    }
+                }
+            }
+            .mapStyle(.standard(elevation: .realistic))
+            .ignoresSafeArea()
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8).onChanged { _ in followsBoat = false }
+            )
+
+            VStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    underwayStatusChip
+                    Spacer(minLength: 0)
+                    underwayMapButton(
+                        systemImage: courseUp ? "location.north.line.fill" : "map.fill",
+                        accessibilityLabel: courseUp ? "Switch to north up" : "Switch to course up"
+                    ) {
+                        courseUp.toggle()
+                        followsBoat = true
+                        followBoat()
+                    }
+                    underwayMapButton(
+                        systemImage: followsBoat ? "location.fill" : "location",
+                        accessibilityLabel: "Follow Skibidi"
+                    ) {
+                        followsBoat = true
+                        followBoat()
+                    }
+                    underwayMapButton(
+                        systemImage: "rectangle.compress.vertical",
+                        accessibilityLabel: "Show journey dashboard"
+                    ) {
+                        prefersUnderwayMap = false
+                    }
+                }
+                Spacer()
+                underwayInformationPanel
+            }
+            .safeAreaPadding(.horizontal, 12)
+            .safeAreaPadding(.vertical, 10)
+        }
+        .background(Chartroom.paper)
+        .onAppear {
+            followsBoat = true
+            followBoat()
+        }
+    }
+
+    private var underwayStatusChip: some View {
+        Label(underwaySyncLabel, systemImage: underwaySyncImage)
+            .font(.caption.bold())
+            .foregroundStyle(Chartroom.ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .accessibilityLabel(underwaySyncLabel)
+    }
+
+    private func underwayMapButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .foregroundStyle(Chartroom.ink)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var underwayInformationPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("DESTINATION")
+                        .font(.caption2.bold())
+                        .tracking(1.1)
+                        .foregroundStyle(.white.opacity(0.58))
+                    Text(activeDestination?.name ?? "No destination set")
+                        .font(.system(.title3, design: .serif, weight: .semibold))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Button("End Journey", role: .destructive) { onEndJourney() }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                    .font(.caption.bold())
+                    .disabled(tracker.isWorking)
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                underwayReading("REMAINING", remainingDistanceLabel)
+                underwayDivider
+                underwayReading("ETA", etaLabel)
+                underwayDivider
+                underwayReading("SOG", speedLabel)
+                underwayDivider
+                underwayReading("COG", courseLabel)
+            }
+
+            if routeHasWarning {
+                Label("The estimated route could not be calculated safely. Check the route using marine charts.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Chartroom.signal)
+            } else {
+                Text("Estimated route — use marine charts for navigation.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+        }
+        .padding(16)
+        .foregroundStyle(.white)
+        .background(Chartroom.ink.opacity(0.94), in: RoundedRectangle(cornerRadius: 22))
+        .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+    }
+
+    private func underwayReading(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(.white.opacity(0.56))
+            Text(value)
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var underwayDivider: some View {
+        Divider()
+            .overlay(.white.opacity(0.16))
+            .frame(height: 34)
+    }
+
     private var map: some View {
         Map(position: $camera) {
             if let plannedRoute {
@@ -384,6 +671,170 @@ private struct CurrentPositionView: View {
         .onChange(of: mapFocusKey, initial: true) {
             focusMapOnCurrentPosition()
         }
+    }
+
+    private var activeDestination: PlaceSummary? {
+        tracker.currentStatus?.destination ??
+            tracker.currentStatus?.plannedDestination ??
+            plannedStops?.first
+    }
+
+    private var destinationCoordinate: CLLocationCoordinate2D? {
+        activeDestination?.coordinate
+    }
+
+    private var boatCoordinate: CLLocationCoordinate2D? {
+        if let liveLocation = tracker.liveLocation, liveLocation.horizontalAccuracy <= 100 {
+            return liveLocation.coordinate
+        }
+        return tracker.currentJourney?.position?.coordinate ?? tracker.currentStatus?.from?.coordinate
+    }
+
+    private var underwayPlannedStops: [PlaceSummary] {
+        let destinationID = activeDestination?.placeCardID
+        return (plannedStops ?? []).filter { $0.placeCardID != destinationID }
+    }
+
+    private var otherSavedPlaces: [PlaceSummary] {
+        var emphasizedIDs = Set((plannedStops ?? []).map(\.placeCardID))
+        if let destinationID = activeDestination?.placeCardID { emphasizedIDs.insert(destinationID) }
+        if let currentID = tracker.currentStatus?.current?.placeCardID { emphasizedIDs.insert(currentID) }
+        return savedPlaces.filter { place in
+            place.coordinate != nil && !emphasizedIDs.contains(place.placeCardID)
+        }
+    }
+
+    private var displayCourse: CLLocationDirection? {
+        if let liveLocation = tracker.liveLocation,
+           liveLocation.speed >= 0.62,
+           liveLocation.course >= 0 {
+            return liveLocation.course
+        }
+        return tracker.currentJourney?.track?
+            .reversed()
+            .first(where: { ($0.speedKts ?? 0) >= 1.2 && ($0.course ?? -1) >= 0 })?
+            .course ?? tracker.currentJourney?.position?.course
+    }
+
+    private var smoothedSpeedKts: Double? {
+        let cutoff = Date().addingTimeInterval(-5 * 60)
+        var samples = (tracker.currentJourney?.track ?? []).compactMap { point -> Double? in
+            guard point.timestamp >= cutoff, let speed = point.speedKts, speed >= 0 else { return nil }
+            return speed
+        }
+        if let liveLocation = tracker.liveLocation, liveLocation.speed >= 0 {
+            let liveSpeed = liveLocation.speed * 1.94384
+            samples.append(liveSpeed)
+            samples.append(liveSpeed)
+        }
+        guard !samples.isEmpty else { return tracker.currentJourney?.position?.speedKts }
+        return samples.reduce(0, +) / Double(samples.count)
+    }
+
+    private var remainingDistanceNM: Double? {
+        if let legs = plannedRoute?.legs, !legs.isEmpty {
+            let distances = legs.compactMap(\.distanceNm)
+            if distances.count == legs.count { return distances.reduce(0, +) }
+        }
+        guard let boatCoordinate, let destinationCoordinate else { return nil }
+        let boat = CLLocation(latitude: boatCoordinate.latitude, longitude: boatCoordinate.longitude)
+        let destination = CLLocation(
+            latitude: destinationCoordinate.latitude,
+            longitude: destinationCoordinate.longitude
+        )
+        return boat.distance(from: destination) / 1_852
+    }
+
+    private var routeHasWarning: Bool {
+        plannedRoute?.legs.contains(where: { $0.distanceNm == nil }) == true
+    }
+
+    private var routeUsesCoastline: Bool {
+        plannedRoute?.legs.contains(where: { $0.method == "coastline" || $0.mapCoordinates.count > 2 }) == true
+    }
+
+    private var remainingDistanceLabel: String {
+        remainingDistanceNM.map { String(format: "%.1f NM", $0) } ?? "—"
+    }
+
+    private var etaLabel: String {
+        guard let distance = remainingDistanceNM,
+              let speed = smoothedSpeedKts,
+              speed >= 1 else { return "—" }
+        let arrival = Date().addingTimeInterval(distance / speed * 3_600)
+        return arrival.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var speedLabel: String {
+        smoothedSpeedKts.map { String(format: "%.1f kt", $0) } ?? "—"
+    }
+
+    private var courseLabel: String {
+        displayCourse.map { String(format: "%03.0f°", $0) } ?? "—"
+    }
+
+    private var underwaySyncLabel: String {
+        if tracker.isJourneyStartPending {
+            return authentication.isOffline ? "Saved locally" : "Syncing"
+        }
+        if authentication.isOffline { return "GPS saved locally" }
+        return tracker.isTracking ? "Underway · Live" : "GPS paused"
+    }
+
+    private var underwaySyncImage: String {
+        if tracker.isJourneyStartPending || authentication.isOffline { return "iphone.and.arrow.forward" }
+        return tracker.isTracking ? "location.fill" : "location.slash"
+    }
+
+    private var followDistanceMeters: CLLocationDistance {
+        if let remainingDistanceNM {
+            return min(18_000, max(2_500, remainingDistanceNM * 1_852 * 1.15))
+        }
+        let speed = max(2, smoothedSpeedKts ?? 2)
+        return min(10_000, max(2_500, speed * 900))
+    }
+
+    private func followBoat() {
+        guard let boatCoordinate else { return }
+        let course = displayCourse ?? 0
+        let distance = followDistanceMeters
+        let center = courseUp
+            ? projectedCoordinate(from: boatCoordinate, bearing: course, distanceMeters: distance * 0.18)
+            : boatCoordinate
+        withAnimation(.easeInOut(duration: 0.45)) {
+            camera = .camera(
+                MapCamera(
+                    centerCoordinate: center,
+                    distance: distance,
+                    heading: courseUp ? course : 0,
+                    pitch: courseUp ? 34 : 0
+                )
+            )
+        }
+    }
+
+    private func projectedCoordinate(
+        from coordinate: CLLocationCoordinate2D,
+        bearing: CLLocationDirection,
+        distanceMeters: CLLocationDistance
+    ) -> CLLocationCoordinate2D {
+        let radius = 6_371_000.0
+        let angularDistance = distanceMeters / radius
+        let bearingRadians = bearing * .pi / 180
+        let latitude = coordinate.latitude * .pi / 180
+        let longitude = coordinate.longitude * .pi / 180
+        let projectedLatitude = asin(
+            sin(latitude) * cos(angularDistance) +
+                cos(latitude) * sin(angularDistance) * cos(bearingRadians)
+        )
+        let projectedLongitude = longitude + atan2(
+            sin(bearingRadians) * sin(angularDistance) * cos(latitude),
+            cos(angularDistance) - sin(latitude) * sin(projectedLatitude)
+        )
+        return CLLocationCoordinate2D(
+            latitude: projectedLatitude * 180 / .pi,
+            longitude: projectedLongitude * 180 / .pi
+        )
     }
 
     private var suppliesSection: some View {
@@ -597,55 +1048,80 @@ private struct CurrentPositionView: View {
 #if DEBUG
         if ProcessInfo.processInfo.environment["CAPTAINS_LOG_FORCE_EMPTY_PLAN"] == "1" {
             plannedStops = []
+            savedPlaces = []
             return
         }
 #endif
         if plannedStops == nil, let cached = await authentication.api.cachedPlanning() {
-            plannedStops = cached.stops
-                .filter { $0.dueComplete != true }
-                .sorted {
-                    switch ($0.due, $1.due) {
-                    case let (left?, right?): left < right
-                    case (_?, nil): true
-                    case (nil, _?): false
-                    case (nil, nil): $0.name < $1.name
-                    }
-                }
+            applyPlanning(cached)
+            if let route = await cachedUnderwayRoute(stops: plannedStops ?? []) {
+                plannedRoute = route
+            }
         }
         guard let token = authentication.token, !authentication.isOffline else { return }
         do {
-            let stops = try await authentication.api.planning(token: token).stops
-                .filter { $0.dueComplete != true }
-                .sorted {
-                    switch ($0.due, $1.due) {
-                    case let (left?, right?): left < right
-                    case (_?, nil): true
-                    case (nil, _?): false
-                    case (nil, nil): $0.name < $1.name
-                    }
-                }
-            plannedStops = stops
-            plannedRoute = await loadPlannedRoute(stops: stops, token: token)
+            let planning = try await authentication.api.planning(token: token)
+            applyPlanning(planning)
+            if let route = await loadPlannedRoute(stops: plannedStops ?? [], token: token) {
+                plannedRoute = route
+            }
         } catch {
             // Retain the last visible chart when the device moves in and out of coverage.
         }
     }
 
-    @MainActor private func loadPlannedRoute(stops: [PlaceSummary], token: String) async -> PlanningRouteResponse? {
-        guard tracker.currentJourney?.active == true || tracker.currentStatus?.status == "underway" else { return nil }
-        var points: [PlanningRoutePoint] = []
-        if let point = tracker.currentJourney?.position {
-            points.append(PlanningRoutePoint(lat: point.lat, lng: point.lng))
-        } else if let start = tracker.currentStatus?.from ?? tracker.currentStatus?.current,
-                  let lat = start.lat, let lng = start.lng {
-            points.append(PlanningRoutePoint(lat: lat, lng: lng))
+    @MainActor private func applyPlanning(_ planning: PlanningResponse) {
+        savedPlaces = planning.places
+        plannedStops = planning.stops
+            .filter { $0.dueComplete != true }
+            .sorted {
+                switch ($0.due, $1.due) {
+                case let (left?, right?): left < right
+                case (_?, nil): true
+                case (nil, _?): false
+                case (nil, nil): $0.name < $1.name
+                }
+            }
+    }
+
+    @MainActor private func refreshUnderwayRoute() async {
+        guard tracker.isUnderway else { return }
+        let stops = plannedStops ?? []
+        if let token = authentication.token, !authentication.isOffline {
+            if let route = await loadPlannedRoute(stops: stops, token: token) {
+                plannedRoute = route
+            }
+        } else if let route = await cachedUnderwayRoute(stops: stops) {
+            plannedRoute = route
         }
-        points.append(contentsOf: stops.compactMap { stop in
-            guard let lat = stop.lat, let lng = stop.lng else { return nil }
-            return PlanningRoutePoint(lat: lat, lng: lng)
-        })
+    }
+
+    @MainActor private func loadPlannedRoute(stops: [PlaceSummary], token: String) async -> PlanningRouteResponse? {
+        let points = underwayRoutePoints(stops: stops)
         guard points.count > 1 else { return nil }
         return try? await authentication.api.planningRoute(points: points, token: token)
+    }
+
+    @MainActor private func cachedUnderwayRoute(stops: [PlaceSummary]) async -> PlanningRouteResponse? {
+        let points = underwayRoutePoints(stops: stops)
+        guard points.count > 1 else { return nil }
+        return await authentication.api.cachedPlanningRoute(points: points)
+    }
+
+    private func underwayRoutePoints(stops: [PlaceSummary]) -> [PlanningRoutePoint] {
+        let destination: PlaceSummary?
+        if let activeDestination {
+            destination = activeDestination
+        } else {
+            destination = stops.first
+        }
+        guard tracker.currentJourney?.active == true || tracker.currentStatus?.status == "underway",
+              let start = boatCoordinate,
+              let end = destination?.coordinate else { return [] }
+        return [
+            PlanningRoutePoint(lat: start.latitude, lng: start.longitude),
+            PlanningRoutePoint(lat: end.latitude, lng: end.longitude),
+        ]
     }
 
     @ViewBuilder

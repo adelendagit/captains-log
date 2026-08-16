@@ -8,6 +8,7 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
     @Published private(set) var isTracking = false
     @Published private(set) var isWorking = false
     @Published private(set) var isJourneyStartPending = false
+    @Published private(set) var liveLocation: CLLocation?
     @Published var errorMessage: String?
 
     private let locationManager = CLLocationManager()
@@ -170,6 +171,7 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
         locationManager.stopUpdatingLocation()
         locationManager.allowsBackgroundLocationUpdates = false
         UserDefaults.standard.removeObject(forKey: activeJourneyKey)
+        liveLocation = nil
         isTracking = false
     }
 
@@ -186,6 +188,8 @@ final class JourneyTracker: NSObject, ObservableObject, @preconcurrency CLLocati
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        guard currentJourney?.active == true else { return }
+        liveLocation = location
         if let lastAcceptedAt, location.timestamp.timeIntervalSince(lastAcceptedAt) < 60 { return }
         lastAcceptedAt = location.timestamp
 
