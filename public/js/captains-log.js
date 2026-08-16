@@ -36,6 +36,9 @@ let currentStatus = null;
 let currentJourney = null;
 let currentStopDescriptionEditing = false;
 let journeyLayerGroup = null;
+let underwayRoute = null;
+let followsUnderwayPosition = true;
+let underwayPlanExpanded = false;
 let journeyRefreshInterval = null;
 let underwayMarker = null;
 let underwayInterval = null;
@@ -56,6 +59,7 @@ const ROUTE_STYLES = Object.freeze({
     color: "#0077cc",
     weight: 3,
     opacity: 0.8,
+    dashArray: "10 7",
   }),
   estimated: Object.freeze({
     color: "#526874",
@@ -268,6 +272,91 @@ function isAnchorage(place) {
   return /anchor|anchorage|bay|harbour|harbor|marina|port/i.test(words);
 }
 
+function activeJourneyDestination() {
+  if (currentStatus?.destination) return currentStatus.destination;
+  if (currentStatus?.plannedDestination)
+    return currentStatus.plannedDestination;
+  return [...stops]
+    .filter(CaptainsLogMapSelection.isUpcomingStop)
+    .sort((left, right) => new Date(left.due) - new Date(right.due))[0];
+}
+
+function activeJourneyRouteSequence() {
+  const position = currentJourney?.position;
+  const destination = activeJourneyDestination();
+  if (
+    !position ||
+    !Number.isFinite(position.lat) ||
+    !Number.isFinite(position.lng) ||
+    !Number.isFinite(destination?.lat) ||
+    !Number.isFinite(destination?.lng)
+  ) {
+    return [];
+  }
+  return [position, destination];
+}
+
+function smoothedUnderwaySpeedKts() {
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  const samples = (
+    Array.isArray(currentJourney?.track) ? currentJourney.track : []
+  )
+    .filter(
+      (point) =>
+        new Date(point.timestamp).getTime() >= cutoff &&
+        Number.isFinite(point.speedKts) &&
+        point.speedKts >= 0,
+    )
+    .map((point) => point.speedKts);
+  const latestSpeed = currentJourney?.position?.speedKts;
+  if (Number.isFinite(latestSpeed) && latestSpeed >= 0) {
+    samples.push(latestSpeed, latestSpeed);
+  }
+  if (!samples.length) return null;
+  return samples.reduce((total, speed) => total + speed, 0) / samples.length;
+}
+
+function underwayDistanceNm() {
+  const sequence = activeJourneyRouteSequence();
+  if (sequence.length < 2) return null;
+  const key = planningRouteKey(sequence);
+  if (underwayRoute?.key === key && underwayRoute.legs.length) {
+    const distances = underwayRoute.legs.map((leg) => Number(leg.distanceNm));
+    if (distances.every(Number.isFinite)) {
+      return distances.reduce((total, distance) => total + distance, 0);
+    }
+  }
+  return toNM(
+    haversine(
+      sequence[0].lat,
+      sequence[0].lng,
+      sequence[1].lat,
+      sequence[1].lng,
+    ),
+  );
+}
+
+function formatUnderwayEta(distanceNm, speedKts) {
+  if (
+    !Number.isFinite(distanceNm) ||
+    !Number.isFinite(speedKts) ||
+    speedKts < 1
+  )
+    return "—";
+  const eta = new Date(Date.now() + (distanceNm / speedKts) * 60 * 60 * 1000);
+  return eta.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function positionFreshness(timestamp) {
+  const ageMs = Date.now() - new Date(timestamp).getTime();
+  if (!Number.isFinite(ageMs) || ageMs > 10 * 60 * 1000) return "stale";
+  if (ageMs > 2 * 60 * 1000) return "recent";
+  return "live";
+}
+
 function renderJourneyStatus() {
   const panel = document.getElementById("live-journey");
   if (!panel) return;
@@ -292,6 +381,19 @@ function renderJourneyStatus() {
   const mooring = document.getElementById("live-journey-mooring");
   const ratingReading = document.getElementById("live-journey-rating-reading");
   const rating = document.getElementById("live-journey-rating");
+  const destinationReading = document.getElementById(
+    "live-journey-destination-reading",
+  );
+  const destinationValue = document.getElementById("live-journey-destination");
+  const remainingReading = document.getElementById(
+    "live-journey-remaining-reading",
+  );
+  const remainingValue = document.getElementById("live-journey-remaining");
+  const etaReading = document.getElementById("live-journey-eta-reading");
+  const etaValue = document.getElementById("live-journey-eta");
+  const routeNote = document.getElementById("live-journey-route-note");
+  const journeyActions = document.getElementById("live-journey-actions");
+  const mapStage = document.querySelector("#planning .map-stage");
 
   const showArrivalDetails =
     !currentJourney?.active && currentStatus?.status === "arrived";
@@ -299,8 +401,20 @@ function renderJourneyStatus() {
   temperatureReading?.classList.toggle("hidden", !showArrivalDetails);
   mooringReading?.classList.toggle("hidden", !showArrivalDetails);
   ratingReading?.classList.toggle("hidden", !showArrivalDetails);
+  destinationReading?.classList.toggle("hidden", !currentJourney?.active);
+  remainingReading?.classList.toggle("hidden", !currentJourney?.active);
+  etaReading?.classList.toggle("hidden", !currentJourney?.active);
+  routeNote?.classList.toggle("hidden", !currentJourney?.active);
+  journeyActions?.classList.toggle("hidden", !currentJourney?.active);
+  mapStage?.classList.toggle("is-underway", Boolean(currentJourney?.active));
+  mapStage?.classList.toggle(
+    "show-underway-plan",
+    Boolean(currentJourney?.active && underwayPlanExpanded),
+  );
+  updateUnderwayMapControls();
 
   panel.classList.toggle("is-live", Boolean(currentJourney?.active));
+  panel.classList.remove("is-stale", "is-recent");
   panel.classList.toggle(
     "is-anchored",
     !currentJourney?.active && currentStatus?.status === "arrived",
@@ -310,31 +424,68 @@ function renderJourneyStatus() {
     "is-anchored",
     !currentJourney?.active && currentStatus?.status === "arrived",
   );
+  indicator.classList.remove("is-stale");
 
   if (currentJourney?.active) {
     message.classList.remove("hidden");
     renderCurrentStopDescriptionEditor();
-    eyebrow.textContent = "Underway · Live position";
-    updatedLabel.textContent = "Last report";
-    speedLabel.textContent = "Speed";
-    courseLabel.textContent = "Course";
+    updatedLabel.textContent = "Updated";
+    speedLabel.textContent = "SOG";
+    courseLabel.textContent = "COG";
     title.textContent = currentJourney.journey.name;
+    const destination = activeJourneyDestination();
+    if (destinationValue)
+      destinationValue.textContent = destination?.name || "Not set";
     if (!currentJourney.position) {
+      eyebrow.textContent = "Underway · Waiting for GPS";
       message.textContent =
         "The journey has started. Waiting for the first GPS report.";
       updated.textContent = "Waiting";
       speed.textContent = "—";
       course.textContent = "—";
+      if (remainingValue) remainingValue.textContent = "—";
+      if (etaValue) etaValue.textContent = "—";
       return;
     }
 
     const point = currentJourney.position;
-    message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
+    const freshness = positionFreshness(point.timestamp);
+    panel.classList.toggle("is-stale", freshness === "stale");
+    panel.classList.toggle("is-recent", freshness === "recent");
+    indicator.classList.toggle("is-stale", freshness === "stale");
+    eyebrow.textContent =
+      freshness === "live"
+        ? "Underway · Live position"
+        : freshness === "recent"
+          ? "Underway · Recent position"
+          : "Underway · Position delayed";
+    message.textContent = destination
+      ? `Following the estimated route to ${destination.name}.`
+      : `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
     updated.textContent = formatPositionAge(point.timestamp);
-    speed.textContent =
-      point.speedKts == null ? "—" : `${point.speedKts.toFixed(1)} kn`;
+    const smoothedSpeed = smoothedUnderwaySpeedKts();
+    speed.textContent = Number.isFinite(smoothedSpeed)
+      ? `${smoothedSpeed.toFixed(1)} kt`
+      : "—";
     course.textContent =
-      point.course == null ? "—" : `${Math.round(point.course)}°`;
+      point.course == null
+        ? "—"
+        : `${String(Math.round(point.course)).padStart(3, "0")}°`;
+    const distanceNm = underwayDistanceNm();
+    if (remainingValue) {
+      remainingValue.textContent = Number.isFinite(distanceNm)
+        ? `${distanceNm.toFixed(1)} NM`
+        : "—";
+    }
+    if (etaValue) {
+      etaValue.textContent = formatUnderwayEta(distanceNm, smoothedSpeed);
+    }
+    if (routeNote) {
+      routeNote.textContent = underwayRoute?.failed
+        ? "The route could not be calculated safely — check marine charts."
+        : "Estimated route — use marine charts for navigation.";
+      routeNote.classList.toggle("is-warning", Boolean(underwayRoute?.failed));
+    }
     return;
   }
 
@@ -432,7 +583,7 @@ function renderJourneyOnMap() {
   L.marker([point.lat, point.lng], {
     icon: L.divIcon({
       className: "live-boat-marker",
-      html: '<span aria-hidden="true">⛵</span>',
+      html: `<span class="live-boat-arrow" style="--boat-course:${Number.isFinite(point.course) ? point.course : 0}deg" aria-hidden="true"><i class="fa-solid fa-location-arrow"></i></span>`,
       iconSize: [42, 42],
       iconAnchor: [21, 21],
     }),
@@ -442,7 +593,104 @@ function renderJourneyOnMap() {
       `<strong>${escapeMarkup(currentJourney.journey.name)}</strong><br>${escapeMarkup(formatPositionAge(point.timestamp))}`,
     );
 
-  focusPlanningMapOnCurrentPosition();
+  if (followsUnderwayPosition) focusUnderwayMap();
+}
+
+function focusUnderwayMap({ animate = true } = {}) {
+  if (!leafletMap || !currentJourney?.position) return false;
+  const point = currentJourney.position;
+  const destination = activeJourneyDestination();
+  const coordinates = [[point.lat, point.lng]];
+  if (Number.isFinite(destination?.lat) && Number.isFinite(destination?.lng)) {
+    coordinates.push([destination.lat, destination.lng]);
+  }
+  if (coordinates.length > 1) {
+    leafletMap.fitBounds(coordinates, {
+      animate,
+      maxZoom: 14,
+      ...planningMapFitPadding(leafletMap),
+    });
+  } else {
+    leafletMap.setView(coordinates[0], 14, { animate });
+  }
+  planningMapViewportSource = "live";
+  return true;
+}
+
+function updateUnderwayMapControls() {
+  const followButton = document.getElementById("follow-skibidi-btn");
+  const followLabel = followButton?.querySelector("span");
+  if (followButton) {
+    followButton.setAttribute("aria-pressed", String(followsUnderwayPosition));
+    followButton.classList.toggle("is-active", followsUnderwayPosition);
+  }
+  if (followLabel) {
+    followLabel.textContent = followsUnderwayPosition
+      ? "Following"
+      : "Follow Skibidi";
+  }
+
+  const planButton = document.getElementById("toggle-voyage-plan-btn");
+  const planLabel = planButton?.querySelector("span");
+  planButton?.setAttribute("aria-expanded", String(underwayPlanExpanded));
+  if (planLabel)
+    planLabel.textContent = underwayPlanExpanded ? "Hide plan" : "Show plan";
+
+  const mapStage = document.querySelector("#planning .map-stage");
+  mapStage?.classList.toggle(
+    "show-underway-plan",
+    Boolean(currentJourney?.active && underwayPlanExpanded),
+  );
+}
+
+function setupUnderwayMapControls() {
+  const followButton = document.getElementById("follow-skibidi-btn");
+  const planButton = document.getElementById("toggle-voyage-plan-btn");
+  const fullscreenButton = document.getElementById("voyage-fullscreen-btn");
+  const mapStage = document.querySelector("#planning .map-stage");
+
+  followButton?.addEventListener("click", () => {
+    followsUnderwayPosition = true;
+    updateUnderwayMapControls();
+    focusUnderwayMap();
+  });
+
+  planButton?.addEventListener("click", () => {
+    underwayPlanExpanded = !underwayPlanExpanded;
+    updateUnderwayMapControls();
+    setTimeout(() => {
+      leafletMap?.invalidateSize();
+      if (followsUnderwayPosition) focusUnderwayMap({ animate: false });
+    }, 0);
+  });
+
+  fullscreenButton?.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await mapStage?.requestFullscreen?.();
+      }
+    } catch (error) {
+      console.warn("Unable to change full-screen mode", error);
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    const label = fullscreenButton?.querySelector("span");
+    const icon = fullscreenButton?.querySelector("i");
+    const isFullscreen = document.fullscreenElement === mapStage;
+    if (label)
+      label.textContent = isFullscreen ? "Exit full screen" : "Full screen";
+    icon?.classList.toggle("fa-expand", !isFullscreen);
+    icon?.classList.toggle("fa-compress", isFullscreen);
+    setTimeout(() => {
+      leafletMap?.invalidateSize();
+      if (followsUnderwayPosition) focusUnderwayMap({ animate: false });
+    }, 0);
+  });
+
+  updateUnderwayMapControls();
 }
 
 function getPlanningMapFocus() {
@@ -525,13 +773,31 @@ function planningMapFitPadding(map) {
 
 async function refreshCurrentJourney() {
   try {
+    const wasActive = Boolean(currentJourney?.active);
     const response = await fetch("/api/journeys/current", {
       headers: { Accept: "application/json" },
     });
     if (!response.ok) throw new Error("Unable to load live journey");
     currentJourney = await response.json();
+    if (!wasActive && currentJourney?.active) {
+      followsUnderwayPosition = true;
+      underwayPlanExpanded = false;
+    }
+    if (wasActive && !currentJourney?.active) underwayRoute = null;
     renderJourneyStatus();
     renderJourneyOnMap();
+    if (leafletMap && planningRouteLayerGroup) {
+      planningRouteLayerGroup.clearLayers();
+      renderPlanningRouteOnMap(stops, planningRouteLayerGroup, leafletMap);
+    }
+    if (
+      currentJourney?.active &&
+      savedPlacesPreference == null &&
+      planningPlaceLayerGroup &&
+      !leafletMap.hasLayer(planningPlaceLayerGroup)
+    ) {
+      planningPlaceLayerGroup.addTo(leafletMap);
+    }
   } catch (error) {
     console.warn(error.message);
   }
@@ -1026,7 +1292,8 @@ async function refreshCurrentStatus() {
     renderJourneyStatus();
     resetPlanningMap();
     renderMapWithToggle();
-    const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
+    const speed =
+      parseFloat(document.getElementById("speed-input")?.value) || 0;
     renderTable(stops, speed);
   } catch (error) {
     console.warn(error.message);
@@ -1528,7 +1795,88 @@ function addPlanningDirectionArrows(polyline, target) {
   }).addTo(target);
 }
 
+function renderUnderwayDestinationRoute(target, map) {
+  const sequence = activeJourneyRouteSequence();
+  if (sequence.length < 2) return;
+
+  const destination = sequence[1];
+  L.marker([destination.lat, destination.lng], {
+    icon: L.divIcon({
+      className: "journey-destination-marker",
+      html: '<span aria-hidden="true"><i class="fa-solid fa-flag-checkered"></i></span>',
+      iconSize: [42, 42],
+      iconAnchor: [21, 36],
+    }),
+    zIndexOffset: 750,
+  })
+    .addTo(target)
+    .bindTooltip(destination.name || "Destination", {
+      permanent: true,
+      direction: "right",
+      offset: [12, -8],
+      className: "map-label map-label--destination",
+    });
+
+  const key = planningRouteKey(sequence);
+  if (underwayRoute?.key !== key) underwayRoute = null;
+  const version = ++planningRouteDrawVersion;
+  loadPlanningRoute(sequence).then((route) => {
+    if (
+      route.key !== key ||
+      version !== planningRouteDrawVersion ||
+      map !== leafletMap ||
+      !currentJourney?.active
+    ) {
+      return;
+    }
+
+    underwayRoute = route;
+    if (route.failed || !route.legs.length) {
+      L.polyline(
+        [
+          [sequence[0].lat, sequence[0].lng],
+          [sequence[1].lat, sequence[1].lng],
+        ],
+        routeStyle("planned"),
+      ).addTo(target);
+    } else {
+      route.legs.forEach((leg) => {
+        const coordinates = Array.isArray(leg.coordinates)
+          ? leg.coordinates.map(([lng, lat]) => [lat, lng])
+          : [];
+        if (coordinates.length < 2) return;
+        const polyline = L.polyline(coordinates, routeStyle("planned")).addTo(
+          target,
+        );
+        addPlanningDirectionArrows(polyline, target);
+      });
+
+      if (
+        route.legs.some(
+          (leg) =>
+            leg.method === "coastline" ||
+            (Array.isArray(leg.coordinates) && leg.coordinates.length > 2),
+        )
+      ) {
+        L.polyline(
+          [
+            [sequence[0].lat, sequence[0].lng],
+            [sequence[1].lat, sequence[1].lng],
+          ],
+          routeStyle("estimated", { weight: 2, opacity: 0.45 }),
+        ).addTo(target);
+      }
+    }
+    renderJourneyStatus();
+    if (followsUnderwayPosition) focusUnderwayMap({ animate: false });
+  });
+}
+
 function renderPlanningRouteOnMap(plannedStops, target, map) {
+  if (currentJourney?.active) {
+    renderUnderwayDestinationRoute(target, map);
+    return;
+  }
   const sequence = planningRouteSequence(plannedStops);
   if (sequence.length < 2) return;
   const key = planningRouteKey(sequence);
@@ -1570,6 +1918,16 @@ function initMap(stops, places, logs = null) {
     leafletMap = map;
     mapWasCreated = true;
     addBreadcrumbLegend(map);
+    map.on("dragstart", () => {
+      if (!currentJourney?.active) return;
+      followsUnderwayPosition = false;
+      updateUnderwayMapControls();
+    });
+    map.on("zoomstart", (event) => {
+      if (!currentJourney?.active || !event.originalEvent) return;
+      followsUnderwayPosition = false;
+      updateUnderwayMapControls();
+    });
   }
 
   const mapStops = [...stops];
@@ -1618,7 +1976,8 @@ function initMap(stops, places, logs = null) {
   }
   const showSavedPlaces =
     savedPlacesPreference ??
-    CaptainsLogMapSelection.showSavedPlacesByDefault(stops);
+    (Boolean(currentJourney?.active) ||
+      CaptainsLogMapSelection.showSavedPlacesByDefault(stops));
   if (showSavedPlaces && !map.hasLayer(planningPlaceLayerGroup)) {
     planningPlaceLayerGroup.addTo(map);
   } else if (!showSavedPlaces && map.hasLayer(planningPlaceLayerGroup)) {
@@ -1688,6 +2047,13 @@ function initMap(stops, places, logs = null) {
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
     map.invalidateSize();
+    if (
+      currentJourney?.active &&
+      followsUnderwayPosition &&
+      focusUnderwayMap({ animate: false })
+    ) {
+      return;
+    }
     if (focusPlanningMapOnCurrentPosition()) {
       return;
     }
@@ -1788,10 +2154,9 @@ function initMap(stops, places, logs = null) {
         '<i class="fa-solid fa-layer-group" aria-hidden="true"></i> Layers';
       layerList.prepend(title);
     }
-    const [recentVoyageInput, savedPlacesInput] =
-      planningLayersControl
-        .getContainer()
-        .querySelectorAll(".leaflet-control-layers-overlays input");
+    const [recentVoyageInput, savedPlacesInput] = planningLayersControl
+      .getContainer()
+      .querySelectorAll(".leaflet-control-layers-overlays input");
     recentVoyageInput?.addEventListener("change", () => {
       recentVoyagePreference = recentVoyageInput.checked;
     });
@@ -3955,6 +4320,7 @@ async function init() {
   setupLogTab();
   setupLogWizard();
   setupCurrentStopDescriptionEditor();
+  setupUnderwayMapControls();
 
   // Start independent requests together. None of these need to hold up the
   // cached chart or the navigation becoming interactive.

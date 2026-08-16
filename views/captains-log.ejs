@@ -89,14 +89,32 @@
             </div>
           <% } %>
         </div>
+        <div id="live-journey-actions" class="live-journey-actions hidden">
+          <button type="button" id="follow-skibidi-btn" aria-pressed="true">
+            <i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i>
+            <span>Following</span>
+          </button>
+          <button type="button" id="toggle-voyage-plan-btn" aria-expanded="false">
+            <i class="fa-solid fa-route" aria-hidden="true"></i>
+            <span>Show plan</span>
+          </button>
+          <button type="button" id="voyage-fullscreen-btn">
+            <i class="fa-solid fa-expand" aria-hidden="true"></i>
+            <span>Full screen</span>
+          </button>
+        </div>
         <dl class="live-journey-readings">
           <div><dt id="live-journey-updated-label">Last report</dt><dd id="live-journey-updated">—</dd></div>
           <div><dt id="live-journey-speed-label">Speed</dt><dd id="live-journey-speed">—</dd></div>
           <div><dt id="live-journey-course-label">Course</dt><dd id="live-journey-course">—</dd></div>
+          <div id="live-journey-destination-reading" class="hidden"><dt>Destination</dt><dd id="live-journey-destination">—</dd></div>
+          <div id="live-journey-remaining-reading" class="hidden"><dt>Remaining</dt><dd id="live-journey-remaining">—</dd></div>
+          <div id="live-journey-eta-reading" class="hidden"><dt>ETA</dt><dd id="live-journey-eta">—</dd></div>
           <div id="live-journey-temperature-reading" class="hidden"><dt>Sea Temp</dt><dd id="live-journey-temperature">—</dd></div>
           <div id="live-journey-mooring-reading" class="hidden"><dt>Mooring</dt><dd id="live-journey-mooring">—</dd></div>
           <div id="live-journey-rating-reading" class="hidden"><dt>Rating</dt><dd id="live-journey-rating">—</dd></div>
         </dl>
+        <p id="live-journey-route-note" class="live-journey-route-note hidden">Estimated route — use marine charts for navigation.</p>
         </section>
         <section class="table-col plan-section" aria-labelledby="plan-title">
           <header class="plan-section-header">
