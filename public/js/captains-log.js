@@ -787,7 +787,7 @@ function planningMapFitPadding(map) {
   };
 }
 
-async function refreshCurrentJourney() {
+async function refreshCurrentJourney({ render = true } = {}) {
   try {
     const wasActive = Boolean(currentJourney?.active);
     const response = await fetch("/api/journeys/current", {
@@ -801,22 +801,26 @@ async function refreshCurrentJourney() {
       underwayPlanExpanded = false;
     }
     if (wasActive && !currentJourney?.active) underwayRoute = null;
-    renderJourneyStatus();
-    renderJourneyOnMap();
-    if (leafletMap && planningRouteLayerGroup) {
-      planningRouteLayerGroup.clearLayers();
-      renderPlanningRouteOnMap(stops, planningRouteLayerGroup, leafletMap);
+    if (render) {
+      renderJourneyStatus();
+      renderJourneyOnMap();
+      if (leafletMap && planningRouteLayerGroup) {
+        planningRouteLayerGroup.clearLayers();
+        renderPlanningRouteOnMap(stops, planningRouteLayerGroup, leafletMap);
+      }
+      if (
+        currentJourney?.active &&
+        savedPlacesPreference == null &&
+        planningPlaceLayerGroup &&
+        !leafletMap.hasLayer(planningPlaceLayerGroup)
+      ) {
+        planningPlaceLayerGroup.addTo(leafletMap);
+      }
     }
-    if (
-      currentJourney?.active &&
-      savedPlacesPreference == null &&
-      planningPlaceLayerGroup &&
-      !leafletMap.hasLayer(planningPlaceLayerGroup)
-    ) {
-      planningPlaceLayerGroup.addTo(leafletMap);
-    }
+    return true;
   } catch (error) {
     console.warn(error.message);
+    return false;
   }
 }
 
@@ -1300,21 +1304,39 @@ function resetPlanningMap() {
   planningMapViewportSource = null;
 }
 
-async function refreshCurrentStatus() {
+async function refreshCurrentStatus({ render = true } = {}) {
   try {
     const response = await fetch("/api/current-stop");
     if (!response.ok) throw new Error("Unable to load current stop");
     currentStatus = await response.json();
     writeChartSnapshot();
-    renderJourneyStatus();
-    resetPlanningMap();
-    renderMapWithToggle();
-    const speed =
-      parseFloat(document.getElementById("speed-input")?.value) || 0;
-    renderTable(stops, speed);
+    if (render) {
+      renderJourneyStatus();
+      resetPlanningMap();
+      renderMapWithToggle();
+      const speed =
+        parseFloat(document.getElementById("speed-input")?.value) || 0;
+      renderTable(stops, speed);
+    }
+    return true;
   } catch (error) {
     console.warn(error.message);
+    return false;
   }
+}
+
+async function refreshInitialLiveState() {
+  const [journeyLoaded, statusLoaded] = await Promise.all([
+    refreshCurrentJourney({ render: false }),
+    refreshCurrentStatus({ render: false }),
+  ]);
+  if (!journeyLoaded || !statusLoaded) return;
+
+  renderJourneyStatus();
+  resetPlanningMap();
+  renderMapWithToggle();
+  const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
+  renderTable(stops, speed);
 }
 
 function setupCurrentStopDescriptionEditor() {
@@ -4328,7 +4350,6 @@ async function init() {
     stops = snapshot.stops;
     places = snapshot.places;
     currentStatus = snapshot.currentStatus || null;
-    renderJourneyStatus();
     renderMapWithToggle();
     renderTable(stops, parseFloat(speedInput.value));
   }
@@ -4350,11 +4371,10 @@ async function init() {
   setupCurrentStopDescriptionEditor();
   setupUnderwayMapControls();
 
-  // Start independent requests together. None of these need to hold up the
-  // cached chart or the navigation becoming interactive.
+  // Start independent data requests together. The two live-status requests
+  // are coordinated so the panel never renders a half-loaded state.
   const dataPromise = fetchData();
-  refreshCurrentJourney();
-  refreshCurrentStatus();
+  refreshInitialLiveState();
   loadVoyages();
   loadJourneyHistory();
 
