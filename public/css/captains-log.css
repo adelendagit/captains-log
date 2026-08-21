@@ -4158,6 +4158,18 @@ body {
   place-items: center;
 }
 
+.last-known-boat-marker {
+  border-style: dashed;
+  opacity: 0.78;
+}
+
+.last-known-boat-marker span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}
+
 .journey-destination-marker {
   display: grid;
   color: #fff;

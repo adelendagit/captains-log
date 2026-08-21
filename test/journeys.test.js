@@ -17,6 +17,7 @@ const {
   buildPlanningRoute,
   classifyPlanningPoint,
 } = require("../services/planningRoute");
+const { buildVesselState } = require("../services/vesselState");
 
 test("parses journey metadata stored in a card description", () => {
   assert.deepEqual(
@@ -120,6 +121,86 @@ test("builds a chronological historical track from journey comments", () => {
       },
     ],
   });
+});
+
+test("builds one coherent active vessel state from logbook and GPS data", () => {
+  const card = {
+    id: "journey-1",
+    name: "Poros → Hydra",
+    desc: [
+      "captains-log-journey: 1",
+      "status: active",
+      "startedAt: 2026-08-03T09:00:00.000Z",
+      "startedBy: member-1",
+    ].join("\n"),
+  };
+  const comments = [
+    {
+      data: {
+        card: { id: card.id },
+        text: "position\ntimestamp: 2026-08-03T09:02:00.000Z\nlat: 37.5\nlng: 23.4",
+      },
+    },
+  ];
+
+  const state = buildVesselState({
+    currentStatus: {
+      status: "underway",
+      departedAt: "2026-08-03T09:00:00.000Z",
+    },
+    journeyCards: [card],
+    comments,
+    now: "2026-08-03T09:03:00.000Z",
+  });
+
+  assert.equal(state.state, "underway");
+  assert.equal(state.journey.active, true);
+  assert.equal(state.journey.position.lat, 37.5);
+  assert.equal(state.telemetry.status, "active");
+  assert.equal(state.asOf, "2026-08-03T09:03:00.000Z");
+});
+
+test("preserves the last known GPS position outside an active journey", () => {
+  const card = {
+    id: "journey-1",
+    name: "Poros → Hydra",
+    desc: [
+      "captains-log-journey: 1",
+      "status: ended",
+      "startedAt: 2026-08-03T09:00:00.000Z",
+      "startedBy: member-1",
+      "endedAt: 2026-08-03T11:00:00.000Z",
+    ].join("\n"),
+  };
+  const state = buildVesselState({
+    currentStatus: { status: "unknown" },
+    journeyCards: [card],
+    comments: [
+      {
+        data: {
+          card: { id: card.id },
+          text: "position\ntimestamp: 2026-08-03T10:59:00.000Z\nlat: 37.6\nlng: 23.5",
+        },
+      },
+    ],
+  });
+
+  assert.equal(state.journey.active, false);
+  assert.equal(state.telemetry.status, "last-known");
+  assert.equal(state.telemetry.position.lng, 23.5);
+  assert.equal(state.telemetry.journey.name, "Poros → Hydra");
+});
+
+test("distinguishes no GPS data from an unavailable loading state", () => {
+  const state = buildVesselState({
+    currentStatus: { status: "unknown" },
+    journeyCards: [],
+    comments: [],
+  });
+
+  assert.equal(state.state, "unknown");
+  assert.deepEqual(state.journey, { active: false });
+  assert.equal(state.telemetry.status, "none");
 });
 
 test("exchanges a pairing code once for an encrypted mobile token", () => {

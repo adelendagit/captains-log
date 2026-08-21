@@ -34,6 +34,8 @@ let canPlan = false;
 let boardLabels = [];
 let currentStatus = null;
 let currentJourney = null;
+let currentVesselState = null;
+let vesselStateLoadFailed = false;
 let currentStopDescriptionEditing = false;
 let journeyLayerGroup = null;
 let underwayRoute = null;
@@ -78,7 +80,7 @@ const ROUTE_STYLES = Object.freeze({
     opacity: 0.95,
   }),
 });
-const CHART_CACHE_KEY = "captains-log:chart-snapshot:v1";
+const CHART_CACHE_KEY = "captains-log:chart-snapshot:v2";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOGBOOK_CACHE_KEY = "captains-log:logbook-snapshot:v1";
 const LOGBOOK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -399,6 +401,10 @@ function renderJourneyStatus() {
   const routeNote = document.getElementById("live-journey-route-note");
   const journeyActions = document.getElementById("live-journey-actions");
   const mapStage = document.querySelector("#planning .map-stage");
+  const setEyebrow = (value) => {
+    const cached = vesselStateLoadFailed && currentVesselState;
+    eyebrow.textContent = `${value}${cached ? " · Cached" : ""}`;
+  };
 
   const showArrivalDetails =
     !currentJourney?.active && currentStatus?.status === "arrived";
@@ -431,6 +437,27 @@ function renderJourneyStatus() {
   );
   indicator.classList.remove("is-stale");
 
+  if (!currentVesselState) {
+    message.classList.remove("hidden");
+    renderCurrentStopDescriptionEditor();
+    setEyebrow(
+      vesselStateLoadFailed ? "Live status unavailable" : "Current status",
+    );
+    title.textContent = vesselStateLoadFailed
+      ? "Unable to reach the ship’s log"
+      : "Checking Skibidi’s status…";
+    message.textContent = vesselStateLoadFailed
+      ? "Try again shortly. No current status was available on this device."
+      : "Connecting to the ship’s log.";
+    updatedLabel.textContent = "Status";
+    speedLabel.textContent = "GPS";
+    courseLabel.textContent = "Chart";
+    updated.textContent = vesselStateLoadFailed ? "Unavailable" : "Checking";
+    speed.textContent = "—";
+    course.textContent = "Available";
+    return;
+  }
+
   if (currentJourney?.active) {
     message.classList.remove("hidden");
     renderCurrentStopDescriptionEditor();
@@ -442,7 +469,7 @@ function renderJourneyStatus() {
     if (destinationValue)
       destinationValue.textContent = destination?.name || "Not set";
     if (!currentJourney.position) {
-      eyebrow.textContent = "Underway · Waiting for GPS";
+      setEyebrow("Underway · Waiting for GPS");
       message.textContent =
         "The journey has started. Waiting for the first GPS report.";
       updated.textContent = "Waiting";
@@ -458,12 +485,13 @@ function renderJourneyStatus() {
     panel.classList.toggle("is-stale", freshness === "stale");
     panel.classList.toggle("is-recent", freshness === "recent");
     indicator.classList.toggle("is-stale", freshness === "stale");
-    eyebrow.textContent =
+    setEyebrow(
       freshness === "live"
         ? "Underway · Live position"
         : freshness === "recent"
           ? "Underway · Recent position"
-          : "Underway · Position delayed";
+          : "Underway · Position delayed",
+    );
     message.textContent = destination
       ? `Following the estimated route to ${destination.name}.`
       : `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°`;
@@ -496,7 +524,7 @@ function renderJourneyStatus() {
 
   if (currentStatus?.status === "arrived" && currentStatus.current) {
     const place = currentStatus.current;
-    eyebrow.textContent = isAnchorage(place) ? "At anchor" : "Current stop";
+    setEyebrow(isAnchorage(place) ? "At anchor" : "Current stop");
     title.textContent = place.name;
     const canEditDescription = Boolean(
       document.getElementById("current-stop-description-controls"),
@@ -540,7 +568,7 @@ function renderJourneyStatus() {
     const from = currentStatus.from?.name;
     const destination =
       currentStatus.destination?.name || currentStatus.plannedDestination?.name;
-    eyebrow.textContent = "Underway · Last report";
+    setEyebrow("Underway · Last report");
     title.textContent =
       from && destination
         ? `${from} → ${destination}`
@@ -556,17 +584,30 @@ function renderJourneyStatus() {
     return;
   }
 
-  eyebrow.textContent = "Last known position";
   message.classList.remove("hidden");
   renderCurrentStopDescriptionEditor();
-  title.textContent = "Position not yet logged";
-  message.textContent =
-    "The chart still shows planned stops and previous voyages.";
-  updatedLabel.textContent = "Last report";
-  speedLabel.textContent = "Status";
+  title.textContent = "No current voyage status";
+  const telemetry = currentVesselState.telemetry;
+  if (telemetry?.status === "last-known" && telemetry.position) {
+    const point = telemetry.position;
+    setEyebrow("Last GPS report");
+    message.textContent = `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°${telemetry.journey?.name ? ` · ${telemetry.journey.name}` : ""}`;
+    updatedLabel.textContent = "GPS updated";
+    speedLabel.textContent = "Source";
+    courseLabel.textContent = "Voyage state";
+    updated.textContent = formatPositionAge(telemetry.observedAt);
+    speed.textContent = "Recorded GPS";
+    course.textContent = "Not currently logged";
+    return;
+  }
+
+  setEyebrow("Ship’s log");
+  message.textContent = "No GPS position has been recorded.";
+  updatedLabel.textContent = "Current status";
+  speedLabel.textContent = "GPS";
   courseLabel.textContent = "Chart";
-  updated.textContent = "Not recorded";
-  speed.textContent = "Standing by";
+  updated.textContent = "Not logged";
+  speed.textContent = "No reports";
   course.textContent = "Available";
 }
 
@@ -578,7 +619,30 @@ function renderJourneyOnMap() {
   journeyLayerGroup.clearLayers();
 
   const journeyModel = CaptainsLogLiveMap.buildJourneyModel(currentJourney);
-  if (!journeyModel) return;
+  if (!journeyModel) {
+    const telemetry = currentVesselState?.telemetry;
+    const point = telemetry?.position;
+    if (
+      currentVesselState?.state !== "unknown" ||
+      telemetry?.status !== "last-known" ||
+      !CaptainsLogLiveMap.hasCoordinates(point)
+    ) {
+      return;
+    }
+    L.marker([point.lat, point.lng], {
+      icon: L.divIcon({
+        className: "live-boat-marker last-known-boat-marker",
+        html: '<span aria-hidden="true"><i class="fa-solid fa-location-dot"></i></span>',
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+      }),
+    })
+      .addTo(journeyLayerGroup)
+      .bindPopup(
+        `<strong>Last GPS report</strong><br>${escapeMarkup(formatPositionAge(point.timestamp))}`,
+      );
+    return;
+  }
   if (journeyModel.trackCoordinates.length > 1) {
     L.polyline(
       journeyModel.trackCoordinates,
@@ -730,6 +794,19 @@ function getPlanningMapFocus() {
     return { lat: currentPlace.lat, lng: currentPlace.lng, source: "status" };
   }
 
+  const lastKnownPosition = currentVesselState?.telemetry?.position;
+  if (
+    currentVesselState?.state === "unknown" &&
+    currentVesselState?.telemetry?.status === "last-known" &&
+    CaptainsLogLiveMap.hasCoordinates(lastKnownPosition)
+  ) {
+    return {
+      lat: lastKnownPosition.lat,
+      lng: lastKnownPosition.lng,
+      source: "last-known",
+    };
+  }
+
   return null;
 }
 
@@ -787,14 +864,18 @@ function planningMapFitPadding(map) {
   };
 }
 
-async function refreshCurrentJourney({ render = true } = {}) {
+async function refreshVesselState({ render = true, resetMap = false } = {}) {
   try {
     const wasActive = Boolean(currentJourney?.active);
-    const response = await fetch("/api/journeys/current", {
+    const response = await fetch("/api/vessel-state", {
       headers: { Accept: "application/json" },
     });
-    if (!response.ok) throw new Error("Unable to load live journey");
-    currentJourney = await response.json();
+    if (!response.ok) throw new Error("Unable to load vessel state");
+    currentVesselState = await response.json();
+    currentStatus = currentVesselState.logbook;
+    currentJourney = currentVesselState.journey;
+    vesselStateLoadFailed = false;
+    writeChartSnapshot();
     if (!wasActive && currentJourney?.active) {
       followsUnderwayPosition =
         !CaptainsLogMapSelection.hasUpcomingStops(stops);
@@ -803,7 +884,12 @@ async function refreshCurrentJourney({ render = true } = {}) {
     if (wasActive && !currentJourney?.active) underwayRoute = null;
     if (render) {
       renderJourneyStatus();
-      renderJourneyOnMap();
+      if (resetMap) {
+        resetPlanningMap();
+        renderMapWithToggle();
+      } else {
+        renderJourneyOnMap();
+      }
       if (leafletMap && planningRouteLayerGroup) {
         planningRouteLayerGroup.clearLayers();
         renderPlanningRouteOnMap(stops, planningRouteLayerGroup, leafletMap);
@@ -816,10 +902,15 @@ async function refreshCurrentJourney({ render = true } = {}) {
       ) {
         planningPlaceLayerGroup.addTo(leafletMap);
       }
+      const speed =
+        parseFloat(document.getElementById("speed-input")?.value) || 0;
+      renderTable(stops, speed);
     }
     return true;
   } catch (error) {
     console.warn(error.message);
+    vesselStateLoadFailed = true;
+    if (render) renderJourneyStatus();
     return false;
   }
 }
@@ -1277,6 +1368,7 @@ function writeChartSnapshot() {
         stops,
         places,
         currentStatus,
+        currentVesselState,
       }),
     );
   } catch (_error) {
@@ -1302,41 +1394,6 @@ function resetPlanningMap() {
   planningStopMarkers.clear();
   underwayMarker = null;
   planningMapViewportSource = null;
-}
-
-async function refreshCurrentStatus({ render = true } = {}) {
-  try {
-    const response = await fetch("/api/current-stop");
-    if (!response.ok) throw new Error("Unable to load current stop");
-    currentStatus = await response.json();
-    writeChartSnapshot();
-    if (render) {
-      renderJourneyStatus();
-      resetPlanningMap();
-      renderMapWithToggle();
-      const speed =
-        parseFloat(document.getElementById("speed-input")?.value) || 0;
-      renderTable(stops, speed);
-    }
-    return true;
-  } catch (error) {
-    console.warn(error.message);
-    return false;
-  }
-}
-
-async function refreshInitialLiveState() {
-  const [journeyLoaded, statusLoaded] = await Promise.all([
-    refreshCurrentJourney({ render: false }),
-    refreshCurrentStatus({ render: false }),
-  ]);
-  if (!journeyLoaded || !statusLoaded) return;
-
-  renderJourneyStatus();
-  resetPlanningMap();
-  renderMapWithToggle();
-  const speed = parseFloat(document.getElementById("speed-input")?.value) || 0;
-  renderTable(stops, speed);
 }
 
 function setupCurrentStopDescriptionEditor() {
@@ -4241,11 +4298,7 @@ function setupLogWizard() {
         }
       }
 
-      [currentStatus, currentJourney] = await Promise.all([
-        fetch("/api/current-stop").then((response) => response.json()),
-        fetch("/api/journeys/current").then((response) => response.json()),
-      ]);
-      renderJourneyStatus();
+      await refreshVesselState({ resetMap: true });
       renderTable(
         stops,
         parseFloat(document.getElementById("speed-input").value) || 0,
@@ -4349,7 +4402,11 @@ async function init() {
   if (snapshot) {
     stops = snapshot.stops;
     places = snapshot.places;
-    currentStatus = snapshot.currentStatus || null;
+    currentVesselState = snapshot.currentVesselState || null;
+    currentStatus =
+      currentVesselState?.logbook || snapshot.currentStatus || null;
+    currentJourney = currentVesselState?.journey || null;
+    if (currentVesselState) renderJourneyStatus();
     renderMapWithToggle();
     renderTable(stops, parseFloat(speedInput.value));
   }
@@ -4371,10 +4428,10 @@ async function init() {
   setupCurrentStopDescriptionEditor();
   setupUnderwayMapControls();
 
-  // Start independent data requests together. The two live-status requests
-  // are coordinated so the panel never renders a half-loaded state.
+  // Start independent data requests together. Vessel state arrives as one
+  // coherent server snapshot, so the panel never renders a half-loaded state.
   const dataPromise = fetchData();
-  refreshInitialLiveState();
+  refreshVesselState({ resetMap: true });
   loadVoyages();
   loadJourneyHistory();
 
@@ -4406,7 +4463,7 @@ async function init() {
     renderMapWithToggle();
   });
 
-  journeyRefreshInterval = setInterval(refreshCurrentJourney, 30000);
+  journeyRefreshInterval = setInterval(() => refreshVesselState(), 30000);
 }
 
 document.addEventListener("DOMContentLoaded", init);

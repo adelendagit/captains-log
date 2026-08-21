@@ -130,8 +130,13 @@ Authenticated Trello board members can use:
 - `POST /api/journeys/:cardId/end`
 
 `GET /api/journeys/current` is public and returns the active journey, its latest
-position and up to 100 recent track points. The chartroom polls this endpoint every
-30 seconds.
+position and up to 100 recent track points. It remains the journey-specific API
+used by the native client.
+
+The web chartroom uses `GET /api/vessel-state`, which returns one coherent snapshot
+of the current logbook state, active journey, and GPS telemetry. When no journey is
+active, the telemetry still identifies the latest recorded GPS point as historical
+rather than presenting it as a live position.
 
 The native SwiftUI project is at `ios/CaptainsLog.xcodeproj`. It signs in through
 the existing Trello OAuth flow, stores its encrypted app credential in the iOS

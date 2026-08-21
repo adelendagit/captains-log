@@ -34,6 +34,7 @@ const {
   resolvePlanPlaceCard,
 } = require("../services/plans");
 const { withPlacePresentation } = require("../services/places");
+const { buildVesselState } = require("../services/vesselState");
 
 let currentStopCache = null;
 let currentStopCacheExpiresAt = 0;
@@ -1045,6 +1046,35 @@ router.get("/api/current-stop", async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+router.get("/api/vessel-state", async (req, res, next) => {
+  try {
+    const [currentStatus, journeyCards, comments] = await Promise.all([
+      getCurrentStatus(),
+      fetchJourneyCards(),
+      fetchAllComments(),
+    ]);
+    const visibleStatus =
+      req.user || !currentStatus.current
+        ? currentStatus
+        : {
+            ...currentStatus,
+            current: { ...currentStatus.current, desc: undefined },
+          };
+
+    res.vary("Cookie");
+    res.set("Cache-Control", "private, no-store");
+    res.json(
+      buildVesselState({
+        currentStatus: visibleStatus,
+        journeyCards,
+        comments,
+      }),
+    );
+  } catch (error) {
+    next(error);
   }
 });
 
