@@ -165,6 +165,7 @@ private struct CurrentPositionView: View {
     @State private var prefersUnderwayMap = true
     @State private var followsBoat = true
     @State private var courseUp = true
+    @State private var underwayCameraDistance: CLLocationDistance?
     @State private var isEditingDescription = false
     @State private var descriptionDraft = ""
     @State private var isSavingDescription = false
@@ -464,19 +465,30 @@ private struct CurrentPositionView: View {
 
                 if let boatCoordinate {
                     Annotation("Skibidi", coordinate: boatCoordinate, anchor: .center) {
-                        Image(systemName: "location.north.fill")
-                            .font(.system(size: 25, weight: .bold))
-                            .foregroundStyle(Chartroom.ink)
-                            .padding(9)
-                            .background(Chartroom.signal, in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 3))
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                            .rotationEffect(.degrees(courseUp ? 0 : displayCourse ?? 0))
+                        ZStack {
+                            Circle()
+                                .fill(Chartroom.signal)
+                                .frame(width: 48, height: 48)
+                                .overlay(Circle().stroke(.white, lineWidth: 3))
+                            Image(systemName: "sailboat.fill")
+                                .font(.system(size: 23, weight: .bold))
+                                .foregroundStyle(Chartroom.ink)
+                            Image(systemName: "arrowtriangle.up.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Chartroom.ink)
+                                .offset(y: -29)
+                        }
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        .rotationEffect(.degrees(courseUp ? 0 : displayCourse ?? 0))
+                        .accessibilityLabel("Skibidi, current boat position")
                     }
                 }
             }
             .mapStyle(.standard(elevation: .realistic))
             .ignoresSafeArea()
+            .onMapCameraChange(frequency: .onEnd) { context in
+                underwayCameraDistance = clampedUnderwayCameraDistance(context.camera.distance)
+            }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 8).onChanged { _ in followsBoat = false }
             )
@@ -506,6 +518,11 @@ private struct CurrentPositionView: View {
                     ) {
                         prefersUnderwayMap = false
                     }
+                }
+                Spacer()
+                HStack {
+                    Spacer()
+                    underwayZoomControls
                 }
                 Spacer()
                 underwayInformationPanel
@@ -541,6 +558,37 @@ private struct CurrentPositionView: View {
                 .frame(width: 40, height: 40)
                 .foregroundStyle(Chartroom.ink)
                 .background(.ultraThinMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var underwayZoomControls: some View {
+        VStack(spacing: 0) {
+            underwayZoomButton(systemImage: "plus", accessibilityLabel: "Zoom in") {
+                zoomUnderwayMap(by: 0.62)
+            }
+            Divider()
+                .frame(width: 30)
+            underwayZoomButton(systemImage: "minus", accessibilityLabel: "Zoom out") {
+                zoomUnderwayMap(by: 1.6)
+            }
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.7), lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+    }
+
+    private func underwayZoomButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.bold))
+                .frame(width: 48, height: 48)
+                .foregroundStyle(Chartroom.ink)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -786,20 +834,28 @@ private struct CurrentPositionView: View {
         return tracker.isTracking ? "location.fill" : "location.slash"
     }
 
-    private var followDistanceMeters: CLLocationDistance {
-        if let remainingDistanceNM {
-            return min(18_000, max(2_500, remainingDistanceNM * 1_852 * 1.15))
-        }
-        let speed = max(2, smoothedSpeedKts ?? 2)
-        return min(10_000, max(2_500, speed * 900))
+    private var oneHourLookAheadMeters: CLLocationDistance {
+        max(2, smoothedSpeedKts ?? 5) * 1_852
+    }
+
+    private var defaultUnderwayCameraDistance: CLLocationDistance {
+        clampedUnderwayCameraDistance(oneHourLookAheadMeters * 1.4)
+    }
+
+    private func clampedUnderwayCameraDistance(_ distance: CLLocationDistance) -> CLLocationDistance {
+        min(30_000, max(1_000, distance))
     }
 
     private func followBoat() {
         guard let boatCoordinate else { return }
         let course = displayCourse ?? 0
-        let distance = followDistanceMeters
+        let distance = underwayCameraDistance ?? defaultUnderwayCameraDistance
         let center = courseUp
-            ? projectedCoordinate(from: boatCoordinate, bearing: course, distanceMeters: distance * 0.18)
+            ? projectedCoordinate(
+                from: boatCoordinate,
+                bearing: course,
+                distanceMeters: min(oneHourLookAheadMeters, distance) * 0.4
+            )
             : boatCoordinate
         withAnimation(.easeInOut(duration: 0.45)) {
             camera = .camera(
@@ -811,6 +867,14 @@ private struct CurrentPositionView: View {
                 )
             )
         }
+    }
+
+    private func zoomUnderwayMap(by factor: Double) {
+        underwayCameraDistance = clampedUnderwayCameraDistance(
+            (underwayCameraDistance ?? defaultUnderwayCameraDistance) * factor
+        )
+        followsBoat = true
+        followBoat()
     }
 
     private func projectedCoordinate(

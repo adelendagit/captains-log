@@ -38,8 +38,10 @@ function selectAvailableLists(boards, configuredIds) {
     const primaryBoard = boards.find((board) => board.id === BOARD_ID);
     return defaultTodoLists(primaryBoard?.lists || []);
   }
-  const configuredIdSet = new Set(configuredIds);
-  return allBoardLists(boards).filter((list) => configuredIdSet.has(list.id));
+  const listsById = new Map(
+    allBoardLists(boards).map((list) => [list.id, list]),
+  );
+  return configuredIds.map((listId) => listsById.get(listId)).filter(Boolean);
 }
 
 router.get("/", async (req, res, next) => {
@@ -138,9 +140,7 @@ router.put("/api/settings", async (req, res, next) => {
         .json({ error: "One or more selected lists are unavailable" });
       return;
     }
-    const selectedListIds = availableLists
-      .filter((list) => listIds.includes(list.id))
-      .map((list) => list.id);
+    const selectedListIds = listIds;
     await setTodoListIds(selectedListIds);
     res.json({ success: true, selectedListIds });
   } catch (error) {

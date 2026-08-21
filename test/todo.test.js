@@ -69,6 +69,7 @@ test("to-do settings select which open board lists are available", async (t) => 
         },
       };
     }
+    if (String(url).includes("/lists/shopping/cards")) return { data: [] };
     if (String(url).includes("/lists/home-jobs/cards")) return { data: [] };
     throw new Error(`Unexpected Trello request: ${url}`);
   };
@@ -109,7 +110,7 @@ test("to-do settings select which open board lists are available", async (t) => 
   const updateResponse = await fetch(`${baseURL}/api/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ listIds: ["home-jobs"] }),
+    body: JSON.stringify({ listIds: ["home-jobs", "shopping"] }),
   });
   assert.equal(updateResponse.status, 200);
 
@@ -118,9 +119,10 @@ test("to-do settings select which open board lists are available", async (t) => 
   assert.equal(dataResponse.status, 200);
   assert.deepEqual(
     data.lists.map((list) => list.id),
-    ["home-jobs"],
+    ["home-jobs", "shopping"],
   );
   assert.equal(data.lists[0].boardName, "Home");
+  assert.equal(data.lists[1].boardName, "Captain's Log");
 
   const restoreResponse = await fetch(`${baseURL}/shopping-card/completion`, {
     method: "POST",

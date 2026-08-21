@@ -2752,6 +2752,7 @@ private struct TodoSettingsView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @State private var boards: [TodoBoardSummary] = []
     @State private var selectedListIDs: Set<String> = []
+    @State private var selectedListOrder: [String] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -2763,27 +2764,62 @@ private struct TodoSettingsView: View {
                     ProgressView("Loading Trello lists…")
                 } else {
                     List {
-                        ForEach(boards) { board in
-                            Section(board.name) {
-                                ForEach(board.lists) { list in
+                        Section("Selected Lists") {
+                            if selectedLists.isEmpty {
+                                Text("No lists selected")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(selectedLists) { list in
                                     Button {
-                                        if selectedListIDs.contains(list.id) {
-                                            selectedListIDs.remove(list.id)
-                                        } else {
-                                            selectedListIDs.insert(list.id)
-                                        }
+                                        remove(list.id)
                                     } label: {
                                         HStack {
-                                            Text(list.name).foregroundStyle(.primary)
-                                            Spacer()
-                                            if selectedListIDs.contains(list.id) {
-                                                Image(systemName: "checkmark").foregroundStyle(Chartroom.sea)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(list.name).foregroundStyle(.primary)
+                                                if let boardName = list.boardName {
+                                                    Text(boardName)
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                }
                                             }
+                                            Spacer()
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundStyle(.red)
                                         }
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 }
+                                .onMove(perform: moveSelectedLists)
+                            }
+                        }
+
+                        Section("Boards") {
+                            ForEach(boards) { board in
+                                NavigationLink {
+                                    TodoBoardListSettingsView(
+                                        board: board,
+                                        selectedListIDs: $selectedListIDs,
+                                        selectedListOrder: $selectedListOrder
+                                    )
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(board.name)
+                                            Text("\(board.lists.count) available")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        let count = selectedCount(in: board)
+                                        if count > 0 {
+                                            Text("\(count) selected")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(Chartroom.sea)
+                                        }
+                                    }
+                                }
+                                .disabled(board.lists.isEmpty)
                             }
                         }
                     }
@@ -2804,6 +2840,10 @@ private struct TodoSettingsView: View {
                     Button("Save") { Task { await save() } }
                         .disabled(selectedListIDs.isEmpty || isLoading || isSaving)
                 }
+                ToolbarItem(placement: .bottomBar) {
+                    EditButton()
+                        .disabled(selectedLists.count < 2 || isLoading || isSaving)
+                }
             }
             .task { await load() }
             .alert("Couldn’t save settings", isPresented: errorIsPresented) {
@@ -2821,12 +2861,33 @@ private struct TodoSettingsView: View {
         )
     }
 
+    private var selectedLists: [TodoListSummary] {
+        let listsByID = Dictionary(
+            uniqueKeysWithValues: boards.flatMap(\.lists).map { ($0.id, $0) }
+        )
+        return selectedListOrder.compactMap { listsByID[$0] }
+    }
+
+    private func selectedCount(in board: TodoBoardSummary) -> Int {
+        board.lists.count { selectedListIDs.contains($0.id) }
+    }
+
+    private func remove(_ listID: String) {
+        selectedListIDs.remove(listID)
+        selectedListOrder.removeAll { $0 == listID }
+    }
+
+    private func moveSelectedLists(from source: IndexSet, to destination: Int) {
+        selectedListOrder.move(fromOffsets: source, toOffset: destination)
+    }
+
     @MainActor private func load() async {
         guard let token = authentication.token else { return }
         do {
             let settings = try await authentication.api.todoSettings(token: token)
             boards = settings.boards
             selectedListIDs = Set(settings.selectedListIds)
+            selectedListOrder = settings.selectedListIds
             isLoading = false
         } catch {
             isLoading = false
@@ -2839,13 +2900,57 @@ private struct TodoSettingsView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            let orderedIDs = boards.flatMap(\.lists).filter { selectedListIDs.contains($0.id) }.map(\.id)
-            try await authentication.api.updateTodoSettings(listIDs: orderedIDs, token: token)
+            try await authentication.api.updateTodoSettings(listIDs: selectedListOrder, token: token)
             NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct TodoBoardListSettingsView: View {
+    let board: TodoBoardSummary
+    @Binding var selectedListIDs: Set<String>
+    @Binding var selectedListOrder: [String]
+
+    var body: some View {
+        List(board.lists) { list in
+            Button {
+                if selectedListIDs.contains(list.id) {
+                    selectedListIDs.remove(list.id)
+                    selectedListOrder.removeAll { $0 == list.id }
+                } else {
+                    selectedListIDs.insert(list.id)
+                    selectedListOrder.append(list.id)
+                }
+            } label: {
+                HStack {
+                    Text(list.name).foregroundStyle(.primary)
+                    Spacer()
+                    if selectedListIDs.contains(list.id) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Chartroom.sea)
+                    } else {
+                        Image(systemName: "circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .overlay {
+            if board.lists.isEmpty {
+                ContentUnavailableView(
+                    "No open lists",
+                    systemImage: "list.bullet",
+                    description: Text("This board has no available Trello lists.")
+                )
+            }
+        }
+        .navigationTitle(board.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
