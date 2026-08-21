@@ -1,5 +1,6 @@
 .env
 node_modules
 sessions
+data/todo-settings.json
 .DS_Store
 xcuserdata/

@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-const BOARD_ID = "BUk0xpGt";
+const BOARD_ID = process.env.TRELLO_BOARD_ID || "BUk0xpGt";
 const DEFAULT_LIST_ID = "62b3554c15a79549f9f3f52d";
 const KEY = process.env.TRELLO_KEY;
 const TOKEN = process.env.TRELLO_TOKEN;
@@ -13,7 +13,7 @@ function credentials() {
   return { key: KEY, token: TOKEN };
 }
 
-async function fetchTodoLists() {
+async function fetchBoardLists() {
   const { data } = await axios.get(`${API_BASE}/boards/${BOARD_ID}/lists`, {
     params: {
       ...credentials(),
@@ -22,15 +22,23 @@ async function fetchTodoLists() {
     },
   });
 
-  const lists = data.sort((a, b) => a.pos - b.pos);
+  return data.sort((a, b) => a.pos - b.pos);
+}
+
+function defaultTodoLists(lists) {
   const todayIndex = lists.findIndex(
     (list) => list.name.trim().toLowerCase() === "today",
   );
   if (todayIndex === -1) {
-    throw new Error('The Trello board does not contain an open "Today" list');
+    const defaultList = lists.find((list) => list.id === DEFAULT_LIST_ID);
+    return defaultList ? [defaultList] : lists.slice(0, 1);
   }
 
   return lists.slice(0, todayIndex + 1);
+}
+
+async function fetchTodoLists() {
+  return defaultTodoLists(await fetchBoardLists());
 }
 
 async function fetchTodoCards(listId = DEFAULT_LIST_ID) {
@@ -130,7 +138,11 @@ async function addTodoCardAttachment(
   return data;
 }
 
-async function downloadTodoCardAttachment(cardId, attachmentId, allowedListIds) {
+async function downloadTodoCardAttachment(
+  cardId,
+  attachmentId,
+  allowedListIds,
+) {
   const card = await fetchCard(cardId);
   assertAllowedList(card.idList, allowedListIds);
 
@@ -199,6 +211,8 @@ module.exports = {
   archiveTodoCard,
   createTodoCard,
   downloadTodoCardAttachment,
+  defaultTodoLists,
+  fetchBoardLists,
   fetchTodoCards,
   fetchTodoLists,
   reorderTodoCards,

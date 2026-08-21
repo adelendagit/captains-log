@@ -159,6 +159,19 @@ final class APIClient: Sendable {
         return try? JSONDecoder.captainsLog.decode(TodoDataResponse.self, from: data)
     }
 
+    func todoSettings(token: String) async throws -> TodoSettingsResponse {
+        try await send(path: "to-do/api/settings", token: token)
+    }
+
+    func updateTodoSettings(listIDs: [String], token: String) async throws {
+        let _: SuccessResponse = try await send(
+            path: "to-do/api/settings",
+            method: "PUT",
+            encodableBody: TodoSettingsBody(listIds: listIDs),
+            token: token
+        )
+    }
+
     @discardableResult
     func planStop(
         placeID: String,
@@ -784,6 +797,10 @@ private struct ReorderStopsBody: Codable, Sendable {
 
 private struct TodoCompletionBody: Codable {
     let complete: Bool
+}
+
+private struct TodoSettingsBody: Codable {
+    let listIds: [String]
 }
 
 private struct UpdateTodoBody: Codable {

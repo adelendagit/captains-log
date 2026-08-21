@@ -1,6 +1,7 @@
 <article
   class="todo-card<%= complete ? ' is-done' : '' %>"
   data-card-id="<%= card.id %>"
+  data-card-name="<%= card.name %>"
   data-card-pos="<%= card.pos %>"
 >
   <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>

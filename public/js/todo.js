@@ -8,6 +8,10 @@ const doneEmpty = document.getElementById("done-empty");
 const statusMessage = document.getElementById("todo-status");
 const doneSection = document.querySelector(".done-section");
 const addItemForm = document.getElementById("add-item-form");
+const addItemMatches = document.getElementById("add-item-matches");
+const settingsButton = document.getElementById("todo-settings-button");
+const settingsDialog = document.getElementById("todo-settings-dialog");
+const settingsForm = document.getElementById("todo-settings-form");
 const userMenuButton = document.getElementById("user-menu-btn");
 const userDropdown = document.getElementById("user-dropdown");
 
@@ -77,10 +81,68 @@ async function setCompletion(card, complete) {
     statusMessage.textContent = complete
       ? "Item marked as done."
       : "Item restored.";
+    return true;
   } catch (error) {
     checkbox.checked = !complete;
     checkbox.disabled = false;
     statusMessage.textContent = error.message;
+    return false;
+  }
+}
+
+function normalized(value) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function matchingCards(query) {
+  if (!query) return [];
+  return Array.from(page.querySelectorAll(".todo-card"))
+    .filter((card) => normalized(card.dataset.cardName).includes(query))
+    .sort((left, right) => {
+      const leftExact = normalized(left.dataset.cardName) === query;
+      const rightExact = normalized(right.dataset.cardName) === query;
+      if (leftExact !== rightExact) return leftExact ? -1 : 1;
+      if (
+        left.classList.contains("is-done") !==
+        right.classList.contains("is-done")
+      ) {
+        return left.classList.contains("is-done") ? 1 : -1;
+      }
+      return left.dataset.cardName.localeCompare(right.dataset.cardName);
+    })
+    .slice(0, 8);
+}
+
+function renderMatches(input) {
+  if (!addItemMatches) return;
+  const query = normalized(input.value);
+  const matches = matchingCards(query);
+  addItemMatches.replaceChildren();
+  addItemMatches.hidden = matches.length === 0;
+  if (!matches.length) return;
+
+  for (const card of matches) {
+    const complete = card.classList.contains("is-done");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "add-item-match";
+    const name = document.createElement("span");
+    name.textContent = card.dataset.cardName;
+    const action = document.createElement("span");
+    action.className = "add-item-match-action";
+    action.textContent = complete ? "Restore" : "Already open";
+    button.append(name, action);
+    button.disabled = !complete;
+    if (complete) {
+      button.addEventListener("click", async () => {
+        if (await setCompletion(card, false)) {
+          input.value = "";
+          renderMatches(input);
+          input.focus();
+        }
+      });
+    }
+    addItemMatches.appendChild(button);
   }
 }
 
@@ -91,12 +153,29 @@ page.addEventListener("change", (event) => {
 });
 
 if (addItemForm) {
+  const input = addItemForm.querySelector("input[name='name']");
+  input.addEventListener("input", () => renderMatches(input));
+  input.addEventListener("focus", () => renderMatches(input));
   addItemForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const input = addItemForm.querySelector("input[name='name']");
     const button = addItemForm.querySelector("button[type='submit']");
     const name = input.value.trim();
     if (!name) return;
+
+    const exactMatch = matchingCards(normalized(name)).find(
+      (card) => normalized(card.dataset.cardName) === normalized(name),
+    );
+    if (exactMatch) {
+      if (exactMatch.classList.contains("is-done")) {
+        if (await setCompletion(exactMatch, false)) {
+          input.value = "";
+          renderMatches(input);
+        }
+      } else {
+        statusMessage.textContent = "That item is already open.";
+      }
+      return;
+    }
 
     input.disabled = true;
     button.disabled = true;
@@ -122,6 +201,76 @@ if (addItemForm) {
   });
 }
 
+if (settingsButton && settingsDialog && settingsForm) {
+  const listsContainer = document.getElementById("todo-settings-lists");
+  const settingsStatus = document.getElementById("todo-settings-status");
+  const closeSettings = () => settingsDialog.close();
+  document
+    .getElementById("todo-settings-close")
+    .addEventListener("click", closeSettings);
+  document
+    .getElementById("todo-settings-cancel")
+    .addEventListener("click", closeSettings);
+
+  settingsButton.addEventListener("click", async () => {
+    settingsDialog.showModal();
+    settingsStatus.textContent = "";
+    listsContainer.innerHTML = "<p>Loading lists…</p>";
+    try {
+      const response = await fetch("/to-do/api/settings");
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Unable to load lists.");
+      const selected = new Set(result.selectedListIds);
+      listsContainer.replaceChildren();
+      for (const list of result.lists) {
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.name = "listId";
+        checkbox.value = list.id;
+        checkbox.checked = selected.has(list.id);
+        const name = document.createElement("span");
+        name.textContent = list.name;
+        label.append(checkbox, name);
+        listsContainer.appendChild(label);
+      }
+    } catch (error) {
+      listsContainer.replaceChildren();
+      settingsStatus.textContent = error.message;
+    }
+  });
+
+  settingsForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const listIds = Array.from(
+      settingsForm.querySelectorAll("input[name='listId']:checked"),
+      (checkbox) => checkbox.value,
+    );
+    if (!listIds.length) {
+      settingsStatus.textContent = "Select at least one list.";
+      return;
+    }
+    const saveButton = settingsForm.querySelector("button[type='submit']");
+    saveButton.disabled = true;
+    settingsStatus.textContent = "Saving…";
+    try {
+      const response = await fetch("/to-do/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listIds }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Unable to save lists.");
+      window.location.reload();
+    } catch (error) {
+      saveButton.disabled = false;
+      settingsStatus.textContent = error.message;
+    }
+  });
+}
+
 if (window.Sortable) {
   let previousOrder = [];
   Sortable.create(openList, {
@@ -136,7 +285,7 @@ if (window.Sortable) {
         (card) => card.dataset.cardId,
       );
     },
-    async onEnd(event) {
+    async onEnd() {
       const cardIds = Array.from(
         openList.querySelectorAll(".todo-card"),
         (card) => card.dataset.cardId,

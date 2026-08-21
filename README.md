@@ -75,6 +75,8 @@ SESSION_SECRET=<session secret>
 REDIS_URL=redis://default:password@redis.railway.internal:6379
 # Optional file-store fallback when REDIS_URL is absent.
 SESSION_DIR=/var/lib/captains-log/sessions
+# Optional file fallback for To Do list settings when REDIS_URL is not set.
+TODO_SETTINGS_PATH=/var/lib/captains-log/todo-settings.json
 
 # Optional email notifications via Resend
 RESEND_API_KEY=<your Resend API key>
@@ -105,8 +107,9 @@ set, Express sessions are stored in Redis and the server waits for Redis before
 accepting requests. Keep `SESSION_SECRET` and the Redis data unchanged between
 releases. Redis must have persistence configured if sessions should survive a
 restart of the Redis service itself. Without `REDIS_URL`, development falls back
-to `SESSION_DIR`. A user who does not visit for more than 400 days or clears
-browser data will need to sign in again.
+to `SESSION_DIR`, and To Do list settings fall back to `TODO_SETTINGS_PATH` (or
+`data/todo-settings.json` by default). A user who does not visit for more than
+400 days or clears browser data will need to sign in again.
 
 ## Live Journeys
 

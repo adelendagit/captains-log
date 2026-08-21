@@ -59,12 +59,17 @@
               <% } %>
             </a>
           <% }) %>
+          <% if (user) { %>
+            <button type="button" class="section-subnav-link todo-settings-button" id="todo-settings-button" aria-label="Manage to-do lists">
+              <span>Settings</span>
+            </button>
+          <% } %>
         </div>
       </nav>
 
     <main class="todo-page" data-list-id="<%= selectedList.id %>">
       <% if (showListSwitcher) { %>
-        <form id="add-item-form" class="add-item-form">
+        <form id="add-item-form" class="add-item-form" novalidate>
           <label for="add-item-name" class="visually-hidden">New item</label>
           <input
             id="add-item-name"
@@ -76,6 +81,7 @@
             required
           >
           <button type="submit">Add</button>
+          <div id="add-item-matches" class="add-item-matches" hidden></div>
         </form>
       <% } %>
 
@@ -99,6 +105,27 @@
         <p id="done-empty" class="done-empty" <%= doneCards.length ? "hidden" : "" %>>No completed items yet.</p>
       </details>
     </main>
+    <% if (user) { %>
+      <dialog id="todo-settings-dialog" class="todo-settings-dialog">
+        <form id="todo-settings-form" method="dialog">
+          <div class="todo-settings-heading">
+            <div>
+              <h2>To Do lists</h2>
+              <p>Choose which open Trello lists appear in To Do.</p>
+            </div>
+            <button type="button" class="dialog-close" id="todo-settings-close" aria-label="Close settings">×</button>
+          </div>
+          <div id="todo-settings-lists" class="todo-settings-lists">
+            <p>Loading lists…</p>
+          </div>
+          <p id="todo-settings-status" class="todo-status" role="status" aria-live="polite"></p>
+          <div class="todo-settings-actions">
+            <button type="button" id="todo-settings-cancel">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </dialog>
+    <% } %>
     </div>
   </body>
 </html>

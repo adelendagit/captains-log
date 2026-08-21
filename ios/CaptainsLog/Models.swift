@@ -285,6 +285,17 @@ struct TodoDataResponse: Codable {
     let lists: [TodoList]
 }
 
+struct TodoListSummary: Codable, Identifiable {
+    let id: String
+    let name: String
+    let pos: Double?
+}
+
+struct TodoSettingsResponse: Codable {
+    let lists: [TodoListSummary]
+    let selectedListIds: [String]
+}
+
 struct SuccessResponse: Codable {
     let success: Bool
 }

@@ -110,19 +110,19 @@ struct AddLogEntryView: View {
                             } else {
                                 TodoListPills(
                                     lists: todoLists,
-                                    selectedListID: $selectedTodoListID,
-                                    showsAddButton: false,
-                                    onAdd: nil
+                                    selectedListID: $selectedTodoListID
                                 )
                             }
                         }
 
                         Section("Task") {
-                            TextField("Name", text: $todoName)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    if canSave { Task { await save() } }
-                                }
+                            TodoEntryComposer(
+                                lists: todoLists,
+                                selectedListID: $selectedTodoListID,
+                                text: $todoName,
+                                isWorking: isSaving,
+                                onPerform: performTodoEntry
+                            )
                         }
 
                         if let todoErrorMessage = errorMessage ?? todoLoadErrorMessage {
@@ -257,7 +257,7 @@ struct AddLogEntryView: View {
                         Button("Cancel") { dismiss() }
                     }
                 }
-                if !action.isEmpty {
+                if !action.isEmpty && action != "todo" {
                     ToolbarItem(placement: .confirmationAction) {
                         Button(confirmationButtonTitle) {
                             if logWasSaved {
@@ -595,6 +595,28 @@ struct AddLogEntryView: View {
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor private func performTodoEntry(_ operation: TodoEntryOperation) async -> Bool {
+        guard let token = authentication.token else { return false }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+
+        do {
+            switch operation {
+            case .add(let name, let listID):
+                _ = try await authentication.api.addTodo(name: name, listID: listID, token: token)
+            case .restore(let card, _):
+                try await authentication.api.setTodoCompletion(cardID: card.id, complete: false, token: token)
+            }
+            NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
+            dismiss()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 }
@@ -2105,11 +2127,118 @@ private struct LogbookMapMarker: Identifiable {
     let coordinate: CLLocationCoordinate2D
 }
 
+private enum TodoEntryOperation {
+    case add(name: String, listID: String)
+    case restore(card: TodoCard, listID: String)
+}
+
+private struct TodoEntryComposer: View {
+    let lists: [TodoList]
+    @Binding var selectedListID: String
+    @Binding var text: String
+    let isWorking: Bool
+    let onPerform: (TodoEntryOperation) async -> Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                TextField("Add or find a task", text: $text)
+                    .textInputAutocapitalization(.sentences)
+                    .submitLabel(.done)
+                    .disabled(isWorking)
+                    .onSubmit { submit() }
+
+                Button(actionTitle) { submit() }
+                    .disabled(operation == nil || isWorking)
+            }
+
+            ForEach(matches) { card in
+                Button {
+                    guard card.dueComplete else { return }
+                    perform(.restore(card: card, listID: selectedListID))
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: card.dueComplete ? "arrow.uturn.backward.circle" : "circle.fill")
+                            .foregroundStyle(card.dueComplete ? Chartroom.sea : .secondary)
+                        Text(card.name)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(card.dueComplete ? "Restore" : "Already open")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!card.dueComplete || isWorking)
+            }
+        }
+    }
+
+    private var selectedList: TodoList? {
+        lists.first { $0.id == selectedListID } ?? lists.first
+    }
+
+    private var query: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var matches: [TodoCard] {
+        guard !query.isEmpty else { return [] }
+        return Array(
+            (selectedList?.cards ?? [])
+                .filter { $0.name.localizedCaseInsensitiveContains(query) }
+                .sorted { left, right in
+                    let leftExact = left.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+                    let rightExact = right.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+                    if leftExact != rightExact { return leftExact }
+                    if left.dueComplete != right.dueComplete { return !left.dueComplete }
+                    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                }
+                .prefix(6)
+        )
+    }
+
+    private var exactMatch: TodoCard? {
+        selectedList?.cards.first {
+            $0.name.localizedCaseInsensitiveCompare(query) == .orderedSame && !$0.dueComplete
+        } ?? selectedList?.cards.first {
+            $0.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+        }
+    }
+
+    private var operation: TodoEntryOperation? {
+        guard !query.isEmpty, let listID = selectedList?.id else { return nil }
+        if let exactMatch {
+            return exactMatch.dueComplete ? .restore(card: exactMatch, listID: listID) : nil
+        }
+        return .add(name: query, listID: listID)
+    }
+
+    private var actionTitle: String {
+        if isWorking { return "Saving…" }
+        if let exactMatch { return exactMatch.dueComplete ? "Restore" : "Open" }
+        return "Add"
+    }
+
+    private func submit() {
+        guard let operation else { return }
+        perform(operation)
+    }
+
+    private func perform(_ operation: TodoEntryOperation) {
+        Task {
+            if await onPerform(operation) {
+                text = ""
+            }
+        }
+    }
+}
+
 private struct TodoListPills: View {
     let lists: [TodoList]
     @Binding var selectedListID: String
-    let showsAddButton: Bool
-    let onAdd: (() -> Void)?
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -2132,20 +2261,6 @@ private struct TodoListPills: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
-
-                if showsAddButton {
-                    Button {
-                        onAdd?()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
-                            .background(Chartroom.sea, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add task")
-                }
             }
             .padding(.vertical, 2)
         }
@@ -2157,11 +2272,13 @@ struct TodoView: View {
     @EnvironmentObject private var tracker: JourneyTracker
     @State private var lists: [TodoList] = []
     @State private var selectedListID = ""
+    @State private var newItem = ""
     @State private var errorMessage: String?
     @State private var actionErrorMessage: String?
     @State private var pendingCardIDs: Set<String> = []
     @State private var editingCard: TodoCard?
-    @State private var isShowingAddTask = false
+    @State private var isAdding = false
+    @State private var isShowingSettings = false
     @State private var queuedReorders: [String: PendingTodoOrder] = [:]
     @State private var isSavingOrder = false
     @State private var loading = true
@@ -2176,13 +2293,21 @@ struct TodoView: View {
                     List {
                         TodoListPills(
                             lists: lists,
-                            selectedListID: $selectedListID,
-                            showsAddButton: true,
-                            onAdd: { isShowingAddTask = true }
+                            selectedListID: $selectedListID
                         )
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 0))
                         .listRowBackground(Chartroom.paper)
                         .listRowSeparator(.hidden)
+
+                        Section {
+                            TodoEntryComposer(
+                                lists: lists,
+                                selectedListID: $selectedListID,
+                                text: $newItem,
+                                isWorking: isAdding,
+                                onPerform: performTodoEntry
+                            )
+                        }
 
                         Section("Open") {
                             ForEach(selectedList?.cards.filter { !$0.dueComplete } ?? []) { card in
@@ -2199,6 +2324,13 @@ struct TodoView: View {
                 }
             }
             .navigationTitle("To Do")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { isShowingSettings = true } label: {
+                        Label("To Do settings", systemImage: "gearshape")
+                    }
+                }
+            }
             .task { await load() }
             .refreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .captainsLogTodoDidChange)) { _ in
@@ -2227,8 +2359,8 @@ struct TodoView: View {
                     }
                 )
             }
-            .sheet(isPresented: $isShowingAddTask) {
-                AddLogEntryView(initialAction: "todo", initialTodoListID: selectedListID)
+            .sheet(isPresented: $isShowingSettings) {
+                TodoSettingsView()
             }
             .alert("Couldn’t update task", isPresented: actionErrorIsPresented) {
                 Button("OK", role: .cancel) { actionErrorMessage = nil }
@@ -2325,6 +2457,68 @@ struct TodoView: View {
             actionErrorMessage = error.localizedDescription
         }
         pendingCardIDs.remove(card.id)
+    }
+
+    @MainActor private func performTodoEntry(_ operation: TodoEntryOperation) async -> Bool {
+        guard !isAdding, let token = authentication.token else { return false }
+        isAdding = true
+        defer { isAdding = false }
+
+        switch operation {
+        case .restore(let card, let listID):
+            guard !pendingCardIDs.contains(card.id) else { return false }
+            pendingCardIDs.insert(card.id)
+            withAnimation { setCompletion(cardID: card.id, complete: false) }
+            do {
+                try await authentication.api.setTodoCompletion(cardID: card.id, complete: false, token: token)
+                pendingCardIDs.remove(card.id)
+                return true
+            } catch {
+                withAnimation { setCompletion(cardID: card.id, complete: true) }
+                pendingCardIDs.remove(card.id)
+                selectedListID = listID
+                actionErrorMessage = error.localizedDescription
+                return false
+            }
+
+        case .add(let name, let listID):
+            let temporaryID = "pending-\(UUID().uuidString)"
+            let temporaryCard = TodoCard(
+                id: temporaryID,
+                name: name,
+                desc: nil,
+                due: nil,
+                dueComplete: false,
+                pos: nil,
+                attachments: nil
+            )
+            pendingCardIDs.insert(temporaryID)
+            withAnimation { updateCards(in: listID) { $0 + [temporaryCard] } }
+            do {
+                let cardID = try await authentication.api.addTodo(name: name, listID: listID, token: token)
+                replaceCard(
+                    temporaryID,
+                    with: TodoCard(
+                        id: cardID,
+                        name: name,
+                        desc: nil,
+                        due: nil,
+                        dueComplete: false,
+                        pos: nil,
+                        attachments: nil
+                    )
+                )
+                pendingCardIDs.remove(temporaryID)
+                return true
+            } catch {
+                withAnimation {
+                    updateCards(in: listID) { cards in cards.filter { $0.id != temporaryID } }
+                }
+                pendingCardIDs.remove(temporaryID)
+                actionErrorMessage = error.localizedDescription
+                return false
+            }
+        }
     }
 
     @MainActor private func edit(_ card: TodoCard, name: String, desc: String) async -> Bool {
@@ -2538,6 +2732,102 @@ private struct PendingTodoOrder {
     let listID: String
     let cardIDs: [String]
     let token: String
+}
+
+private struct TodoSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authentication: AuthenticationManager
+    @State private var lists: [TodoListSummary] = []
+    @State private var selectedListIDs: Set<String> = []
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView("Loading Trello lists…")
+                } else {
+                    List(lists) { list in
+                        Button {
+                            if selectedListIDs.contains(list.id) {
+                                selectedListIDs.remove(list.id)
+                            } else {
+                                selectedListIDs.insert(list.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(list.name).foregroundStyle(.primary)
+                                Spacer()
+                                if selectedListIDs.contains(list.id) {
+                                    Image(systemName: "checkmark").foregroundStyle(Chartroom.sea)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .overlay {
+                        if lists.isEmpty {
+                            ContentUnavailableView("No open Trello lists", systemImage: "list.bullet")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("To Do Lists")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(selectedListIDs.isEmpty || isLoading || isSaving)
+                }
+            }
+            .task { await load() }
+            .alert("Couldn’t save settings", isPresented: errorIsPresented) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "Please try again.")
+            }
+        }
+    }
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    @MainActor private func load() async {
+        guard let token = authentication.token else { return }
+        do {
+            let settings = try await authentication.api.todoSettings(token: token)
+            lists = settings.lists
+            selectedListIDs = Set(settings.selectedListIds)
+            isLoading = false
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor private func save() async {
+        guard let token = authentication.token, !selectedListIDs.isEmpty else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let orderedIDs = lists.filter { selectedListIDs.contains($0.id) }.map(\.id)
+            try await authentication.api.updateTodoSettings(listIDs: orderedIDs, token: token)
+            NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 private struct TodoDetailView: View {
