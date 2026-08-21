@@ -36,6 +36,8 @@ async function startServer() {
 test("to-do settings select which open board lists are available", async (t) => {
   await fs.rm(settingsDirectory, { recursive: true, force: true });
   const originalGet = axios.get;
+  const originalPut = axios.put;
+  let restored = false;
   axios.get = async (url) => {
     if (String(url).includes("/members/me/boards")) {
       return {
@@ -57,11 +59,29 @@ test("to-do settings select which open board lists are available", async (t) => 
         ],
       };
     }
+    if (String(url).includes("/cards/shopping-card")) {
+      return {
+        data: {
+          id: "shopping-card",
+          idList: "shopping",
+          closed: false,
+          dueComplete: true,
+        },
+      };
+    }
     if (String(url).includes("/lists/home-jobs/cards")) return { data: [] };
     throw new Error(`Unexpected Trello request: ${url}`);
   };
+  axios.put = async (url) => {
+    if (String(url).includes("/cards/shopping-card")) {
+      restored = true;
+      return { data: {} };
+    }
+    throw new Error(`Unexpected Trello update: ${url}`);
+  };
   t.after(async () => {
     axios.get = originalGet;
+    axios.put = originalPut;
     await fs.rm(settingsDirectory, { recursive: true, force: true });
   });
 
@@ -101,6 +121,14 @@ test("to-do settings select which open board lists are available", async (t) => 
     ["home-jobs"],
   );
   assert.equal(data.lists[0].boardName, "Home");
+
+  const restoreResponse = await fetch(`${baseURL}/shopping-card/completion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ complete: false }),
+  });
+  assert.equal(restoreResponse.status, 200);
+  assert.equal(restored, true);
 });
 
 test("to-do settings require at least one valid list", async (t) => {

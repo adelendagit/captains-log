@@ -307,7 +307,12 @@ router.post("/:cardId/completion", async (req, res, next) => {
       return;
     }
 
-    const lists = await getAvailableLists(req.user);
+    // The native app can briefly show cached cards while its configured list
+    // set refreshes. Authenticated restores remain constrained to accessible
+    // Trello boards, but should not fail because that subset changed meanwhile.
+    const lists = req.user
+      ? allBoardLists(await fetchTodoBoards())
+      : await getAvailableLists(req.user);
     await setTodoCardCompletion(
       req.params.cardId,
       req.body.complete,
