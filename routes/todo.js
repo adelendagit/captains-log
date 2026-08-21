@@ -1,13 +1,14 @@
 const express = require("express");
 const multer = require("multer");
 const {
+  BOARD_ID,
   DEFAULT_LIST_ID,
   addTodoCardAttachment,
   archiveTodoCard,
   createTodoCard,
   defaultTodoLists,
   downloadTodoCardAttachment,
-  fetchBoardLists,
+  fetchTodoBoards,
   fetchTodoCards,
   reorderTodoCards,
   setTodoCardCompletion,
@@ -23,15 +24,22 @@ const upload = multer({
 
 async function getAvailableLists(user) {
   if (!user) return [{ id: DEFAULT_LIST_ID, name: "To-do" }];
-  const boardLists = await fetchBoardLists();
+  const boards = await fetchTodoBoards();
   const configuredIds = await getTodoListIds();
-  return selectAvailableLists(boardLists, configuredIds);
+  return selectAvailableLists(boards, configuredIds);
 }
 
-function selectAvailableLists(boardLists, configuredIds) {
-  if (!configuredIds) return defaultTodoLists(boardLists);
+function allBoardLists(boards) {
+  return boards.flatMap((board) => board.lists);
+}
+
+function selectAvailableLists(boards, configuredIds) {
+  if (!configuredIds) {
+    const primaryBoard = boards.find((board) => board.id === BOARD_ID);
+    return defaultTodoLists(primaryBoard?.lists || []);
+  }
   const configuredIdSet = new Set(configuredIds);
-  return boardLists.filter((list) => configuredIdSet.has(list.id));
+  return allBoardLists(boards).filter((list) => configuredIdSet.has(list.id));
 }
 
 router.get("/", async (req, res, next) => {
@@ -89,14 +97,15 @@ router.get("/api/settings", async (req, res, next) => {
       res.status(401).json({ error: "Not authenticated" });
       return;
     }
-    const [boardLists, configuredIds] = await Promise.all([
-      fetchBoardLists(),
+    const [boards, configuredIds] = await Promise.all([
+      fetchTodoBoards(),
       getTodoListIds(),
     ]);
-    const lists = selectAvailableLists(boardLists, configuredIds);
+    const lists = selectAvailableLists(boards, configuredIds);
     res.set("Cache-Control", "no-store");
     res.json({
-      lists: boardLists,
+      boards,
+      lists: allBoardLists(boards),
       selectedListIds: lists.map((list) => list.id),
     });
   } catch (error) {
@@ -120,15 +129,16 @@ router.put("/api/settings", async (req, res, next) => {
       res.status(400).json({ error: "Select at least one unique to-do list" });
       return;
     }
-    const boardLists = await fetchBoardLists();
-    const boardListIds = new Set(boardLists.map((list) => list.id));
+    const boards = await fetchTodoBoards();
+    const availableLists = allBoardLists(boards);
+    const boardListIds = new Set(availableLists.map((list) => list.id));
     if (listIds.some((listId) => !boardListIds.has(listId))) {
       res
         .status(400)
         .json({ error: "One or more selected lists are unavailable" });
       return;
     }
-    const selectedListIds = boardLists
+    const selectedListIds = availableLists
       .filter((list) => listIds.includes(list.id))
       .map((list) => list.id);
     await setTodoListIds(selectedListIds);

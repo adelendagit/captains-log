@@ -278,6 +278,8 @@ struct TodoList: Codable, Identifiable {
     let id: String
     let name: String
     let pos: Double?
+    let boardId: String?
+    let boardName: String?
     let cards: [TodoCard]
 }
 
@@ -289,10 +291,18 @@ struct TodoListSummary: Codable, Identifiable {
     let id: String
     let name: String
     let pos: Double?
+    let boardId: String?
+    let boardName: String?
+}
+
+struct TodoBoardSummary: Codable, Identifiable {
+    let id: String
+    let name: String
+    let lists: [TodoListSummary]
 }
 
 struct TodoSettingsResponse: Codable {
-    let lists: [TodoListSummary]
+    let boards: [TodoBoardSummary]
     let selectedListIds: [String]
 }
 

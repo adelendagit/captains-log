@@ -111,6 +111,11 @@ to `SESSION_DIR`, and To Do list settings fall back to `TODO_SETTINGS_PATH` (or
 `data/todo-settings.json` by default). A user who does not visit for more than
 400 days or clears browser data will need to sign in again.
 
+Authenticated users can choose which open Trello lists appear in To Do. The
+settings screen groups lists by board and can include lists from any open board
+accessible to the configured Trello token. Existing saved list IDs continue to
+work without migration.
+
 ## Live Journeys
 
 Live tracking uses Trello as its only persistence layer. Starting a journey creates

@@ -53,7 +53,12 @@
               class="section-subnav-link<%= list.id === selectedList.id ? ' active' : '' %>"
               <%= list.id === selectedList.id ? 'aria-current="page"' : '' %>
             >
-              <span><%= list.name %></span>
+              <span class="todo-list-link-label">
+                <span><%= list.name %></span>
+                <% if (list.boardName) { %>
+                  <small><%= list.boardName %></small>
+                <% } %>
+              </span>
               <% if (list.id === selectedList.id) { %>
                 <span id="todo-count" class="section-subnav-count"><%= openCards.length %> open</span>
               <% } %>
@@ -111,7 +116,7 @@
           <div class="todo-settings-heading">
             <div>
               <h2>To Do lists</h2>
-              <p>Choose which open Trello lists appear in To Do.</p>
+              <p>Choose open lists from any of your Trello boards.</p>
             </div>
             <button type="button" class="dialog-close" id="todo-settings-close" aria-label="Close settings">×</button>
           </div>

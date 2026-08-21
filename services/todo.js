@@ -25,6 +25,36 @@ async function fetchBoardLists() {
   return data.sort((a, b) => a.pos - b.pos);
 }
 
+async function fetchTodoBoards() {
+  const { data } = await axios.get(`${API_BASE}/members/me/boards`, {
+    params: {
+      ...credentials(),
+      filter: "open",
+      fields: "id,name",
+      lists: "open",
+      list_fields: "id,name,pos",
+    },
+  });
+
+  return data
+    .map((board) => ({
+      id: board.id,
+      name: board.name,
+      lists: (board.lists || [])
+        .sort((a, b) => a.pos - b.pos)
+        .map((list) => ({
+          ...list,
+          boardId: board.id,
+          boardName: board.name,
+        })),
+    }))
+    .sort((left, right) => {
+      if (left.id === BOARD_ID) return -1;
+      if (right.id === BOARD_ID) return 1;
+      return left.name.localeCompare(right.name);
+    });
+}
+
 function defaultTodoLists(lists) {
   const todayIndex = lists.findIndex(
     (list) => list.name.trim().toLowerCase() === "today",
@@ -213,6 +243,7 @@ module.exports = {
   downloadTodoCardAttachment,
   defaultTodoLists,
   fetchBoardLists,
+  fetchTodoBoards,
   fetchTodoCards,
   fetchTodoLists,
   reorderTodoCards,

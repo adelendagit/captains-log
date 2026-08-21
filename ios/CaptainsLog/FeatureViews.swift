@@ -2248,15 +2248,22 @@ private struct TodoListPills: View {
                     Button {
                         selectedListID = list.id
                     } label: {
-                        Text(list.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(isSelected ? Color.white : Color.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                isSelected ? Chartroom.sea : Color.secondary.opacity(0.16),
-                                in: Capsule()
-                            )
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(list.name)
+                                .font(.subheadline.weight(.semibold))
+                            if let boardName = list.boardName {
+                                Text(boardName)
+                                    .font(.caption2.weight(.medium))
+                                    .opacity(0.72)
+                            }
+                        }
+                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            isSelected ? Chartroom.sea : Color.secondary.opacity(0.16),
+                            in: Capsule()
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -2665,6 +2672,8 @@ struct TodoView: View {
             id: list.id,
             name: list.name,
             pos: list.pos,
+            boardId: list.boardId,
+            boardName: list.boardName,
             cards: transform(list.cards)
         )
     }
@@ -2678,6 +2687,8 @@ struct TodoView: View {
             id: list.id,
             name: list.name,
             pos: list.pos,
+            boardId: list.boardId,
+            boardName: list.boardName,
             cards: list.cards.map { $0.id == cardID ? replacement : $0 }
         )
     }
@@ -2695,6 +2706,8 @@ struct TodoView: View {
             id: list.id,
             name: list.name,
             pos: list.pos,
+            boardId: list.boardId,
+            boardName: list.boardName,
             cards: list.cards.map { card in
                 guard card.id == cardID else { return card }
                 return TodoCard(
@@ -2737,7 +2750,7 @@ private struct PendingTodoOrder {
 private struct TodoSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authentication: AuthenticationManager
-    @State private var lists: [TodoListSummary] = []
+    @State private var boards: [TodoBoardSummary] = []
     @State private var selectedListIDs: Set<String> = []
     @State private var isLoading = true
     @State private var isSaving = false
@@ -2749,27 +2762,33 @@ private struct TodoSettingsView: View {
                 if isLoading {
                     ProgressView("Loading Trello lists…")
                 } else {
-                    List(lists) { list in
-                        Button {
-                            if selectedListIDs.contains(list.id) {
-                                selectedListIDs.remove(list.id)
-                            } else {
-                                selectedListIDs.insert(list.id)
-                            }
-                        } label: {
-                            HStack {
-                                Text(list.name).foregroundStyle(.primary)
-                                Spacer()
-                                if selectedListIDs.contains(list.id) {
-                                    Image(systemName: "checkmark").foregroundStyle(Chartroom.sea)
+                    List {
+                        ForEach(boards) { board in
+                            Section(board.name) {
+                                ForEach(board.lists) { list in
+                                    Button {
+                                        if selectedListIDs.contains(list.id) {
+                                            selectedListIDs.remove(list.id)
+                                        } else {
+                                            selectedListIDs.insert(list.id)
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Text(list.name).foregroundStyle(.primary)
+                                            Spacer()
+                                            if selectedListIDs.contains(list.id) {
+                                                Image(systemName: "checkmark").foregroundStyle(Chartroom.sea)
+                                            }
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                     .overlay {
-                        if lists.isEmpty {
+                        if boards.allSatisfy({ $0.lists.isEmpty }) {
                             ContentUnavailableView("No open Trello lists", systemImage: "list.bullet")
                         }
                     }
@@ -2806,7 +2825,7 @@ private struct TodoSettingsView: View {
         guard let token = authentication.token else { return }
         do {
             let settings = try await authentication.api.todoSettings(token: token)
-            lists = settings.lists
+            boards = settings.boards
             selectedListIDs = Set(settings.selectedListIds)
             isLoading = false
         } catch {
@@ -2820,7 +2839,7 @@ private struct TodoSettingsView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            let orderedIDs = lists.filter { selectedListIDs.contains($0.id) }.map(\.id)
+            let orderedIDs = boards.flatMap(\.lists).filter { selectedListIDs.contains($0.id) }.map(\.id)
             try await authentication.api.updateTodoSettings(listIDs: orderedIDs, token: token)
             NotificationCenter.default.post(name: .captainsLogTodoDidChange, object: nil)
             dismiss()

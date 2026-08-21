@@ -223,17 +223,26 @@ if (settingsButton && settingsDialog && settingsForm) {
         throw new Error(result.error || "Unable to load lists.");
       const selected = new Set(result.selectedListIds);
       listsContainer.replaceChildren();
-      for (const list of result.lists) {
-        const label = document.createElement("label");
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.name = "listId";
-        checkbox.value = list.id;
-        checkbox.checked = selected.has(list.id);
-        const name = document.createElement("span");
-        name.textContent = list.name;
-        label.append(checkbox, name);
-        listsContainer.appendChild(label);
+      for (const board of result.boards) {
+        const group = document.createElement("fieldset");
+        group.className = "todo-settings-board";
+        const legend = document.createElement("legend");
+        legend.textContent = board.name;
+        group.appendChild(legend);
+
+        for (const list of board.lists) {
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = "listId";
+          checkbox.value = list.id;
+          checkbox.checked = selected.has(list.id);
+          const name = document.createElement("span");
+          name.textContent = list.name;
+          label.append(checkbox, name);
+          group.appendChild(label);
+        }
+        listsContainer.appendChild(group);
       }
     } catch (error) {
       listsContainer.replaceChildren();

@@ -181,6 +181,27 @@ h1 {
   overflow-y: auto;
 }
 
+.todo-settings-board {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.todo-settings-board + .todo-settings-board {
+  margin-top: 0.8rem;
+  border-top: 1px solid #d7e1e5;
+  padding-top: 1rem;
+}
+
+.todo-settings-board legend {
+  padding: 0 0 0.25rem;
+  color: #173042;
+  font-weight: 800;
+}
+
 .todo-settings-lists label {
   display: flex;
   align-items: center;
@@ -198,6 +219,19 @@ h1 {
   width: 1.2rem;
   height: 1.2rem;
   accent-color: var(--chart-teal, #2d8c88);
+}
+
+.todo-list-link-label {
+  display: grid;
+  gap: 0.05rem;
+  text-align: left;
+}
+
+.todo-list-link-label small {
+  color: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  opacity: 0.7;
 }
 
 .todo-settings-actions {

@@ -37,16 +37,27 @@ test("to-do settings select which open board lists are available", async (t) => 
   await fs.rm(settingsDirectory, { recursive: true, force: true });
   const originalGet = axios.get;
   axios.get = async (url) => {
-    if (String(url).includes("/boards/")) {
+    if (String(url).includes("/members/me/boards")) {
       return {
         data: [
-          { id: "shopping", name: "Shopping", pos: 1 },
-          { id: "today", name: "Today", pos: 2 },
-          { id: "later", name: "Later", pos: 3 },
+          {
+            id: "todo-board",
+            name: "Captain's Log",
+            lists: [
+              { id: "shopping", name: "Shopping", pos: 1 },
+              { id: "today", name: "Today", pos: 2 },
+              { id: "later", name: "Later", pos: 3 },
+            ],
+          },
+          {
+            id: "home-board",
+            name: "Home",
+            lists: [{ id: "home-jobs", name: "Jobs", pos: 1 }],
+          },
         ],
       };
     }
-    if (String(url).includes("/lists/later/cards")) return { data: [] };
+    if (String(url).includes("/lists/home-jobs/cards")) return { data: [] };
     throw new Error(`Unexpected Trello request: ${url}`);
   };
   t.after(async () => {
@@ -63,14 +74,22 @@ test("to-do settings select which open board lists are available", async (t) => 
   assert.equal(initialResponse.status, 200);
   assert.deepEqual(initial.selectedListIds, ["shopping", "today"]);
   assert.deepEqual(
+    initial.boards.map((board) => board.id),
+    ["todo-board", "home-board"],
+  );
+  assert.deepEqual(
+    initial.boards[1].lists.map((list) => list.id),
+    ["home-jobs"],
+  );
+  assert.deepEqual(
     initial.lists.map((list) => list.id),
-    ["shopping", "today", "later"],
+    ["shopping", "today", "later", "home-jobs"],
   );
 
   const updateResponse = await fetch(`${baseURL}/api/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ listIds: ["later"] }),
+    body: JSON.stringify({ listIds: ["home-jobs"] }),
   });
   assert.equal(updateResponse.status, 200);
 
@@ -79,15 +98,26 @@ test("to-do settings select which open board lists are available", async (t) => 
   assert.equal(dataResponse.status, 200);
   assert.deepEqual(
     data.lists.map((list) => list.id),
-    ["later"],
+    ["home-jobs"],
   );
+  assert.equal(data.lists[0].boardName, "Home");
 });
 
 test("to-do settings require at least one valid list", async (t) => {
+  await fs.rm(settingsDirectory, { recursive: true, force: true });
   const originalGet = axios.get;
-  axios.get = async () => ({ data: [{ id: "today", name: "Today", pos: 1 }] });
-  t.after(() => {
+  axios.get = async () => ({
+    data: [
+      {
+        id: "todo-board",
+        name: "Captain's Log",
+        lists: [{ id: "today", name: "Today", pos: 1 }],
+      },
+    ],
+  });
+  t.after(async () => {
     axios.get = originalGet;
+    await fs.rm(settingsDirectory, { recursive: true, force: true });
   });
   const server = await startServer();
   t.after(() => new Promise((resolve) => server.close(resolve)));
