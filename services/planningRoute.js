@@ -1,6 +1,7 @@
 const booleanDisjoint = require("@turf/boolean-disjoint").default;
 const booleanPointInPolygon = require("@turf/boolean-point-in-polygon").default;
 const bboxClip = require("@turf/bbox-clip").default;
+const buffer = require("@turf/buffer").default;
 const distance = require("@turf/distance").default;
 const shortestPath = require("@turf/shortest-path").default;
 const { point } = require("@turf/helpers");
@@ -11,6 +12,9 @@ const MAX_PLANNING_POINTS = 50;
 const MAX_CACHED_ROUTES = 500;
 const MAX_ENDPOINT_SNAP_METERS = 500;
 const ROUTE_CLEARANCE_METERS = 30;
+const MAX_TRUSTED_DEPARTURE_SNAP_METERS = 2_000;
+const TRUSTED_DEPARTURE_CLEARANCE_METERS = 100;
+const ROUTE_OBSTACLE_BUFFER_METERS = 75;
 const ROUTE_VALIDATION_SPACING_KM = 0.01;
 const MAX_ROUTE_LAND_RUN_KM = 0.05;
 const routeCache = new Map();
@@ -129,7 +133,13 @@ function nearestPointOnRing(coordinate, ring) {
   return nearest;
 }
 
-function snapPointToWater(planningPoint) {
+function snapPointToWater(
+  planningPoint,
+  {
+    maxSnapMeters = MAX_ENDPOINT_SNAP_METERS,
+    clearanceMeters = ROUTE_CLEARANCE_METERS,
+  } = {},
+) {
   const coordinate = [planningPoint.lng, planningPoint.lat];
   const containingPolygon = containingLandPolygon(coordinate);
   if (!containingPolygon) {
@@ -146,7 +156,7 @@ function snapPointToWater(planningPoint) {
       nearest = candidate;
     }
   }
-  if (!nearest || nearest.distanceMeters > MAX_ENDPOINT_SNAP_METERS) {
+  if (!nearest || nearest.distanceMeters > maxSnapMeters) {
     return {
       coordinate: null,
       distanceToWaterM: nearest?.distanceMeters ?? null,
@@ -171,13 +181,15 @@ function snapPointToWater(planningPoint) {
   const unitY = nearest.direction.y / directionLength;
 
   for (
-    let clearanceMeters = ROUTE_CLEARANCE_METERS;
-    clearanceMeters <= MAX_ENDPOINT_SNAP_METERS;
-    clearanceMeters *= 2
+    let candidateClearance = clearanceMeters;
+    candidateClearance <= maxSnapMeters;
+    candidateClearance *= 2
   ) {
     const snappedCoordinate = [
-      nearest.coordinate[0] + (unitX * clearanceMeters) / metersPerLngDegree,
-      nearest.coordinate[1] + (unitY * clearanceMeters) / metersPerLatDegree,
+      nearest.coordinate[0] +
+        (unitX * candidateClearance) / metersPerLngDegree,
+      nearest.coordinate[1] +
+        (unitY * candidateClearance) / metersPerLatDegree,
     ];
     if (!containingLandPolygon(snappedCoordinate)) {
       return {
@@ -301,13 +313,22 @@ function cacheRoute(key, route) {
   routeCache.set(key, route);
 }
 
-function routeLeg(from, to) {
+function routeLeg(from, to, { trustedDeparture = false } = {}) {
   const key = [from.lat, from.lng, to.lat, to.lng]
     .map((value) => value.toFixed(5))
+    .concat(trustedDeparture ? "trusted" : "strict")
     .join(",");
   if (routeCache.has(key)) return routeCache.get(key);
 
-  const snappedFrom = snapPointToWater(from);
+  const snappedFrom = snapPointToWater(
+    from,
+    trustedDeparture
+      ? {
+          maxSnapMeters: MAX_TRUSTED_DEPARTURE_SNAP_METERS,
+          clearanceMeters: TRUSTED_DEPARTURE_CLEARANCE_METERS,
+        }
+      : undefined,
+  );
   const snappedTo = snapPointToWater(to);
   if (!snappedFrom.coordinate || !snappedTo.coordinate) {
     const unresolved = {
@@ -348,7 +369,13 @@ function routeLeg(from, to) {
 
   try {
     const clippedLand = nearbyLand
-      .map((polygon) => bboxClip(polygon.feature, bounds))
+      .map((polygon) =>
+        buffer(polygon.feature, ROUTE_OBSTACLE_BUFFER_METERS, {
+          units: "meters",
+        }),
+      )
+      .filter(Boolean)
+      .map((feature) => bboxClip(feature, bounds))
       .filter((feature) => feature.geometry.coordinates.length > 0);
     const baseResolution = resolutionKm(directDistanceNm);
     for (const resolution of [
@@ -399,7 +426,11 @@ function buildPlanningRoute(points) {
 
   const legs = [];
   for (let index = 1; index < points.length; index += 1) {
-    legs.push(routeLeg(points[index - 1], points[index]));
+    legs.push(
+      routeLeg(points[index - 1], points[index], {
+        trustedDeparture: index === 1,
+      }),
+    );
   }
   return { legs };
 }

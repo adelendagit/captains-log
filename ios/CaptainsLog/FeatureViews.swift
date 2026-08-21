@@ -813,6 +813,15 @@ struct PlaceDetailView<Actions: View>: View {
     }
 }
 
+private struct PlanningMapPlaceGroup: Identifiable {
+    let places: [PlaceSummary]
+    let coordinate: CLLocationCoordinate2D
+
+    var id: String {
+        places.map(\.placeCardID).sorted().joined(separator: ",")
+    }
+}
+
 struct PlanView: View {
     @EnvironmentObject private var authentication: AuthenticationManager
     @EnvironmentObject private var tracker: JourneyTracker
@@ -1064,6 +1073,38 @@ struct PlanView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    private var emphasizedMapPlaces: [PlaceSummary] {
+        let plannedIDs = Set(plannedStops.map(\.placeCardID))
+        let currentID = (currentStatus?.current ?? currentStatus?.from)?.placeCardID
+        return mapPlaces.filter { plannedIDs.contains($0.placeCardID) || $0.placeCardID == currentID }
+    }
+
+    private var groupedMapPlaces: [PlanningMapPlaceGroup] {
+        let emphasizedIDs = Set(emphasizedMapPlaces.map(\.placeCardID))
+        let latitudeCellSize = max(abs(visibleRegion?.span.latitudeDelta ?? 0.1) / 7, 0.000_1)
+        let longitudeCellSize = max(abs(visibleRegion?.span.longitudeDelta ?? 0.1) / 9, 0.000_1)
+        var buckets: [String: [PlaceSummary]] = [:]
+
+        for place in mapPlaces where !emphasizedIDs.contains(place.placeCardID) {
+            guard let coordinate = place.coordinate else { continue }
+            let row = Int(floor(coordinate.latitude / latitudeCellSize))
+            let column = Int(floor(coordinate.longitude / longitudeCellSize))
+            buckets["\(row):\(column)", default: []].append(place)
+        }
+
+        return buckets.values.compactMap { places in
+            let coordinates = places.compactMap(\.coordinate)
+            guard !coordinates.isEmpty else { return nil }
+            let latitude = coordinates.map(\.latitude).reduce(0, +) / Double(coordinates.count)
+            let longitude = coordinates.map(\.longitude).reduce(0, +) / Double(coordinates.count)
+            return PlanningMapPlaceGroup(
+                places: places.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            )
+        }
+        .sorted { $0.id < $1.id }
+    }
+
     private var currentMapCoordinate: CLLocationCoordinate2D? {
         tracker.currentJourney?.position?.coordinate ??
             currentStatus?.current?.coordinate ??
@@ -1082,7 +1123,22 @@ struct PlanView: View {
                     }
                 }
             }
-            ForEach(mapPlaces) { place in
+            ForEach(groupedMapPlaces) { group in
+                Annotation(group.places.count == 1 ? group.places[0].name : "\(group.places.count) saved places", coordinate: group.coordinate) {
+                    if let place = group.places.first, group.places.count == 1 {
+                        Button { selectPlace(place) } label: {
+                            mapMarker(for: place)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button { zoomToMapPlaces(group.places) } label: {
+                            mapClusterMarker(count: group.places.count)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            ForEach(emphasizedMapPlaces) { place in
                 if let coordinate = place.coordinate {
                     Annotation(place.name, coordinate: coordinate) {
                         Button { selectPlace(place) } label: {
@@ -1110,6 +1166,40 @@ struct PlanView: View {
             visibleRegion = context.region
         }
         .accessibilityLabel("Saved places and planned sea route")
+    }
+
+    private func mapClusterMarker(count: Int) -> some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .font(.caption.bold())
+            .foregroundStyle(.white)
+            .frame(width: 40, height: 40)
+            .background(Chartroom.ink, in: Circle())
+            .overlay(Circle().stroke(Chartroom.sea, lineWidth: 3))
+            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            .accessibilityLabel("\(count) saved places. Double tap to zoom in.")
+    }
+
+    private func zoomToMapPlaces(_ places: [PlaceSummary]) {
+        let coordinates = places.compactMap(\.coordinate)
+        guard !coordinates.isEmpty else { return }
+        let latitudes = coordinates.map(\.latitude)
+        let longitudes = coordinates.map(\.longitude)
+        guard let minLatitude = latitudes.min(), let maxLatitude = latitudes.max(),
+              let minLongitude = longitudes.min(), let maxLongitude = longitudes.max()
+        else { return }
+        let currentSpan = visibleRegion?.span ?? MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(
+                latitude: (minLatitude + maxLatitude) / 2,
+                longitude: (minLongitude + maxLongitude) / 2
+            ),
+            span: MKCoordinateSpan(
+                latitudeDelta: max((maxLatitude - minLatitude) * 1.8, currentSpan.latitudeDelta * 0.45),
+                longitudeDelta: max((maxLongitude - minLongitude) * 1.8, currentSpan.longitudeDelta * 0.45)
+            )
+        )
+        visibleRegion = region
+        camera = .region(region)
     }
 
     private func mapMarker(for place: PlaceSummary) -> some View {

@@ -207,6 +207,34 @@ test("snaps nearshore planning endpoints to water before routing", () => {
   assert.notDeepEqual(route.legs[0].coordinates[0], [vikos.lng, vikos.lat]);
 });
 
+test("routes safely from Spetses to Parali Perdika", () => {
+  const route = buildPlanningRoute([
+    { lat: 37.26, lng: 23.16 },
+    { lat: 37.69133333333333, lng: 23.4505 },
+  ]);
+
+  assert.equal(route.legs.length, 1);
+  assert.equal(route.legs[0].method, "coastline");
+  assert.ok(route.legs[0].coordinates.length > 2);
+  assert.ok(route.legs[0].distanceNm > 35);
+  assert.ok(route.legs[0].distanceNm < 45);
+});
+
+test("trusts an inland current-place pin for the first departure only", () => {
+  const currentPlace = { lat: 37.7, lng: 23.35 };
+  const paraliPerdika = { lat: 37.69133333333333, lng: 23.4505 };
+
+  assert.equal(classifyPlanningPoint(currentPlace).routable, false);
+
+  const departing = buildPlanningRoute([currentPlace, paraliPerdika]);
+  assert.equal(departing.legs[0].method, "coastline");
+  assert.equal(departing.legs[0].snappedEndpoints, true);
+  assert.ok(departing.legs[0].distanceNm > 4);
+
+  const arriving = buildPlanningRoute([paraliPerdika, currentPlace]);
+  assert.equal(arriving.legs[0].method, "unresolved");
+});
+
 test("rejects invalid planning route coordinates", () => {
   assert.throws(
     () =>
