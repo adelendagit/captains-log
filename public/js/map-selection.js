@@ -5,6 +5,8 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CaptainsLogMapSelection = api;
 })(typeof globalThis === "object" ? globalThis : this, function mapSelection() {
+  const DEFAULT_EMPTY_PLAN_RADIUS_NM = 10;
+
   function hasCoordinates(place) {
     return Number.isFinite(place?.lat) && Number.isFinite(place?.lng);
   }
@@ -22,6 +24,7 @@
   }
 
   return {
+    DEFAULT_EMPTY_PLAN_RADIUS_NM,
     hasCoordinates,
     hasUpcomingStops,
     isUpcomingStop,

@@ -1,10 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  DEFAULT_EMPTY_PLAN_RADIUS_NM,
   hasUpcomingStops,
   isUpcomingStop,
   showSavedPlacesByDefault,
 } = require("../public/js/map-selection");
+
+test("an empty plan defaults to a 10 nautical mile radius", () => {
+  assert.equal(DEFAULT_EMPTY_PLAN_RADIUS_NM, 10);
+});
 
 test("a completed plan card does not suppress saved places", () => {
   const stops = [

@@ -54,6 +54,11 @@ let requestedPlanningRouteKey = null;
 let planningRouteDrawVersion = 0;
 let planningTableRequestKey = null;
 const INITIAL_MAP_RADIUS_METERS = 1000;
+const METERS_PER_NAUTICAL_MILE = 1852;
+const EMPTY_PLAN_DIAMETER_METERS =
+  CaptainsLogMapSelection.DEFAULT_EMPTY_PLAN_RADIUS_NM *
+  METERS_PER_NAUTICAL_MILE *
+  2;
 const ROUTE_STYLES = Object.freeze({
   planned: Object.freeze({
     color: "#0077cc",
@@ -606,7 +611,16 @@ function focusUnderwayMap({ animate = true } = {}) {
   if (Number.isFinite(destination?.lat) && Number.isFinite(destination?.lng)) {
     coordinates.push([destination.lat, destination.lng]);
   }
-  if (coordinates.length > 1) {
+  if (!CaptainsLogMapSelection.hasUpcomingStops(stops)) {
+    const bounds = L.latLng(point.lat, point.lng).toBounds(
+      EMPTY_PLAN_DIAMETER_METERS,
+    );
+    leafletMap.fitBounds(bounds, {
+      animate,
+      maxZoom: 14,
+      ...planningMapFitPadding(leafletMap),
+    });
+  } else if (coordinates.length > 1) {
     leafletMap.fitBounds(coordinates, {
       animate,
       maxZoom: 14,
@@ -696,7 +710,7 @@ function setupUnderwayMapControls() {
 }
 
 function getPlanningMapFocus() {
-  if (stops.length > 0) return null;
+  if (CaptainsLogMapSelection.hasUpcomingStops(stops)) return null;
 
   const livePosition = currentJourney?.active && currentJourney.position;
   if (
@@ -707,7 +721,7 @@ function getPlanningMapFocus() {
     return { lat: livePosition.lat, lng: livePosition.lng, source: "live" };
   }
 
-  const currentPlace = currentStatus?.current;
+  const currentPlace = currentStatus?.current || currentStatus?.from;
   if (
     currentPlace &&
     Number.isFinite(currentPlace.lat) &&
@@ -732,7 +746,7 @@ function focusPlanningMapOnCurrentPosition() {
   }
 
   const bounds = L.latLng(focus.lat, focus.lng).toBounds(
-    INITIAL_MAP_RADIUS_METERS * 2,
+    EMPTY_PLAN_DIAMETER_METERS,
   );
   leafletMap.fitBounds(bounds, {
     animate: false,
@@ -782,7 +796,8 @@ async function refreshCurrentJourney() {
     if (!response.ok) throw new Error("Unable to load live journey");
     currentJourney = await response.json();
     if (!wasActive && currentJourney?.active) {
-      followsUnderwayPosition = true;
+      followsUnderwayPosition =
+        !CaptainsLogMapSelection.hasUpcomingStops(stops);
       underwayPlanExpanded = false;
     }
     if (wasActive && !currentJourney?.active) underwayRoute = null;
@@ -1956,7 +1971,7 @@ function initMap(stops, places, logs = null) {
     }
   }
 
-  const stopCoords = [];
+  const plannedStopCoords = [];
 
   if (planningStopLayerGroup) {
     planningStopLayerGroup.clearLayers();
@@ -1989,7 +2004,9 @@ function initMap(stops, places, logs = null) {
   // plot planned stops only
   mapStops.forEach((s) => {
     const ll = [s.lat, s.lng];
-    stopCoords.push(ll);
+    if (CaptainsLogMapSelection.isUpcomingStop(s)) {
+      plannedStopCoords.push(ll);
+    }
 
     let popupHtml = `<strong>${escapeMarkup(s.name)}</strong><br>`;
     if (s.desc) {
@@ -2050,27 +2067,34 @@ function initMap(stops, places, logs = null) {
   setTimeout(() => {
     CaptainsLogLiveMap.runForCurrentMap(map, () => leafletMap, () => {
       map.invalidateSize();
-      if (
-        currentJourney?.active &&
-        followsUnderwayPosition &&
-        focusUnderwayMap({ animate: false })
-      ) {
-        return;
-      }
-      if (focusPlanningMapOnCurrentPosition()) {
-        return;
-      }
-      if (mapWasCreated && stopCoords.length) {
+      if (mapWasCreated && plannedStopCoords.length) {
+        if (currentJourney?.active) {
+          followsUnderwayPosition = false;
+          updateUnderwayMapControls();
+        }
         const initialBounds =
-          stopCoords.length === 1
-            ? L.latLng(stopCoords[0]).toBounds(INITIAL_MAP_RADIUS_METERS * 2)
-            : stopCoords;
+          plannedStopCoords.length === 1
+            ? L.latLng(plannedStopCoords[0]).toBounds(
+                INITIAL_MAP_RADIUS_METERS * 2,
+              )
+            : plannedStopCoords;
         map.fitBounds(initialBounds, {
           animate: false,
           maxZoom: 13,
           ...planningMapFitPadding(map),
         });
         planningMapViewportSource = "plan";
+        return;
+      }
+      if (focusPlanningMapOnCurrentPosition()) {
+        return;
+      }
+      if (
+        currentJourney?.active &&
+        followsUnderwayPosition &&
+        focusUnderwayMap({ animate: false })
+      ) {
+        return;
       }
     });
   }, 0);
