@@ -1,4 +1,4 @@
-/* global CaptainsLogMapSelection */
+/* global CaptainsLogLiveMap, CaptainsLogMapSelection */
 // public/js/captains-log.js
 
 let leafletMap = null;
@@ -572,14 +572,16 @@ function renderJourneyOnMap() {
   }
   journeyLayerGroup.clearLayers();
 
-  if (!currentJourney?.active || !currentJourney.position) return;
-  const track = Array.isArray(currentJourney.track) ? currentJourney.track : [];
-  const coordinates = track.map((point) => [point.lat, point.lng]);
-  if (coordinates.length > 1) {
-    L.polyline(coordinates, routeStyle("recorded")).addTo(journeyLayerGroup);
+  const journeyModel = CaptainsLogLiveMap.buildJourneyModel(currentJourney);
+  if (!journeyModel) return;
+  if (journeyModel.trackCoordinates.length > 1) {
+    L.polyline(
+      journeyModel.trackCoordinates,
+      routeStyle("recorded"),
+    ).addTo(journeyLayerGroup);
   }
 
-  const point = currentJourney.position;
+  const point = journeyModel.position;
   L.marker([point.lat, point.lng], {
     icon: L.divIcon({
       className: "live-boat-marker",
@@ -2046,29 +2048,31 @@ function initMap(stops, places, logs = null) {
 
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
-    map.invalidateSize();
-    if (
-      currentJourney?.active &&
-      followsUnderwayPosition &&
-      focusUnderwayMap({ animate: false })
-    ) {
-      return;
-    }
-    if (focusPlanningMapOnCurrentPosition()) {
-      return;
-    }
-    if (mapWasCreated && stopCoords.length) {
-      const initialBounds =
-        stopCoords.length === 1
-          ? L.latLng(stopCoords[0]).toBounds(INITIAL_MAP_RADIUS_METERS * 2)
-          : stopCoords;
-      map.fitBounds(initialBounds, {
-        animate: false,
-        maxZoom: 13,
-        ...planningMapFitPadding(map),
-      });
-      planningMapViewportSource = "plan";
-    }
+    CaptainsLogLiveMap.runForCurrentMap(map, () => leafletMap, () => {
+      map.invalidateSize();
+      if (
+        currentJourney?.active &&
+        followsUnderwayPosition &&
+        focusUnderwayMap({ animate: false })
+      ) {
+        return;
+      }
+      if (focusPlanningMapOnCurrentPosition()) {
+        return;
+      }
+      if (mapWasCreated && stopCoords.length) {
+        const initialBounds =
+          stopCoords.length === 1
+            ? L.latLng(stopCoords[0]).toBounds(INITIAL_MAP_RADIUS_METERS * 2)
+            : stopCoords;
+        map.fitBounds(initialBounds, {
+          animate: false,
+          maxZoom: 13,
+          ...planningMapFitPadding(map),
+        });
+        planningMapViewportSource = "plan";
+      }
+    });
   }, 0);
 
   // plot other places without changing zoom
