@@ -23,11 +23,17 @@
     return !hasUpcomingStops(stops);
   }
 
+  function markerRating(rating) {
+    if (!Number.isFinite(rating)) return null;
+    return Math.min(5, Math.max(1, Math.round(rating)));
+  }
+
   return {
     DEFAULT_EMPTY_PLAN_RADIUS_NM,
     hasCoordinates,
     hasUpcomingStops,
     isUpcomingStop,
+    markerRating,
     showSavedPlacesByDefault,
   };
 });

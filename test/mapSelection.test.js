@@ -4,6 +4,7 @@ const {
   DEFAULT_EMPTY_PLAN_RADIUS_NM,
   hasUpcomingStops,
   isUpcomingStop,
+  markerRating,
   showSavedPlacesByDefault,
 } = require("../public/js/map-selection");
 
@@ -55,4 +56,15 @@ test("a plan card without usable coordinates is not map-visible", () => {
 
   assert.equal(isUpcomingStop(stops[0]), false);
   assert.equal(showSavedPlacesByDefault(stops), true);
+});
+
+test("an unrated place has no map rating badge", () => {
+  assert.equal(markerRating(null), null);
+  assert.equal(markerRating(undefined), null);
+});
+
+test("a numeric place rating is rounded and bounded for its map badge", () => {
+  assert.equal(markerRating(3.6), 4);
+  assert.equal(markerRating(0), 1);
+  assert.equal(markerRating(6), 5);
 });

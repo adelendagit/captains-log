@@ -1548,9 +1548,7 @@ function stopMarkerIcon(
   place,
   { isPlanned = false, isCurrent = false, plannedIndex = null } = {},
 ) {
-  const rating = Number.isFinite(Number(place.rating))
-    ? Math.min(5, Math.max(1, Math.round(Number(place.rating))))
-    : null;
+  const rating = CaptainsLogMapSelection.markerRating(place.rating);
   const visits = Math.max(0, Number(place.visitCount) || 0);
   const stateClass = isCurrent
     ? " stop-marker--current"
