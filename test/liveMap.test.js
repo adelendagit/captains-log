@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildJourneyModel,
+  buildJourneyViewport,
   runForCurrentMap,
 } = require("../public/js/live-map");
 
@@ -41,6 +42,33 @@ test("does not render inactive journeys or invalid positions", () => {
     }),
     null,
   );
+});
+
+test("fits an active journey around the current position and destination", () => {
+  const journey = {
+    active: true,
+    position: { lat: 37.4978, lng: 23.4558 },
+    track: [],
+  };
+  const destination = { lat: 37.5854, lng: 23.4302 };
+
+  assert.deepEqual(buildJourneyViewport(journey, destination), [
+    [37.4978, 23.4558],
+    [37.5854, 23.4302],
+  ]);
+});
+
+test("falls back to the current position when a destination is unavailable", () => {
+  const journey = {
+    active: true,
+    position: { lat: 37.4978, lng: 23.4558 },
+    track: [],
+  };
+
+  assert.deepEqual(buildJourneyViewport(journey, { lat: null, lng: null }), [
+    [37.4978, 23.4558],
+  ]);
+  assert.equal(buildJourneyViewport({ active: false }, null), null);
 });
 
 test("ignores delayed layout work for a removed Leaflet map", () => {

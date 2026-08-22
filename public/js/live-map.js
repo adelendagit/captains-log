@@ -27,11 +27,27 @@
     };
   }
 
+  function buildJourneyViewport(journey, destination) {
+    const model = buildJourneyModel(journey);
+    if (!model) return null;
+
+    const coordinates = [[model.position.lat, model.position.lng]];
+    if (hasCoordinates(destination)) {
+      coordinates.push([destination.lat, destination.lng]);
+    }
+    return coordinates;
+  }
+
   function runForCurrentMap(map, getCurrentMap, callback) {
     if (!map || map !== getCurrentMap()) return false;
     callback(map);
     return true;
   }
 
-  return { buildJourneyModel, hasCoordinates, runForCurrentMap };
+  return {
+    buildJourneyModel,
+    buildJourneyViewport,
+    hasCoordinates,
+    runForCurrentMap,
+  };
 });

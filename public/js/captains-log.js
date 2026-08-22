@@ -671,21 +671,23 @@ function focusUnderwayMap({ animate = true } = {}) {
   if (!leafletMap || !currentJourney?.position) return false;
   const point = currentJourney.position;
   const destination = activeJourneyDestination();
-  const coordinates = [[point.lat, point.lng]];
-  if (Number.isFinite(destination?.lat) && Number.isFinite(destination?.lng)) {
-    coordinates.push([destination.lat, destination.lng]);
-  }
-  if (!CaptainsLogMapSelection.hasUpcomingStops(stops)) {
-    const bounds = L.latLng(point.lat, point.lng).toBounds(
-      EMPTY_PLAN_DIAMETER_METERS,
-    );
-    leafletMap.fitBounds(bounds, {
+  const coordinates = CaptainsLogLiveMap.buildJourneyViewport(
+    currentJourney,
+    destination,
+  );
+  if (!coordinates) return false;
+
+  if (coordinates.length > 1) {
+    leafletMap.fitBounds(coordinates, {
       animate,
       maxZoom: 14,
       ...planningMapFitPadding(leafletMap),
     });
-  } else if (coordinates.length > 1) {
-    leafletMap.fitBounds(coordinates, {
+  } else if (!CaptainsLogMapSelection.hasUpcomingStops(stops)) {
+    const bounds = L.latLng(point.lat, point.lng).toBounds(
+      EMPTY_PLAN_DIAMETER_METERS,
+    );
+    leafletMap.fitBounds(bounds, {
       animate,
       maxZoom: 14,
       ...planningMapFitPadding(leafletMap),
@@ -877,8 +879,7 @@ async function refreshVesselState({ render = true, resetMap = false } = {}) {
     vesselStateLoadFailed = false;
     writeChartSnapshot();
     if (!wasActive && currentJourney?.active) {
-      followsUnderwayPosition =
-        !CaptainsLogMapSelection.hasUpcomingStops(stops);
+      followsUnderwayPosition = true;
       underwayPlanExpanded = false;
     }
     if (wasActive && !currentJourney?.active) underwayRoute = null;
@@ -2144,11 +2145,14 @@ function initMap(stops, places, logs = null) {
   setTimeout(() => {
     CaptainsLogLiveMap.runForCurrentMap(map, () => leafletMap, () => {
       map.invalidateSize();
+      if (
+        currentJourney?.active &&
+        followsUnderwayPosition &&
+        focusUnderwayMap({ animate: false })
+      ) {
+        return;
+      }
       if (mapWasCreated && plannedStopCoords.length) {
-        if (currentJourney?.active) {
-          followsUnderwayPosition = false;
-          updateUnderwayMapControls();
-        }
         const initialBounds =
           plannedStopCoords.length === 1
             ? L.latLng(plannedStopCoords[0]).toBounds(
@@ -2164,13 +2168,6 @@ function initMap(stops, places, logs = null) {
         return;
       }
       if (focusPlanningMapOnCurrentPosition()) {
-        return;
-      }
-      if (
-        currentJourney?.active &&
-        followsUnderwayPosition &&
-        focusUnderwayMap({ animate: false })
-      ) {
         return;
       }
     });
