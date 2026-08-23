@@ -170,6 +170,10 @@ private struct CurrentPositionView: View {
     @State private var descriptionDraft = ""
     @State private var isSavingDescription = false
     @State private var descriptionError: String?
+    @State private var isUpdatingUnderwayDestination = false
+    @State private var underwayDestinationMessage: String?
+    @State private var underwayDestinationFailed = false
+    @State private var underwayDestinationOverride: PlaceSummary?
     @FocusState private var descriptionIsFocused: Bool
 
     let onStartJourney: () -> Void
@@ -246,8 +250,15 @@ private struct CurrentPositionView: View {
                         Task { await refreshMapData() }
                     },
                     onPlaceChanged: { Task { await refreshMapData() } }
-                ) { EmptyView() }
+                ) {
+                    underwayPlaceActions(for: place)
+                }
                 .presentationDetents([.medium, .large])
+            }
+            .onChange(of: selectedMapPlace?.placeCardID) {
+                guard !isUpdatingUnderwayDestination else { return }
+                underwayDestinationMessage = nil
+                underwayDestinationFailed = false
             }
             .onChange(of: tracker.currentStatus?.current?.id) {
                 isEditingDescription = false
@@ -723,9 +734,112 @@ private struct CurrentPositionView: View {
     }
 
     private var activeDestination: PlaceSummary? {
-        tracker.currentStatus?.destination ??
+        underwayDestinationOverride ??
+            tracker.currentStatus?.destination ??
             tracker.currentStatus?.plannedDestination ??
             plannedStops?.first
+    }
+
+    @ViewBuilder
+    private func underwayPlaceActions(for place: PlaceSummary) -> some View {
+        let isOrigin = place.placeCardID == tracker.currentStatus?.from?.placeCardID
+        if tracker.isUnderway && !isOrigin {
+            Divider()
+            if place.placeCardID == activeDestination?.placeCardID {
+                Label("Current destination", systemImage: "location.north.fill")
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(Chartroom.sea)
+            } else {
+                Button {
+                    Task { await setAsNextDestination(place) }
+                } label: {
+                    if isUpdatingUnderwayDestination {
+                        ProgressView().frame(maxWidth: .infinity)
+                    } else {
+                        Label("Set as next destination", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Chartroom.sea)
+                .disabled(isUpdatingUnderwayDestination)
+            }
+            if let underwayDestinationMessage {
+                Text(underwayDestinationMessage)
+                    .font(.caption)
+                    .foregroundStyle(underwayDestinationFailed ? .red : .secondary)
+            }
+        }
+    }
+
+    @MainActor
+    private func setAsNextDestination(_ place: PlaceSummary) async {
+        guard let token = authentication.token else {
+            underwayDestinationFailed = true
+            underwayDestinationMessage = "Sign in again to update the route."
+            return
+        }
+        let existingStop = plannedStops?.first {
+            $0.dueComplete != true && $0.placeCardID == place.placeCardID
+        }
+        let earliestOtherDue = plannedStops?
+            .filter {
+                $0.dueComplete != true &&
+                    $0.placeCardID != place.placeCardID
+            }
+            .compactMap(\.due)
+            .min()
+        let now = Date()
+        let due = earliestOtherDue.map {
+            min(now, $0.addingTimeInterval(-60))
+        } ?? now
+        let previousStops = plannedStops
+        let previousOverride = underwayDestinationOverride
+
+        isUpdatingUnderwayDestination = true
+        underwayDestinationMessage = nil
+        underwayDestinationFailed = false
+        let updatedPlace = (existingStop ?? place).withPlanningState(
+            due: due,
+            dueComplete: false
+        )
+        underwayDestinationOverride = updatedPlace
+        var updatedStops = (plannedStops ?? []).filter {
+            $0.placeCardID != place.placeCardID
+        }
+        updatedStops.append(updatedPlace)
+        plannedStops = updatedStops.sorted {
+            ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture)
+        }
+
+        defer { isUpdatingUnderwayDestination = false }
+        do {
+            let queued = try await authentication.api.planStop(
+                placeID: place.placeCardID,
+                planID: existingStop?.planCardID,
+                due: due,
+                token: token,
+                queueImmediately: authentication.isOffline
+            )
+            await authentication.refreshPendingMutationCount()
+            if !queued {
+                await refreshMapData()
+                if tracker.currentStatus?.destination?.placeCardID == place.placeCardID {
+                    underwayDestinationOverride = nil
+                }
+            } else {
+                plannedRoute = await cachedUnderwayRoute(stops: plannedStops ?? [])
+            }
+            underwayDestinationMessage = queued
+                ? "Route updated on this iPhone. It will sync when connected."
+                : "\(place.name) is now the next destination."
+        } catch {
+            plannedStops = previousStops
+            underwayDestinationOverride = previousOverride
+            underwayDestinationFailed = true
+            underwayDestinationMessage = "The route couldn’t be updated. Please try again."
+            await refreshMapData()
+        }
     }
 
     private var destinationCoordinate: CLLocationCoordinate2D? {

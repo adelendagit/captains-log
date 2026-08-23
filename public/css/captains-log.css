@@ -3710,6 +3710,36 @@ body {
   font-size: 0.82rem;
 }
 
+.place-detail-route-action {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  background: rgba(24, 122, 126, 0.09);
+  border: 1px solid rgba(24, 122, 126, 0.2);
+  border-radius: 0.8rem;
+}
+
+.place-detail-route-action button,
+.place-detail-route-current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.place-detail-route-current {
+  color: var(--sk-sea-600);
+  font-weight: 750;
+}
+
+.place-detail-route-action .place-detail-status {
+  color: var(--sk-sea-600);
+}
+
+.place-detail-route-action .place-detail-status.error {
+  color: #b42318;
+}
+
 #place-detail-edit-form label,
 #place-detail-note-form {
   display: grid;

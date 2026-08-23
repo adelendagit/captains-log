@@ -1,4 +1,4 @@
-/* global CaptainsLogLiveMap, CaptainsLogMapSelection */
+/* global CaptainsLogLiveMap, CaptainsLogMapSelection, CaptainsLogUnderwayActions */
 // public/js/captains-log.js
 
 let leafletMap = null;
@@ -3895,6 +3895,9 @@ function setupPlaceDetail() {
   const noteStatus = document.getElementById("place-detail-note-status");
   let activePlace = null;
   let selectedRating = null;
+  let routeStatus = "";
+  let routeStatusIsError = false;
+  let isUpdatingRoute = false;
 
   const findPlace = (id) =>
     [...stops, ...places, currentStatus?.current, currentStatus?.from]
@@ -3930,18 +3933,91 @@ function setupPlaceDetail() {
     ]
       .filter(Boolean)
       .join("");
+    const activeDestinationId = placeIdFor(activeJourneyDestination());
+    const activePlaceId = placeIdFor(activePlace);
+    const originId = placeIdFor(currentStatus?.from);
+    const isUnderway = Boolean(
+      currentJourney?.active || currentStatus?.status === "underway",
+    );
+    let underwayAction = "";
+    if (canPlan && isUnderway && activePlaceId !== originId) {
+      underwayAction =
+        activePlaceId === activeDestinationId
+          ? `<div class="place-detail-route-action"><span class="place-detail-route-current"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i> Current destination</span></div>`
+          : `<div class="place-detail-route-action">
+              <button type="button" id="place-detail-set-destination" ${isUpdatingRoute ? "disabled" : ""}>
+                <i class="fa-solid fa-route" aria-hidden="true"></i>
+                ${isUpdatingRoute ? "Updating route…" : "Set as next destination"}
+              </button>
+              ${routeStatus ? `<p class="place-detail-status${routeStatusIsError ? " error" : ""}" role="status">${escapeMarkup(routeStatus)}</p>` : ""}
+            </div>`;
+    }
     view.innerHTML = `
       <div class="place-detail-summary">
         <div class="labels-wrap">${labels}</div>
         <div class="place-detail-meta">${meta}</div>
         <p class="place-detail-description">${activePlace.desc ? escapeMarkup(activePlace.desc) : '<span class="muted">No description yet.</span>'}</p>
         <div class="place-detail-links">${links}</div>
+        ${underwayAction}
         <button type="button" id="place-detail-start-edit"><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit place</button>
       </div>`;
     view
       .querySelector("#place-detail-start-edit")
       .addEventListener("click", startEditing);
+    view
+      .querySelector("#place-detail-set-destination")
+      ?.addEventListener("click", setAsNextDestination);
   };
+
+  async function setAsNextDestination() {
+    if (!activePlace || isUpdatingRoute) return;
+    const activePlaceId = placeIdFor(activePlace);
+    const plannedStop = stops.find(
+      (stop) =>
+        stop.dueComplete !== true && placeIdFor(stop) === activePlaceId,
+    );
+    const due = CaptainsLogUnderwayActions.nextDestinationDue(
+      stops,
+      activePlaceId,
+    );
+    isUpdatingRoute = true;
+    routeStatus = "";
+    routeStatusIsError = false;
+    renderPlace();
+    try {
+      const response = await fetch("/api/plan-stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          placeId: activePlaceId,
+          ...(plannedStop?.id ? { planId: plannedStop.id } : {}),
+          due: due.toISOString(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(result.error || "Unable to update the route");
+
+      const data = await fetchData();
+      stops = data.stops;
+      places = data.places;
+      currentStatus = data.currentStatus;
+      boardLabels = data.boardLabels || boardLabels;
+      activePlace = findPlace(activePlaceId) || activePlace;
+      routeStatus = `${activePlace.name} is now the next destination.`;
+      renderMapWithToggle();
+      renderTable(
+        stops,
+        parseFloat(document.getElementById("speed-input").value) || 0,
+      );
+    } catch (error) {
+      routeStatus = error.message;
+      routeStatusIsError = true;
+    } finally {
+      isUpdatingRoute = false;
+      renderPlace();
+    }
+  }
 
   const renderRating = () => {
     ratingInput.innerHTML = Array.from({ length: 5 }, (_, index) => {
@@ -4028,6 +4104,9 @@ function setupPlaceDetail() {
   const open = (id) => {
     activePlace = findPlace(id);
     if (!activePlace) return;
+    routeStatus = "";
+    routeStatusIsError = false;
+    isUpdatingRoute = false;
     stopEditing();
     renderPlace();
     noteInput.value = "";
