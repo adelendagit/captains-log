@@ -244,7 +244,8 @@ private struct CurrentPositionView: View {
                     onNavilySaved: {
                         selectedMapPlace = nil
                         Task { await refreshMapData() }
-                    }
+                    },
+                    onPlaceChanged: { Task { await refreshMapData() } }
                 ) { EmptyView() }
                 .presentationDetents([.medium, .large])
             }

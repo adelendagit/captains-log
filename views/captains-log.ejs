@@ -186,6 +186,50 @@
 </main>
 
 <% if (user) { %>
+  <div id="place-detail-modal" class="place-detail-modal hidden" role="dialog" aria-modal="true" aria-labelledby="place-detail-title">
+    <button type="button" class="place-detail-backdrop" data-place-detail-close aria-label="Close place details"></button>
+    <aside class="place-detail-panel">
+      <header class="place-detail-header">
+        <div>
+          <p class="chartroom-eyebrow">Saved place</p>
+          <h2 id="place-detail-title">Place</h2>
+          <p id="place-detail-area" class="muted"></p>
+        </div>
+        <button type="button" class="place-detail-close" data-place-detail-close aria-label="Close place details">&times;</button>
+      </header>
+      <div class="place-detail-body">
+        <section id="place-detail-view"></section>
+        <form id="place-detail-edit-form" class="hidden">
+          <label>Name<input id="place-detail-name" maxlength="256" required></label>
+          <label>Description<textarea id="place-detail-description" maxlength="16384" rows="6"></textarea></label>
+          <fieldset>
+            <legend>Rating</legend>
+            <div id="place-detail-rating" class="place-detail-rating" role="radiogroup" aria-label="Rating"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Labels</legend>
+            <div id="place-detail-labels" class="place-detail-labels"></div>
+          </fieldset>
+          <p id="place-detail-edit-status" class="place-detail-status" role="status"></p>
+          <div class="place-detail-form-actions">
+            <button type="button" id="place-detail-cancel-edit">Cancel</button>
+            <button type="submit">Save changes</button>
+          </div>
+        </form>
+        <section class="place-detail-notes" aria-labelledby="place-detail-notes-title">
+          <h3 id="place-detail-notes-title">Notes</h3>
+          <div id="place-detail-notes-list"><p class="muted">Loading notes…</p></div>
+          <form id="place-detail-note-form">
+            <label for="place-detail-note">Add a note</label>
+            <textarea id="place-detail-note" maxlength="4000" rows="3" required></textarea>
+            <p id="place-detail-note-status" class="place-detail-status" role="status"></p>
+            <button type="submit"><i class="fa-regular fa-comment" aria-hidden="true"></i> Add note</button>
+          </form>
+        </section>
+      </div>
+    </aside>
+  </div>
+
   <div id="log-wizard-modal" class="log-wizard-modal hidden" role="dialog" aria-modal="true" aria-labelledby="log-wizard-title">
     <div class="log-wizard-shell">
       <header class="log-wizard-header">

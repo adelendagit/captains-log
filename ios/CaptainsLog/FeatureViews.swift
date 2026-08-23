@@ -686,15 +686,23 @@ private struct PlanningDay: Identifiable {
 }
 
 struct PlaceDetailView<Actions: View>: View {
-    let place: PlaceSummary
     let due: Date?
     let api: APIClient
     let token: String?
     let onDismiss: () -> Void
     let onNavilySaved: () -> Void
+    let onPlaceChanged: () -> Void
     let actions: Actions
 
+    @State private var place: PlaceSummary
     @State private var isCheckingNavily = false
+    @State private var isEditing = false
+    @State private var notes: [PlaceNote] = []
+    @State private var newNote = ""
+    @State private var isLoadingNotes = false
+    @State private var isSavingNote = false
+    @State private var noteError: String?
+    @State private var boardLabels: [PlaceLabel] = []
 
     init(
         place: PlaceSummary,
@@ -703,14 +711,16 @@ struct PlaceDetailView<Actions: View>: View {
         token: String?,
         onDismiss: @escaping () -> Void,
         onNavilySaved: @escaping () -> Void,
+        onPlaceChanged: @escaping () -> Void = {},
         @ViewBuilder actions: () -> Actions
     ) {
-        self.place = place
+        _place = State(initialValue: place)
         self.due = due
         self.api = api
         self.token = token
         self.onDismiss = onDismiss
         self.onNavilySaved = onNavilySaved
+        self.onPlaceChanged = onPlaceChanged
         self.actions = actions()
     }
 
@@ -786,14 +796,80 @@ struct PlaceDetailView<Actions: View>: View {
                         .accessibilityLabel(isCheckingNavily ? "Opening Navily" : "Check Navily")
                     }
 
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Notes")
+                            .font(.system(.title3, design: .serif, weight: .semibold))
+                        if isLoadingNotes {
+                            ProgressView("Loading notes…")
+                        } else if notes.isEmpty {
+                            Text("No notes yet.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(notes) { note in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(note.text)
+                                    HStack(spacing: 5) {
+                                        if let author = note.author { Text(author) }
+                                        Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Chartroom.surface, in: RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+
+                        TextField("Add a note", text: $newNote, axis: .vertical)
+                            .lineLimit(2...6)
+                        Button {
+                            Task { await addNote() }
+                        } label: {
+                            if isSavingNote {
+                                ProgressView().frame(maxWidth: .infinity)
+                            } else {
+                                Label("Add note", systemImage: "plus.bubble").frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(token == nil || isSavingNote || newNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let noteError {
+                            Text(noteError).font(.caption).foregroundStyle(.red)
+                        }
+                    }
+
                     actions
                 }
                 .padding(22)
             }
             .background(Chartroom.paper)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Edit") { isEditing = true }
+                        .disabled(token == nil)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done", action: onDismiss)
+                }
+            }
+            .task { await loadDetails() }
+            .sheet(isPresented: $isEditing) {
+                if let token {
+                    PlaceEditView(
+                        place: place,
+                        boardLabels: boardLabels,
+                        api: api,
+                        token: token,
+                        onSaved: { updated in
+                            place = place.mergingEditableDetails(from: updated)
+                            isEditing = false
+                            onPlaceChanged()
+                        },
+                        onCancel: { isEditing = false }
+                    )
                 }
             }
             .sheet(isPresented: $isCheckingNavily) {
@@ -810,6 +886,140 @@ struct PlaceDetailView<Actions: View>: View {
                 }
             }
         }
+    }
+
+    @MainActor private func loadDetails() async {
+        guard let token else { return }
+        isLoadingNotes = true
+        async let loadedNotes = api.placeNotes(cardID: place.placeCardID, token: token)
+        async let planning = api.planning(token: token)
+        do { notes = try await loadedNotes } catch { noteError = error.localizedDescription }
+        if let loadedPlanning = try? await planning { boardLabels = loadedPlanning.boardLabels ?? [] }
+        isLoadingNotes = false
+    }
+
+    @MainActor private func addNote() async {
+        guard let token else { return }
+        let text = newNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        isSavingNote = true
+        noteError = nil
+        do {
+            let note = try await api.addPlaceNote(cardID: place.placeCardID, text: text, token: token)
+            notes.insert(note, at: 0)
+            newNote = ""
+        } catch {
+            noteError = error.localizedDescription
+        }
+        isSavingNote = false
+    }
+}
+
+private struct PlaceEditView: View {
+    let place: PlaceSummary
+    let boardLabels: [PlaceLabel]
+    let api: APIClient
+    let token: String
+    let onSaved: (PlaceSummary) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String
+    @State private var description: String
+    @State private var rating: Int?
+    @State private var selectedLabelIDs: Set<String>
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(
+        place: PlaceSummary,
+        boardLabels: [PlaceLabel],
+        api: APIClient,
+        token: String,
+        onSaved: @escaping (PlaceSummary) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.place = place
+        self.boardLabels = boardLabels
+        self.api = api
+        self.token = token
+        self.onSaved = onSaved
+        self.onCancel = onCancel
+        _name = State(initialValue: place.name)
+        _description = State(initialValue: place.desc ?? "")
+        _rating = State(initialValue: place.rating)
+        _selectedLabelIDs = State(initialValue: Set((place.labels ?? []).map(\.id)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Place") {
+                    TextField("Name", text: $name)
+                    TextField("Description", text: $description, axis: .vertical)
+                        .lineLimit(4...12)
+                }
+                Section("Rating") {
+                    HStack {
+                        ForEach(1...5, id: \.self) { value in
+                            Button { rating = value } label: {
+                                Image(systemName: value <= (rating ?? 0) ? "star.fill" : "star")
+                                    .foregroundStyle(.yellow)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(value) stars")
+                        }
+                    }
+                }
+                Section("Labels") {
+                    ForEach(boardLabels) { label in
+                        Button {
+                            if selectedLabelIDs.contains(label.id) {
+                                selectedLabelIDs.remove(label.id)
+                            } else {
+                                selectedLabelIDs.insert(label.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(label.name.isEmpty ? "Unnamed label" : label.name)
+                                Spacer()
+                                if selectedLabelIDs.contains(label.id) { Image(systemName: "checkmark") }
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Edit Place")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    @MainActor private func save() async {
+        isSaving = true
+        errorMessage = nil
+        do {
+            let updated = try await api.updatePlace(
+                cardID: place.placeCardID,
+                name: name,
+                description: description,
+                rating: rating,
+                labelIDs: Array(selectedLabelIDs),
+                token: token
+            )
+            onSaved(updated)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 }
 
@@ -1321,7 +1531,8 @@ struct PlanView: View {
             onNavilySaved: {
                 selectedMapPlace = nil
                 Task { await load() }
-            }
+            },
+            onPlaceChanged: { Task { await load() } }
         ) {
             Group {
                     if place.due != nil {

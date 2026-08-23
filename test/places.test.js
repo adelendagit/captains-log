@@ -10,7 +10,10 @@ process.env.TRELLO_OAUTH_KEY = "test-oauth-key";
 process.env.TRELLO_OAUTH_SECRET = "test-oauth-secret";
 
 const captainsLog = require("../routes/captainsLog");
-const { invalidateBoardCache } = require("../services/trello");
+const {
+  invalidateBoardCache,
+  invalidateCommentCache,
+} = require("../services/trello");
 
 async function startTestServer(user) {
   const app = express();
@@ -110,15 +113,18 @@ test("creates a Trello place and populates its location fields", async (t) => {
     idList: "greece",
   });
   assert.equal(puts.length, 3);
-  assert.deepEqual(puts.map(({ body }) => body), [
-    { value: { number: "38.9005" } },
-    { value: { number: "21.0212" } },
-    {
-      value: {
-        text: "https://www.navily.com/mouillage/anaktorio/42264",
+  assert.deepEqual(
+    puts.map(({ body }) => body),
+    [
+      { value: { number: "38.9005" } },
+      { value: { number: "21.0212" } },
+      {
+        value: {
+          text: "https://www.navily.com/mouillage/anaktorio/42264",
+        },
       },
-    },
-  ]);
+    ],
+  );
 });
 
 test("rejects invalid place input before calling Trello", async (t) => {
@@ -189,6 +195,193 @@ test("requires both place coordinates", async (t) => {
   assert.deepEqual(await response.json(), {
     error: "Latitude must be between -90 and 90",
   });
+});
+
+test("updates a place name, description, rating, and labels", async (t) => {
+  invalidateBoardCache();
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  const originalPut = axios.put;
+  const originalDelete = axios.delete;
+  const puts = [];
+  const posts = [];
+  axios.get = async () => ({
+    data: {
+      cards: [
+        {
+          id: "place-1",
+          name: "Old name",
+          desc: "Old",
+          idList: "greece",
+          labels: [],
+        },
+      ],
+      lists: [{ id: "greece", name: "Greece" }],
+      customFields: [
+        {
+          id: "rating-field",
+          name: "⭐️",
+          type: "list",
+          options: [{ id: "rating-4", value: { text: "4" } }],
+        },
+      ],
+      members: [{ id: "captain", memberType: "normal" }],
+      labels: [{ id: "quiet", name: "Quiet", color: "green" }],
+    },
+  });
+  axios.put = async (url, body, options) => {
+    puts.push({ url, body, options });
+    return { data: {} };
+  };
+  axios.post = async (url, body, options) => {
+    posts.push({ url, body, options });
+    return { data: {} };
+  };
+  axios.delete = async () => ({ data: {} });
+  t.after(() => {
+    axios.get = originalGet;
+    axios.post = originalPost;
+    axios.put = originalPut;
+    axios.delete = originalDelete;
+    invalidateBoardCache();
+  });
+
+  const server = await startTestServer({
+    id: "captain",
+    token: "member-token",
+    tokenSecret: "member-secret",
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/places/place-1`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "New name",
+        description: "New description",
+        rating: 4,
+        labelIds: ["quiet"],
+      }),
+    },
+  );
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.place.name, "New name");
+  assert.equal(result.place.desc, "New description");
+  assert.equal(result.place.rating, 4);
+  assert.deepEqual(
+    result.place.labels.map((label) => label.name),
+    ["Quiet"],
+  );
+  assert.equal(puts.length, 2);
+  assert.equal(posts.length, 1);
+});
+
+test("adds a human note to a place", async (t) => {
+  invalidateBoardCache();
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  axios.get = async () => ({
+    data: {
+      cards: [{ id: "place-1", name: "Place", idList: "greece", labels: [] }],
+      lists: [{ id: "greece", name: "Greece" }],
+      customFields: [],
+      members: [{ id: "captain", memberType: "normal" }],
+      labels: [],
+    },
+  });
+  axios.post = async (url, _body, options) => ({
+    data: {
+      id: "note-1",
+      date: "2026-08-23T10:00:00.000Z",
+      memberCreator: { fullName: "Captain" },
+      url,
+      text: options.params.text,
+    },
+  });
+  t.after(() => {
+    axios.get = originalGet;
+    axios.post = originalPost;
+    invalidateBoardCache();
+  });
+
+  const server = await startTestServer({
+    id: "captain",
+    token: "member-token",
+    tokenSecret: "member-secret",
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/places/place-1/notes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Arrive before the afternoon wind." }),
+    },
+  );
+  const result = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(result.note.id, "note-1");
+  assert.equal(result.note.author, "Captain");
+  assert.equal(result.note.text, "Arrive before the afternoon wind.");
+});
+
+test("lists human notes without structured log comments", async (t) => {
+  invalidateBoardCache();
+  invalidateCommentCache();
+  const originalGet = axios.get;
+  axios.get = async (url) => {
+    if (url.includes("/actions?")) {
+      return {
+        data: [
+          {
+            id: "arrival",
+            type: "commentCard",
+            date: "2026-08-23T09:00:00.000Z",
+            data: { card: { id: "place-1" }, text: "Arrived\ntimestamp: 2026-08-23T09:00" },
+          },
+          {
+            id: "note-1",
+            type: "commentCard",
+            date: "2026-08-23T10:00:00.000Z",
+            data: { card: { id: "place-1" }, text: "Quiet before lunchtime." },
+            memberCreator: { fullName: "Captain" },
+          },
+        ],
+      };
+    }
+    return {
+      data: {
+        cards: [{ id: "place-1", name: "Place", idList: "greece", labels: [] }],
+        lists: [{ id: "greece", name: "Greece" }],
+        customFields: [],
+        members: [{ id: "captain", memberType: "normal" }],
+        labels: [],
+      },
+    };
+  };
+  t.after(() => {
+    axios.get = originalGet;
+    invalidateBoardCache();
+    invalidateCommentCache();
+  });
+
+  const server = await startTestServer({
+    id: "captain",
+    token: "member-token",
+    tokenSecret: "member-secret",
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/places/place-1/notes`,
+  );
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(result.notes.map((note) => note.id), ["note-1"]);
 });
 
 test("saves a structured Navily snapshot comment", async (t) => {

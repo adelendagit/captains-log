@@ -96,6 +96,29 @@ struct PlaceSummary: Codable, Identifiable {
         )
     }
 
+    func mergingEditableDetails(from updated: PlaceSummary) -> PlaceSummary {
+        PlaceSummary(
+            id: id,
+            planId: planId,
+            placeId: placeId,
+            name: updated.name,
+            listName: updated.listName ?? listName,
+            due: due,
+            dueComplete: dueComplete,
+            lat: updated.lat ?? lat,
+            lng: updated.lng ?? lng,
+            rating: updated.rating,
+            desc: updated.desc,
+            labels: updated.labels,
+            trelloUrl: updated.trelloUrl ?? trelloUrl,
+            navilyUrl: updated.navilyUrl ?? navilyUrl,
+            navilySnapshot: navilySnapshot,
+            visitCount: visitCount,
+            lastVisitedAt: lastVisitedAt,
+            presentation: updated.presentation ?? presentation
+        )
+    }
+
     var looksLikeAnchorage: Bool {
         let words = ([listName] + (labels ?? []).map(\.name)).compactMap { $0 }.joined(separator: " ")
         return words.range(of: "anchor|anchorage|bay|harbour|harbor|marina|port", options: .regularExpression) != nil
@@ -122,6 +145,27 @@ struct PlaceSummary: Codable, Identifiable {
         if text.range(of: "anchor|anchorage", options: .regularExpression) != nil { return "anchor" }
         return "mappin"
     }
+}
+
+struct PlaceNote: Codable, Identifiable {
+    let id: String
+    let text: String
+    let createdAt: Date
+    let author: String?
+}
+
+struct PlaceNotesResponse: Codable {
+    let notes: [PlaceNote]
+}
+
+struct UpdatePlaceResponse: Codable {
+    let success: Bool
+    let place: PlaceSummary
+}
+
+struct CreatePlaceNoteResponse: Codable {
+    let success: Bool
+    let note: PlaceNote
 }
 
 struct NavilySnapshot: Codable {

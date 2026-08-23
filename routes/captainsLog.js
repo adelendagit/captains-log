@@ -103,7 +103,10 @@ function getCFTextOrDropdown(card, boardCFs, name) {
 function findCustomField(boardCFs, name) {
   const normalizedName = String(name).trim().toLowerCase();
   return boardCFs.find(
-    (field) => String(field.name || "").trim().toLowerCase() === normalizedName,
+    (field) =>
+      String(field.name || "")
+        .trim()
+        .toLowerCase() === normalizedName,
   );
 }
 
@@ -211,6 +214,53 @@ async function updateTrelloCard(user, cardId, values) {
   const response = await axios.put(url, null, { params: values, headers });
   invalidateBoardCache();
   return response.data;
+}
+
+async function updatePlaceRating(user, cardId, ratingField, rating) {
+  const parsed = Number(rating);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
+    const error = new Error("Rating must be between 1 and 5");
+    error.status = 400;
+    throw error;
+  }
+  let payload;
+  if (Array.isArray(ratingField.options)) {
+    const option = ratingField.options.find(
+      (candidate) => candidate.value?.text === String(parsed),
+    );
+    if (!option) {
+      const error = new Error("Rating option not found");
+      error.status = 400;
+      throw error;
+    }
+    payload = { idValue: option.id };
+  } else {
+    payload = { value: { text: String(parsed) } };
+  }
+  const url = `https://api.trello.com/1/cards/${cardId}/customField/${ratingField.id}/item`;
+  await axios.put(url, payload, {
+    headers: trelloHeaders(user, url, "PUT", payload),
+  });
+}
+
+async function updatePlaceLabels(user, card, labelIds) {
+  const current = (card.labels || []).map((label) => label.id);
+  const toAdd = labelIds.filter((id) => !current.includes(id));
+  const toRemove = current.filter((id) => !labelIds.includes(id));
+  for (const id of toAdd) {
+    const url = `https://api.trello.com/1/cards/${card.id}/idLabels`;
+    const data = { value: id };
+    await axios.post(url, null, {
+      params: data,
+      headers: trelloHeaders(user, url, "POST", data),
+    });
+  }
+  for (const id of toRemove) {
+    const url = `https://api.trello.com/1/cards/${card.id}/idLabels/${id}`;
+    await axios.delete(url, {
+      headers: trelloHeaders(user, url, "DELETE"),
+    });
+  }
 }
 
 async function createTrelloCardAttachment(user, cardId, placeCard) {
@@ -466,6 +516,38 @@ function cleanSnapshotList(value) {
     .filter(Boolean)
     .slice(0, 12)
     .map((item) => item.slice(0, 120));
+}
+
+function isSystemPlaceComment(text) {
+  const value = String(text || "").trim();
+  return (
+    /^(arrived|departed|visited|water(?: tank change)?|diesel|gas tank (?:change|refill)|bbq gas change|broken\b|fixed\b|other:|navily snapshot\s*$)/i.test(
+      value,
+    ) || /^-?\d+(?:\.\d+)?\s*°/i.test(value)
+  );
+}
+
+function buildPlaceNotes(comments, cardId) {
+  return (comments || [])
+    .filter(
+      (action) =>
+        action?.type === "commentCard" &&
+        action?.data?.card?.id === cardId &&
+        action?.data?.text &&
+        !isSystemPlaceComment(action.data.text),
+    )
+    .map((action) => ({
+      id: action.id,
+      text: action.data.text,
+      createdAt: action.date,
+      author:
+        action.memberCreator?.fullName ||
+        action.memberCreator?.username ||
+        null,
+    }))
+    .sort(
+      (left, right) => new Date(right.createdAt) - new Date(left.createdAt),
+    );
 }
 
 function deriveCurrentStatus(cards, lists, customFields, comments) {
@@ -1126,7 +1208,10 @@ async function updateCurrentStop(req, res, next) {
         .json({ error: "Longitude must be between -180 and 180" });
     }
 
-    const [status, board] = await Promise.all([getCurrentStatus(), fetchBoard()]);
+    const [status, board] = await Promise.all([
+      getCurrentStatus(),
+      fetchBoard(),
+    ]);
     if (status.status !== "arrived" || !status.current?.id) {
       return res
         .status(409)
@@ -1141,7 +1226,9 @@ async function updateCurrentStop(req, res, next) {
 
     const card = resolvePlaceCard(board.cards, board.lists, status.current.id);
     if (!card) return res.status(404).json({ error: "Current stop not found" });
-    const dmsField = hasLatitude ? findCustomField(board.customFields, "DMS") : null;
+    const dmsField = hasLatitude
+      ? findCustomField(board.customFields, "DMS")
+      : null;
     if (hasLatitude && (!dmsField || dmsField.type !== "text")) {
       return res.status(500).json({
         error:
@@ -2050,6 +2137,175 @@ router.post("/api/places", async (req, res, next) => {
         visitCount: 0,
         lastVisitedAt: null,
       }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/api/places/:cardId", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+    const board = await fetchBoard();
+    const { cards, lists, customFields, members, labels: boardLabels } = board;
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Not a board member" });
+    }
+    const card = resolvePlaceCard(cards, lists, req.params.cardId);
+    if (!card) return res.status(404).json({ error: "Place not found" });
+
+    const hasName = Object.hasOwn(req.body || {}, "name");
+    const hasDescription = Object.hasOwn(req.body || {}, "description");
+    const hasRating = Object.hasOwn(req.body || {}, "rating");
+    const hasLabels = Object.hasOwn(req.body || {}, "labelIds");
+    if (!hasName && !hasDescription && !hasRating && !hasLabels) {
+      return res.status(400).json({ error: "No place changes were supplied" });
+    }
+
+    const name = hasName ? String(req.body.name ?? "").trim() : card.name;
+    const description = hasDescription
+      ? String(req.body.description ?? "").replace(/\r\n/g, "\n")
+      : card.desc || "";
+    if (!name) return res.status(400).json({ error: "Missing place name" });
+    if (name.length > 256) {
+      return res
+        .status(400)
+        .json({ error: "Place name must be 256 characters or fewer" });
+    }
+    if (description.length > 16_384) {
+      return res
+        .status(400)
+        .json({ error: "Description must be 16,384 characters or fewer" });
+    }
+
+    let labelIds = (card.labels || []).map((label) => label.id);
+    if (hasLabels) {
+      if (!Array.isArray(req.body.labelIds)) {
+        return res.status(400).json({ error: "labelIds must be an array" });
+      }
+      labelIds = [...new Set(req.body.labelIds.map(String))];
+      const availableIds = new Set(
+        (boardLabels || []).map((label) => label.id),
+      );
+      if (labelIds.some((id) => !availableIds.has(id))) {
+        return res.status(400).json({ error: "Select valid board labels" });
+      }
+    }
+
+    let rating = getCFTextOrDropdown(card, customFields, "⭐️");
+    rating = rating == null ? null : Number.parseInt(rating, 10);
+    let ratingField = null;
+    if (hasRating) {
+      ratingField = customFields.find((field) => field.name === "⭐️");
+      if (!ratingField) {
+        return res.status(500).json({ error: "Rating field not found" });
+      }
+      const parsedRating = Number(req.body.rating);
+      if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+        return res.status(400).json({ error: "Rating must be between 1 and 5" });
+      }
+      if (
+        Array.isArray(ratingField.options) &&
+        !ratingField.options.some(
+          (option) => option.value?.text === String(parsedRating),
+        )
+      ) {
+        return res.status(400).json({ error: "Rating option not found" });
+      }
+      rating = parsedRating;
+    }
+
+    const cardValues = {};
+    if (hasName) cardValues.name = name;
+    if (hasDescription) cardValues.desc = description;
+    if (Object.keys(cardValues).length) {
+      await updateTrelloCard(req.user, card.id, cardValues);
+    }
+
+    if (hasRating) {
+      await updatePlaceRating(req.user, card.id, ratingField, req.body.rating);
+    }
+    if (hasLabels) await updatePlaceLabels(req.user, card, labelIds);
+
+    invalidateBoardCache();
+    const listNames = Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    );
+    const updatedCard = {
+      ...card,
+      name,
+      desc: description,
+      labels: (boardLabels || []).filter((label) =>
+        labelIds.includes(label.id),
+      ),
+    };
+    const place = {
+      ...buildStopPayload(updatedCard, listNames, customFields),
+      rating,
+    };
+    res.json({ success: true, place });
+  } catch (error) {
+    if (error.status)
+      return res.status(error.status).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.get("/api/places/:cardId/notes", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+    const [board, comments] = await Promise.all([
+      fetchBoard(),
+      fetchAllComments(),
+    ]);
+    const { cards, lists, members } = board;
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Not a board member" });
+    }
+    const card = resolvePlaceCard(cards, lists, req.params.cardId);
+    if (!card) return res.status(404).json({ error: "Place not found" });
+    res.set("Cache-Control", "private, no-store");
+    res.json({ notes: buildPlaceNotes(comments, card.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/places/:cardId/notes", async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(403).json({ error: "Not authenticated" });
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ error: "Write a note first" });
+    if (text.length > 4_000) {
+      return res
+        .status(400)
+        .json({ error: "Note must be 4,000 characters or fewer" });
+    }
+    const board = await fetchBoard();
+    const { cards, lists, members } = board;
+    if (!isBoardMember(req.user, members)) {
+      return res.status(403).json({ error: "Not a board member" });
+    }
+    const card = resolvePlaceCard(cards, lists, req.params.cardId);
+    if (!card) return res.status(404).json({ error: "Place not found" });
+
+    const url = `https://api.trello.com/1/cards/${card.id}/actions/comments`;
+    const { data } = await axios.post(url, null, {
+      params: { text },
+      headers: trelloHeaders(req.user, url, "POST", { text }),
+    });
+    invalidateCommentCache();
+    res.status(201).json({
+      success: true,
+      note: {
+        id: data?.id || `pending-${Date.now()}`,
+        text,
+        createdAt: data?.date || new Date().toISOString(),
+        author:
+          data?.memberCreator?.fullName ||
+          data?.memberCreator?.username ||
+          null,
+      },
     });
   } catch (error) {
     next(error);

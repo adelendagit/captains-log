@@ -274,6 +274,46 @@ final class APIClient: Sendable {
         return response.place
     }
 
+    func updatePlace(
+        cardID: String,
+        name: String,
+        description: String,
+        rating: Int?,
+        labelIDs: [String],
+        token: String
+    ) async throws -> PlaceSummary {
+        let response: UpdatePlaceResponse = try await send(
+            path: "api/places/\(cardID)",
+            method: "PATCH",
+            encodableBody: UpdatePlaceBody(
+                name: name,
+                description: description,
+                rating: rating,
+                labelIds: labelIDs
+            ),
+            token: token
+        )
+        return response.place
+    }
+
+    func placeNotes(cardID: String, token: String) async throws -> [PlaceNote] {
+        let response: PlaceNotesResponse = try await send(
+            path: "api/places/\(cardID)/notes",
+            token: token
+        )
+        return response.notes
+    }
+
+    func addPlaceNote(cardID: String, text: String, token: String) async throws -> PlaceNote {
+        let response: CreatePlaceNoteResponse = try await send(
+            path: "api/places/\(cardID)/notes",
+            method: "POST",
+            encodableBody: CreatePlaceNoteBody(text: text),
+            token: token
+        )
+        return response.note
+    }
+
     func saveNavilySnapshot(
         cardID: String,
         draft: NavilySnapshotDraft,
@@ -776,6 +816,17 @@ private struct CreatePlaceBody: Codable {
     let lat: Double
     let lng: Double
     let navilyUrl: String
+}
+
+private struct UpdatePlaceBody: Codable {
+    let name: String
+    let description: String
+    let rating: Int?
+    let labelIds: [String]
+}
+
+private struct CreatePlaceNoteBody: Codable {
+    let text: String
 }
 
 private struct CurrentStopDescriptionBody: Codable {

@@ -644,10 +644,9 @@ function renderJourneyOnMap() {
     return;
   }
   if (journeyModel.trackCoordinates.length > 1) {
-    L.polyline(
-      journeyModel.trackCoordinates,
-      routeStyle("recorded"),
-    ).addTo(journeyLayerGroup);
+    L.polyline(journeyModel.trackCoordinates, routeStyle("recorded")).addTo(
+      journeyLayerGroup,
+    );
   }
 
   const point = journeyModel.position;
@@ -1629,6 +1628,11 @@ function placePopupFacts(place) {
     : "";
 }
 
+function placeDetailButton(place) {
+  if (!canPlan) return "";
+  return `<button type="button" class="place-detail-open" data-place-id="${escapeMarkup(placeIdFor(place))}"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Place details</button>`;
+}
+
 function labelsToHtml(labelsArr) {
   const html = labelsArr
     .filter((lab) => lab.name && lab.name.toLowerCase() !== "visited")
@@ -2110,6 +2114,7 @@ function initMap(stops, places, logs = null) {
       ? `<a href="${s.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
       : "";
     popupHtml += `${trelloLink} ${navilyLink}`;
+    popupHtml += placeDetailButton(s);
     if (canPlan && s.due) {
       popupHtml += `<br><button class="remove-btn" data-card-id="${s.id}">Remove from plan</button>`;
     }
@@ -2143,34 +2148,38 @@ function initMap(stops, places, logs = null) {
 
   // Ensure the map knows its size before fitting bounds
   setTimeout(() => {
-    CaptainsLogLiveMap.runForCurrentMap(map, () => leafletMap, () => {
-      map.invalidateSize();
-      if (
-        currentJourney?.active &&
-        followsUnderwayPosition &&
-        focusUnderwayMap({ animate: false })
-      ) {
-        return;
-      }
-      if (mapWasCreated && plannedStopCoords.length) {
-        const initialBounds =
-          plannedStopCoords.length === 1
-            ? L.latLng(plannedStopCoords[0]).toBounds(
-                INITIAL_MAP_RADIUS_METERS * 2,
-              )
-            : plannedStopCoords;
-        map.fitBounds(initialBounds, {
-          animate: false,
-          maxZoom: 13,
-          ...planningMapFitPadding(map),
-        });
-        planningMapViewportSource = "plan";
-        return;
-      }
-      if (focusPlanningMapOnCurrentPosition()) {
-        return;
-      }
-    });
+    CaptainsLogLiveMap.runForCurrentMap(
+      map,
+      () => leafletMap,
+      () => {
+        map.invalidateSize();
+        if (
+          currentJourney?.active &&
+          followsUnderwayPosition &&
+          focusUnderwayMap({ animate: false })
+        ) {
+          return;
+        }
+        if (mapWasCreated && plannedStopCoords.length) {
+          const initialBounds =
+            plannedStopCoords.length === 1
+              ? L.latLng(plannedStopCoords[0]).toBounds(
+                  INITIAL_MAP_RADIUS_METERS * 2,
+                )
+              : plannedStopCoords;
+          map.fitBounds(initialBounds, {
+            animate: false,
+            maxZoom: 13,
+            ...planningMapFitPadding(map),
+          });
+          planningMapViewportSource = "plan";
+          return;
+        }
+        if (focusPlanningMapOnCurrentPosition()) {
+          return;
+        }
+      },
+    );
   }, 0);
 
   // plot other places without changing zoom
@@ -2202,6 +2211,7 @@ function initMap(stops, places, logs = null) {
         ? `<a href="${p.navilyUrl}" target="_blank" title="Open in Navily"><i class="fa-solid fa-anchor"></i></a>`
         : "";
       popupHtml += `${trelloLink} ${navilyLink}`;
+      popupHtml += placeDetailButton(p);
       if (canPlan) {
         popupHtml += `<br><button class="plan-btn place-popup__plan" data-card-id="${p.id}"><i class="fa-solid fa-plus" aria-hidden="true"></i> Plan</button>`;
       }
@@ -2922,6 +2932,7 @@ function renderTable(stops, speed) {
                 <div class="stop-card-compact-metrics">
                   ${distanceText ? `<span>${distanceText}</span>` : ""}
                   ${eta ? `<span>${eta}</span>` : ""}
+                  ${canPlan ? `<button type="button" class="place-detail-open" data-place-id="${escapeMarkup(placeIdFor(s))}" aria-label="Edit ${escapeMarkup(s.name)}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>` : ""}
                   <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
                 </div>
               </header>
@@ -3865,6 +3876,259 @@ function escapeMarkup(value) {
     .replaceAll("'", "&#039;");
 }
 
+function setupPlaceDetail() {
+  const modal = document.getElementById("place-detail-modal");
+  if (!modal) return;
+  const title = document.getElementById("place-detail-title");
+  const area = document.getElementById("place-detail-area");
+  const view = document.getElementById("place-detail-view");
+  const editForm = document.getElementById("place-detail-edit-form");
+  const nameInput = document.getElementById("place-detail-name");
+  const descriptionInput = document.getElementById("place-detail-description");
+  const ratingInput = document.getElementById("place-detail-rating");
+  const labelsInput = document.getElementById("place-detail-labels");
+  const editStatus = document.getElementById("place-detail-edit-status");
+  const cancelEdit = document.getElementById("place-detail-cancel-edit");
+  const notesList = document.getElementById("place-detail-notes-list");
+  const noteForm = document.getElementById("place-detail-note-form");
+  const noteInput = document.getElementById("place-detail-note");
+  const noteStatus = document.getElementById("place-detail-note-status");
+  let activePlace = null;
+  let selectedRating = null;
+
+  const findPlace = (id) =>
+    [...stops, ...places, currentStatus?.current, currentStatus?.from]
+      .filter(Boolean)
+      .find((place) => placeIdFor(place) === id);
+
+  const renderPlace = () => {
+    if (!activePlace) return;
+    title.textContent = activePlace.name;
+    area.textContent = activePlace.listName || "";
+    const labels = labelsToHtml(activePlace.labels || []);
+    const visits = Math.max(0, Number(activePlace.visitCount) || 0);
+    const meta = [
+      activePlace.rating
+        ? `<span><i class="fa-solid fa-star" aria-hidden="true"></i> ${activePlace.rating} out of 5</span>`
+        : null,
+      visits
+        ? `<span>Visited ${visits} ${visits === 1 ? "time" : "times"}</span>`
+        : null,
+      activePlace.lastVisitedAt
+        ? `<span>Last visit ${new Date(activePlace.lastVisitedAt).toLocaleDateString()}</span>`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("");
+    const links = [
+      activePlace.navilyUrl
+        ? `<a href="${escapeMarkup(activePlace.navilyUrl)}" target="_blank" rel="noopener">Navily</a>`
+        : null,
+      activePlace.trelloUrl
+        ? `<a href="${escapeMarkup(activePlace.trelloUrl)}" target="_blank" rel="noopener">Trello</a>`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("");
+    view.innerHTML = `
+      <div class="place-detail-summary">
+        <div class="labels-wrap">${labels}</div>
+        <div class="place-detail-meta">${meta}</div>
+        <p class="place-detail-description">${activePlace.desc ? escapeMarkup(activePlace.desc) : '<span class="muted">No description yet.</span>'}</p>
+        <div class="place-detail-links">${links}</div>
+        <button type="button" id="place-detail-start-edit"><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit place</button>
+      </div>`;
+    view
+      .querySelector("#place-detail-start-edit")
+      .addEventListener("click", startEditing);
+  };
+
+  const renderRating = () => {
+    ratingInput.innerHTML = Array.from({ length: 5 }, (_, index) => {
+      const value = index + 1;
+      return `<button type="button" data-rating="${value}" role="radio" aria-checked="${value === selectedRating}" aria-label="${value} stars"><i class="fa-${value <= selectedRating ? "solid" : "regular"} fa-star" aria-hidden="true"></i></button>`;
+    }).join("");
+  };
+
+  function startEditing() {
+    nameInput.value = activePlace.name || "";
+    descriptionInput.value = activePlace.desc || "";
+    selectedRating = Number(activePlace.rating) || null;
+    renderRating();
+    const selected = new Set(
+      (activePlace.labels || []).map((label) => label.id),
+    );
+    labelsInput.innerHTML = boardLabels
+      .filter((label) => label.name)
+      .map((label) => {
+        const bg = label.color || "#888";
+        return `<label class="place-detail-label-option"><input type="checkbox" value="${escapeMarkup(label.id)}" ${selected.has(label.id) ? "checked" : ""}><span class="label" style="background:${escapeMarkup(bg)};color:${badgeTextColor(bg)}">${escapeMarkup(label.name)}</span></label>`;
+      })
+      .join("");
+    editStatus.textContent = "";
+    view.classList.add("hidden");
+    editForm.classList.remove("hidden");
+    nameInput.focus();
+  }
+
+  const stopEditing = () => {
+    editForm.classList.add("hidden");
+    view.classList.remove("hidden");
+  };
+
+  const updatePlaceCopies = (updated) => {
+    const merge = (existing) =>
+      placeIdFor(existing) === placeIdFor(updated)
+        ? {
+            ...existing,
+            ...updated,
+            id: existing.id,
+            planId: existing.planId,
+            placeId: existing.placeId,
+            due: existing.due,
+            dueComplete: existing.dueComplete,
+            visitCount: existing.visitCount,
+            lastVisitedAt: existing.lastVisitedAt,
+            navilySnapshot: existing.navilySnapshot,
+          }
+        : existing;
+    stops = stops.map(merge);
+    places = places.map(merge);
+    if (currentStatus?.current)
+      currentStatus.current = merge(currentStatus.current);
+    if (currentStatus?.from) currentStatus.from = merge(currentStatus.from);
+    activePlace = merge(activePlace);
+  };
+
+  const renderNotes = (notes) => {
+    notesList.innerHTML = notes.length
+      ? notes
+          .map(
+            (note) =>
+              `<article class="place-detail-note"><p>${escapeMarkup(note.text)}</p><small>${note.author ? `${escapeMarkup(note.author)} · ` : ""}${new Date(note.createdAt).toLocaleString()}</small></article>`,
+          )
+          .join("")
+      : '<p class="muted">No notes yet.</p>';
+  };
+
+  const loadNotes = async () => {
+    notesList.innerHTML = '<p class="muted">Loading notes…</p>';
+    try {
+      const response = await fetch(
+        `/api/places/${encodeURIComponent(placeIdFor(activePlace))}/notes`,
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to load notes");
+      renderNotes(result.notes || []);
+    } catch (error) {
+      notesList.innerHTML = `<p class="place-detail-status">${escapeMarkup(error.message)}</p>`;
+    }
+  };
+
+  const open = (id) => {
+    activePlace = findPlace(id);
+    if (!activePlace) return;
+    stopEditing();
+    renderPlace();
+    noteInput.value = "";
+    noteStatus.textContent = "";
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    loadNotes();
+  };
+
+  const close = () => {
+    modal.classList.add("hidden");
+    document.body.style.overflow = "";
+    activePlace = null;
+  };
+
+  ratingInput.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-rating]");
+    if (!button) return;
+    selectedRating = Number(button.dataset.rating);
+    renderRating();
+  });
+  editForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = editForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    editStatus.textContent = "Saving…";
+    try {
+      const response = await fetch(
+        `/api/places/${encodeURIComponent(placeIdFor(activePlace))}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: nameInput.value,
+            description: descriptionInput.value,
+            ...(selectedRating == null ? {} : { rating: selectedRating }),
+            labelIds: Array.from(
+              labelsInput.querySelectorAll("input:checked"),
+              (input) => input.value,
+            ),
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to save place");
+      updatePlaceCopies(result.place);
+      writeChartSnapshot();
+      renderPlace();
+      stopEditing();
+      renderMapWithToggle();
+      renderTable(
+        stops,
+        parseFloat(document.getElementById("speed-input").value) || 0,
+      );
+    } catch (error) {
+      editStatus.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  noteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = noteForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    noteStatus.textContent = "Saving…";
+    try {
+      const response = await fetch(
+        `/api/places/${encodeURIComponent(placeIdFor(activePlace))}/notes`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: noteInput.value }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to add note");
+      noteInput.value = "";
+      noteStatus.textContent = "";
+      await loadNotes();
+    } catch (error) {
+      noteStatus.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  cancelEdit.addEventListener("click", stopEditing);
+  modal
+    .querySelectorAll("[data-place-detail-close]")
+    .forEach((button) => button.addEventListener("click", close));
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".place-detail-open");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    open(button.dataset.placeId);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) close();
+  });
+}
+
 function setupLogWizard() {
   const modal = document.getElementById("log-wizard-modal");
   const openBtn = document.getElementById("open-log-wizard-btn");
@@ -4419,6 +4683,7 @@ async function init() {
   }
 
   setupLogTab();
+  setupPlaceDetail();
   setupLogWizard();
   setupCurrentStopDescriptionEditor();
   setupUnderwayMapControls();
