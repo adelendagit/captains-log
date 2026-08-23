@@ -15,6 +15,7 @@ const ACTION_LABELS = {
   water: "Water",
   diesel: "Diesel",
   temperature: "Sea Temp",
+  "engine-hours": "Engine Hours",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
@@ -98,6 +99,7 @@ function buildNotification({
   timestamp,
   litres,
   temperature,
+  engineHours,
   customText,
 }) {
   const actionLabel =
@@ -110,12 +112,16 @@ function buildNotification({
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
   const hasLitres = Number.isFinite(litres);
   const hasTemperature = Number.isFinite(temperature);
+  const hasEngineHours = Number.isFinite(engineHours);
   const headline = `${actionLabel}${action === "arrived" || action === "visited" ? " at" : action === "departed" ? " from" : " at"} ${location}`;
-  const details = hasTemperature
-    ? `${temperature} °C`
-    : hasLitres
-      ? `${litres} litres`
-      : null;
+  const details =
+    [
+      hasTemperature ? `${temperature} °C` : null,
+      hasLitres ? `${litres} litres` : null,
+      hasEngineHours ? `${engineHours} engine hours` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
   const when = formatDate(timestamp);
 
   const html = `<!doctype html>

@@ -91,6 +91,7 @@ const LOCATION_LOG_ACTIONS = {
   water: "Water",
   diesel: "Diesel",
   temperature: "Sea Temp",
+  "engine-hours": "Engine Hours",
   bins: "Bins",
   "bbq-gas-change": "BBQ Gas Change",
   "gas-tank-change": "Gas Tank Change",
@@ -4224,6 +4225,7 @@ function setupLogWizard() {
   const journeyNameInput = document.getElementById("wizard-journey-name-input");
   const litresInput = document.getElementById("wizard-litres-input");
   const temperatureInput = document.getElementById("wizard-temperature-input");
+  const engineHoursInput = document.getElementById("wizard-engine-hours-input");
   const customTextInput = document.getElementById("wizard-custom-text-input");
   const backfillInput = document.getElementById("wizard-backfill-input");
   const submitStatus = document.getElementById("wizard-submit-status");
@@ -4242,10 +4244,13 @@ function setupLogWizard() {
   const flowSteps = () => [
     "location",
     "action",
-    ...(wizardState.action === "arrived" ? ["mooring", "temperature"] : []),
-    ...(wizardState.action === "departed" ? ["journey"] : []),
+    ...(wizardState.action === "arrived"
+      ? ["mooring", "temperature", "engine-hours"]
+      : []),
+    ...(wizardState.action === "departed" ? ["journey", "engine-hours"] : []),
     ...(["water", "diesel"].includes(wizardState.action) ? ["litres"] : []),
     ...(wizardState.action === "temperature" ? ["temperature"] : []),
+    ...(wizardState.action === "engine-hours" ? ["engine-hours"] : []),
     ...(wizardState.action === "other" ? ["custom"] : []),
     "backfill",
     "notification",
@@ -4347,6 +4352,20 @@ function setupLogWizard() {
           : "Continue";
       nextBtn.disabled =
         !optionalArrivalTemperature && temperatureInput.value === "";
+    } else if (step === "engine-hours") {
+      const optionalJourneyReading = ["arrived", "departed"].includes(
+        wizardState.action,
+      );
+      const hasEngineHours = engineHoursInput.value !== "";
+      const hasValidEngineHours =
+        hasEngineHours &&
+        engineHoursInput.validity.valid &&
+        Number.isFinite(engineHoursInput.valueAsNumber);
+      nextBtn.textContent =
+        optionalJourneyReading && !hasEngineHours ? "Skip" : "Continue";
+      nextBtn.disabled = hasEngineHours
+        ? !hasValidEngineHours
+        : !optionalJourneyReading;
     } else if (step === "journey") {
       nextBtn.textContent = "Continue";
     } else if (step === "mooring") {
@@ -4486,13 +4505,15 @@ function setupLogWizard() {
           ? "litres"
           : wizardState.action === "temperature"
             ? "temperature"
-            : wizardState.action === "departed"
-              ? "journey"
-              : wizardState.action === "arrived"
-                ? "mooring"
-                : wizardState.action === "other"
-                  ? "custom"
-                  : "backfill",
+            : wizardState.action === "engine-hours"
+              ? "engine-hours"
+              : wizardState.action === "departed"
+                ? "journey"
+                : wizardState.action === "arrived"
+                  ? "mooring"
+                  : wizardState.action === "other"
+                    ? "custom"
+                    : "backfill",
       );
     });
   });
@@ -4505,6 +4526,7 @@ function setupLogWizard() {
     wizardState.submitting = false;
     litresInput.value = "";
     temperatureInput.value = "";
+    engineHoursInput.value = "";
     customTextInput.value = "";
     journeyNameInput.value = "";
     backfillInput.value = "";
@@ -4568,6 +4590,12 @@ function setupLogWizard() {
       temperatureInput.value !== ""
     ) {
       payload.temperature = temperatureInput.value;
+    }
+    if (
+      ["arrived", "departed", "engine-hours"].includes(wizardState.action) &&
+      engineHoursInput.value !== ""
+    ) {
+      payload.engineHours = engineHoursInput.value;
     }
 
     wizardState.submitting = true;
@@ -4665,6 +4693,9 @@ function setupLogWizard() {
   });
   temperatureInput.addEventListener("input", () => {
     if (wizardState.step === "temperature") renderStep("temperature");
+  });
+  engineHoursInput.addEventListener("input", () => {
+    if (wizardState.step === "engine-hours") renderStep("engine-hours");
   });
   customTextInput.addEventListener("input", () => {
     if (wizardState.step === "custom") renderStep("custom");

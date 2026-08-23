@@ -559,7 +559,74 @@ test("logs temperature in the historical degree format", async (t) => {
   assert.equal(comments.length, 1);
 });
 
-test("adds an optional temperature to an arrival log", async (t) => {
+test("logs a numeric engine hour meter reading", async (t) => {
+  const originalPost = axios.post;
+  const comments = [];
+
+  axios.post = async (_url, _body, options) => {
+    comments.push(options.params.text);
+    return { data: {} };
+  };
+  t.after(() => {
+    axios.post = originalPost;
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = {
+      id: "test-member",
+      token: "test-token",
+      tokenSecret: "test-token-secret",
+    };
+    next();
+  });
+  app.use(captainsLog);
+  app.use((error, _req, res, _next) => {
+    res.status(500).json({ error: error.message });
+  });
+
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+
+  const log = (engineHours) =>
+    fetch(`http://127.0.0.1:${port}/api/log-entry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "engine-hours",
+        engineHours,
+        cardId: "stop-card",
+        lat: 37.5205,
+        lng: 23.4113,
+        timestamp: "2026-08-05T09:00:00.000Z",
+      }),
+    });
+
+  const response = await log(1245.6);
+  assert.equal(response.status, 200);
+  assert.match(comments[0], /^Engine Hours 1245\.6\n/);
+
+  const missingResponse = await log("");
+  assert.equal(missingResponse.status, 400);
+  assert.deepEqual(await missingResponse.json(), {
+    error: "Missing or invalid engine hours",
+  });
+
+  const negativeResponse = await log(-1);
+  assert.equal(negativeResponse.status, 400);
+  assert.deepEqual(await negativeResponse.json(), {
+    error: "Missing or invalid engine hours",
+  });
+  assert.equal(comments.length, 1);
+});
+
+test("adds optional temperature and engine hours to an arrival log", async (t) => {
   const originalPost = axios.post;
   const originalPut = axios.put;
   const originalGet = axios.get;
@@ -604,6 +671,7 @@ test("adds an optional temperature to an arrival log", async (t) => {
       body: JSON.stringify({
         action: "arrived",
         temperature: 27.8,
+        engineHours: 1245.6,
         cardId: "stop-card",
         lat: 37.5205,
         lng: 23.4113,
@@ -614,7 +682,8 @@ test("adds an optional temperature to an arrival log", async (t) => {
 
   assert.equal(response.status, 200);
   assert.match(comments[0], /^Arrived\n/);
-  assert.match(comments[0], /\ntemperature: 27\.8$/);
+  assert.match(comments[0], /\ntemperature: 27\.8\n/);
+  assert.match(comments[0], /\nengineHours: 1245\.6$/);
 });
 
 test("keeps the current stop description private and lets a logged-in user update it", async (t) => {

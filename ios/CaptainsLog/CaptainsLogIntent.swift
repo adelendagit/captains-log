@@ -10,6 +10,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
     case water
     case diesel
     case temperature
+    case engineHours = "engine-hours"
     case bins
     case bbqGasChange = "bbq-gas-change"
     case gasTankChange = "gas-tank-change"
@@ -28,6 +29,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
         .water: DisplayRepresentation(title: "Water", synonyms: ["Filled water", "Added water"]),
         .diesel: DisplayRepresentation(title: "Diesel", synonyms: ["Fuel", "Fueled", "Refueled"]),
         .temperature: DisplayRepresentation(title: "Sea Temp", synonyms: ["Sea temperature", "Water temperature"]),
+        .engineHours: DisplayRepresentation(title: "Engine Hours", synonyms: ["Engine hour meter", "Motor hours"]),
         .bins: DisplayRepresentation(title: "Bins", synonyms: ["Rubbish", "Trash", "Garbage"]),
         .bbqGasChange: DisplayRepresentation(title: "BBQ Gas Change", synonyms: ["Barbecue gas", "BBQ bottle"]),
         .gasTankChange: DisplayRepresentation(title: "Gas Tank Change", synonyms: ["Gas bottle", "Gas cylinder"]),
@@ -46,6 +48,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
         case .water: "Water"
         case .diesel: "Diesel"
         case .temperature: "Sea Temp"
+        case .engineHours: "Engine Hours"
         case .bins: "Bins"
         case .bbqGasChange: "BBQ Gas Change"
         case .gasTankChange: "Gas Tank Change"
@@ -65,6 +68,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
         case .water: "drop.fill"
         case .diesel: "fuelpump"
         case .temperature: "thermometer.medium"
+        case .engineHours: "gauge.with.dots.needle.67percent"
         case .bins: "trash"
         case .bbqGasChange: "flame.fill"
         case .gasTankChange: "cylinder.fill"
@@ -103,6 +107,9 @@ struct CaptainsLogVoiceIntent: AppIntent {
 
     @Parameter(title: "Sea temperature")
     var temperatureAnswer: String?
+
+    @Parameter(title: "Engine hours")
+    var engineHoursAnswer: String?
 
     @Parameter(title: "Details")
     var details: String?
@@ -157,6 +164,7 @@ struct CaptainsLogVoiceIntent: AppIntent {
         )
         let litres = try await resolvedLitres(for: resolvedAction)
         let temperature = try await resolvedTemperature(for: resolvedAction)
+        let engineHours = try await resolvedEngineHours(for: resolvedAction)
         let customText = try await resolvedDetails(for: resolvedAction)
 
         guard let coordinate = journey.position?.coordinate ?? place.coordinate else {
@@ -179,6 +187,7 @@ struct CaptainsLogVoiceIntent: AppIntent {
             timestamp: timestamp,
             litres: litres,
             temperature: temperature,
+            engineHours: engineHours,
             token: token
         )
 
@@ -202,6 +211,7 @@ struct CaptainsLogVoiceIntent: AppIntent {
                     timestamp: timestamp,
                     litres: litres,
                     temperature: temperature,
+                    engineHours: engineHours,
                     customText: customText,
                     token: token
                 )
@@ -414,6 +424,25 @@ struct CaptainsLogVoiceIntent: AppIntent {
         return value
     }
 
+    private func resolvedEngineHours(for action: CaptainLogAction) async throws -> Double? {
+        guard action == .engineHours || action == .arrived || action == .departed else { return nil }
+        let optionalReading = action == .arrived || action == .departed
+        let prompt: IntentDialog = optionalReading
+            ? "What is the current engine hour meter reading? You can say skip."
+            : "What is the current engine hour meter reading?"
+        let answer: String
+        if let suppliedAnswer = nonempty(engineHoursAnswer) {
+            answer = suppliedAnswer
+        } else {
+            answer = try await $engineHoursAnswer.requestValue(prompt)
+        }
+        if optionalReading, isSkipAnswer(answer) { return nil }
+        guard let value = number(in: answer), value >= 0 else {
+            throw CaptainsLogIntentError.invalidEngineHours
+        }
+        return value
+    }
+
     private func resolvedDetails(for action: CaptainLogAction) async throws -> String? {
         guard action == .other else { return nil }
         let answer: String
@@ -502,6 +531,7 @@ private enum CaptainsLogIntentError: LocalizedError {
     case mooringNotFound(String)
     case invalidQuantity
     case invalidTemperature
+    case invalidEngineHours
     case missingDetails
     case noTodoLists
     case todoListNotFound(String)
@@ -516,6 +546,7 @@ private enum CaptainsLogIntentError: LocalizedError {
         case .mooringNotFound(let name): "I couldn’t find a mooring type matching \(name)."
         case .invalidQuantity: "The quantity needs to be a number of litres, or skip."
         case .invalidTemperature: "The sea temperature needs to be a number."
+        case .invalidEngineHours: "Engine hours needs to be a non-negative number."
         case .missingDetails: "Please describe what happened."
         case .noTodoLists: "No to-do lists are available."
         case .todoListNotFound(let name): "I couldn’t find a to-do list matching \(name)."

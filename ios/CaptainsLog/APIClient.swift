@@ -436,6 +436,7 @@ final class APIClient: Sendable {
         timestamp: Date = Date(),
         litres: Double? = nil,
         temperature: Double? = nil,
+        engineHours: Double? = nil,
         token: String,
         queueImmediately: Bool = false
     ) async throws -> Bool {
@@ -449,6 +450,7 @@ final class APIClient: Sendable {
             requestId: requestID,
             litres: litres,
             temperature: temperature,
+            engineHours: engineHours,
             journeyName: journeyName,
             mooringLabelId: mooringLabelID,
             placeName: placeName,
@@ -482,6 +484,7 @@ final class APIClient: Sendable {
         timestamp: Date,
         litres: Double? = nil,
         temperature: Double? = nil,
+        engineHours: Double? = nil,
         customText: String? = nil,
         token: String,
         queueImmediately: Bool = false
@@ -500,6 +503,7 @@ final class APIClient: Sendable {
                     timestamp: timestamp,
                     litres: litres,
                     temperature: temperature,
+                    engineHours: engineHours,
                     customText: customText
                 ),
                 token: token,
@@ -520,6 +524,7 @@ final class APIClient: Sendable {
                 timestamp: timestamp,
                 litres: litres,
                 temperature: temperature,
+                engineHours: engineHours,
                 customText: customText
             ),
             token: token
@@ -884,6 +889,7 @@ private struct LogEntryBody: Codable {
     let requestId: String?
     let litres: Double?
     let temperature: Double?
+    let engineHours: Double?
     let journeyName: String?
     let mooringLabelId: String?
     let placeName: String?
@@ -900,5 +906,6 @@ private struct LogNotificationBody: Codable {
     let timestamp: Date
     let litres: Double?
     let temperature: Double?
+    let engineHours: Double?
     let customText: String?
 }

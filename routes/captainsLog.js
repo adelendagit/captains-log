@@ -63,6 +63,16 @@ function extractTemperature(text) {
   return Number.isFinite(temperature) ? temperature : null;
 }
 
+function extractEngineHours(text) {
+  const value = String(text || "");
+  const metadataMatch = value.match(/^engineHours:\s*(\d+(?:\.\d+)?)\s*$/im);
+  const headlineMatch = value.match(
+    /^engine hours\s+(\d+(?:\.\d+)?)\s*(?:hours?)?\b/i,
+  );
+  const engineHours = Number((metadataMatch || headlineMatch)?.[1]);
+  return Number.isFinite(engineHours) ? engineHours : null;
+}
+
 function extractMooring(text) {
   const match = String(text || "").match(/^mooring:\s*(.+?)\s*$/im);
   return match?.[1]?.trim() || null;
@@ -676,6 +686,9 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
           /^diesel(?:\s+([0-9]+(?:\.[0-9]+)?)\s*(?:litres|liters)?)?\b/i,
         );
         const tempMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\u00B0/);
+        const engineHoursMatch = text.match(
+          /^engine hours\s+([0-9]+(?:\.[0-9]+)?)\b/i,
+        );
         const gasChangeMatch = /^gas tank change\b/i.test(text);
         const gasRefillMatch = /^gas tank refill\b/i.test(text);
         const bbqGasMatch = /^bbq gas change\b/i.test(text);
@@ -683,7 +696,9 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
         const brokenMatch = text.match(/^broken\s+(.+)/i);
         const fixedMatch = text.match(/^fixed\s+(.+)/i);
 
-        if (dieselMatch) {
+        if (engineHoursMatch) {
+          type = "Engine Hours";
+        } else if (dieselMatch) {
           type = "Diesel";
           dieselLitres = dieselMatch[1] ? parseFloat(dieselMatch[1]) : null;
         } else if (tempMatch) {
@@ -742,6 +757,7 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
           : null,
         dieselLitres,
         seaTemp,
+        engineHours: extractEngineHours(text),
         item,
       };
     })
@@ -1420,6 +1436,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       requestId,
       litres,
       temperature,
+      engineHours,
       journeyName,
       placeName,
       customText,
@@ -1439,6 +1456,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       "water",
       "diesel",
       "temperature",
+      "engine-hours",
       "bins",
       "bbq-gas-change",
       "gas-tank-change",
@@ -1539,6 +1557,7 @@ router.post("/api/log-entry", async (req, res, next) => {
       water: "Water",
       diesel: "Diesel",
       temperature: "Sea Temp",
+      "engine-hours": "Engine Hours",
       bins: "Bins",
       "bbq-gas-change": "BBQ Gas Change",
       "gas-tank-change": "Gas Tank Change",
@@ -1563,6 +1582,19 @@ router.post("/api/log-entry", async (req, res, next) => {
       supportsTemperature &&
       temperatureWasSupplied &&
       Number.isFinite(temperatureValue);
+    const engineHoursValue = Number(engineHours);
+    const engineHoursWasSupplied =
+      engineHours !== null && engineHours !== undefined && engineHours !== "";
+    const supportsEngineHours = [
+      "arrived",
+      "departed",
+      "engine-hours",
+    ].includes(normalizedAction);
+    const hasEngineHours =
+      supportsEngineHours &&
+      engineHoursWasSupplied &&
+      Number.isFinite(engineHoursValue) &&
+      engineHoursValue >= 0;
     if (normalizedAction === "temperature" && !hasTemperature) {
       return res.status(400).json({ error: "Missing or invalid temperature" });
     }
@@ -1573,15 +1605,27 @@ router.post("/api/log-entry", async (req, res, next) => {
     ) {
       return res.status(400).json({ error: "Invalid temperature" });
     }
+    if (normalizedAction === "engine-hours" && !hasEngineHours) {
+      return res.status(400).json({ error: "Missing or invalid engine hours" });
+    }
+    if (
+      ["arrived", "departed"].includes(normalizedAction) &&
+      engineHoursWasSupplied &&
+      !hasEngineHours
+    ) {
+      return res.status(400).json({ error: "Invalid engine hours" });
+    }
 
     const headline =
       normalizedAction === "other"
         ? `Other: ${suppliedCustomText}`
         : normalizedAction === "temperature" && hasTemperature
           ? `${temperatureValue}°`
-          : hasLitres
-            ? `${actionLabels[normalizedAction]} ${litresValue} litres`
-            : actionLabels[normalizedAction];
+          : normalizedAction === "engine-hours" && hasEngineHours
+            ? `Engine Hours ${engineHoursValue}`
+            : hasLitres
+              ? `${actionLabels[normalizedAction]} ${litresValue} litres`
+              : actionLabels[normalizedAction];
 
     const commentLines = [
       headline,
@@ -1601,6 +1645,9 @@ router.post("/api/log-entry", async (req, res, next) => {
     }
     if (hasTemperature && normalizedAction === "arrived") {
       commentLines.push(`temperature: ${temperatureValue}`);
+    }
+    if (hasEngineHours && ["arrived", "departed"].includes(normalizedAction)) {
+      commentLines.push(`engineHours: ${engineHoursValue}`);
     }
 
     const text = commentLines.join("\n");
@@ -1835,6 +1882,7 @@ router.post("/api/log-notification", async (req, res, next) => {
       timestamp,
       litres,
       temperature,
+      engineHours,
       customText,
     } = req.body || {};
 
@@ -1854,6 +1902,7 @@ router.post("/api/log-notification", async (req, res, next) => {
       return res.status(400).json({ error: "Custom log text is too long" });
     }
     const suppliedTemperature = Number(temperature);
+    const suppliedEngineHours = Number(engineHours);
     const temperatureWasSupplied =
       temperature !== null && temperature !== undefined && temperature !== "";
     if (
@@ -1868,6 +1917,23 @@ router.post("/api/log-notification", async (req, res, next) => {
       !Number.isFinite(suppliedTemperature)
     ) {
       return res.status(400).json({ error: "Invalid temperature" });
+    }
+    const engineHoursWasSupplied =
+      engineHours !== null && engineHours !== undefined && engineHours !== "";
+    if (
+      action === "engine-hours" &&
+      (!engineHoursWasSupplied ||
+        !Number.isFinite(suppliedEngineHours) ||
+        suppliedEngineHours < 0)
+    ) {
+      return res.status(400).json({ error: "Missing or invalid engine hours" });
+    }
+    if (
+      ["arrived", "departed"].includes(action) &&
+      engineHoursWasSupplied &&
+      (!Number.isFinite(suppliedEngineHours) || suppliedEngineHours < 0)
+    ) {
+      return res.status(400).json({ error: "Invalid engine hours" });
     }
     if (!cardId) {
       return res.status(400).json({ error: "Missing cardId" });
@@ -1950,6 +2016,11 @@ router.post("/api/log-notification", async (req, res, next) => {
         temperatureWasSupplied &&
         Number.isFinite(suppliedTemperature)
           ? suppliedTemperature
+          : null,
+      engineHours:
+        ["arrived", "departed", "engine-hours"].includes(action) &&
+        engineHoursWasSupplied
+          ? suppliedEngineHours
           : null,
     });
 
@@ -2201,8 +2272,14 @@ router.patch("/api/places/:cardId", async (req, res, next) => {
         return res.status(500).json({ error: "Rating field not found" });
       }
       const parsedRating = Number(req.body.rating);
-      if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
-        return res.status(400).json({ error: "Rating must be between 1 and 5" });
+      if (
+        !Number.isInteger(parsedRating) ||
+        parsedRating < 1 ||
+        parsedRating > 5
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Rating must be between 1 and 5" });
       }
       if (
         Array.isArray(ratingField.options) &&

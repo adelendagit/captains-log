@@ -48,6 +48,7 @@ struct AddLogEntryView: View {
     @State private var journeyName = ""
     @State private var litres = ""
     @State private var temperature = ""
+    @State private var engineHours = ""
     @State private var customText = ""
     @State private var todoLists: [TodoList] = []
     @State private var selectedTodoListID = ""
@@ -201,6 +202,13 @@ struct AddLogEntryView: View {
                         if action == "temperature" || action == "arrived" {
                             Section(action == "arrived" ? "Sea Temp (optional)" : "Sea Temp") {
                                 TextField("Degrees °C", text: $temperature)
+                                    .keyboardType(.decimalPad)
+                            }
+                        }
+
+                        if action == "engine-hours" || action == "arrived" || action == "departed" {
+                            Section(["arrived", "departed"].contains(action) ? "Engine Hours (optional)" : "Engine Hours") {
+                                TextField("Current meter reading", text: $engineHours)
                                     .keyboardType(.decimalPad)
                             }
                         }
@@ -363,6 +371,8 @@ struct AddLogEntryView: View {
             (action != "other" || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             && (action != "temperature" || parsedTemperature != nil)
             && (action != "arrived" || temperature.isEmpty || parsedTemperature != nil)
+            && (action != "engine-hours" || parsedEngineHours != nil)
+            && (!["arrived", "departed"].contains(action) || engineHours.isEmpty || parsedEngineHours != nil)
     }
 
     private var logCoordinate: CLLocationCoordinate2D? {
@@ -371,6 +381,13 @@ struct AddLogEntryView: View {
 
     private var parsedTemperature: Double? {
         Double(temperature.replacingOccurrences(of: ",", with: "."))
+    }
+
+    private var parsedEngineHours: Double? {
+        guard let value = Double(engineHours.replacingOccurrences(of: ",", with: ".")), value >= 0 else {
+            return nil
+        }
+        return value
     }
 
     private var locatorCoordinateKey: String? {
@@ -528,6 +545,7 @@ struct AddLogEntryView: View {
             }
             let quantity = Double(litres)
             let temperatureValue = parsedTemperature
+            let engineHoursValue = parsedEngineHours
             let details = action == "other" ? customText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
             let startsJourney = action == "departed"
             let requestID = UUID().uuidString
@@ -544,6 +562,7 @@ struct AddLogEntryView: View {
                 timestamp: timestamp,
                 litres: quantity,
                 temperature: temperatureValue,
+                engineHours: engineHoursValue,
                 token: token,
                 queueImmediately: startsJourney
             )
@@ -566,6 +585,7 @@ struct AddLogEntryView: View {
                         timestamp: timestamp,
                         litres: quantity,
                         temperature: temperatureValue,
+                        engineHours: engineHoursValue,
                         customText: details,
                         token: token,
                         queueImmediately: startsJourney

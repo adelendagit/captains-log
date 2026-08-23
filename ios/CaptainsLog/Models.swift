@@ -275,6 +275,7 @@ struct LogEntry: Codable, Identifiable {
     let lat: Double?
     let lng: Double?
     let dieselLitres: Double?
+    let engineHours: Double?
 }
 
 struct LogsResponse: Codable {
