@@ -24,7 +24,7 @@
 <link rel="stylesheet" href="/css/captains-log.css">
 </head>
 
-<body>
+<body data-authenticated="<%= user ? 'true' : 'false' %>">
 
 <main class="page<%= activePage === "planning" ? " page--map" : "" %>">
 

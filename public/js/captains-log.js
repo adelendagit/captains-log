@@ -84,6 +84,7 @@ const CHART_CACHE_KEY = "captains-log:chart-snapshot:v2";
 const CHART_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOGBOOK_CACHE_KEY = "captains-log:logbook-snapshot:v1";
 const LOGBOOK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const authenticated = document.body.dataset.authenticated === "true";
 const LOCATION_LOG_ACTIONS = {
   arrived: "Arrived",
   departed: "Departed",
@@ -1803,6 +1804,9 @@ function readLogbookSnapshot() {
       Date.now() - snapshot.savedAt > LOGBOOK_CACHE_MAX_AGE_MS
     ) {
       return null;
+    }
+    if (!authenticated) {
+      snapshot.logs = snapshot.logs.filter((log) => log.type !== "Boom");
     }
     return snapshot;
   } catch (_error) {
@@ -4305,6 +4309,17 @@ function setupLogWizard() {
     if (input) input.checked = true;
   };
 
+  const updateNotificationOptions = () => {
+    const peopleInput = document.querySelector(
+      'input[name="wizard-notification"][value="people"]',
+    );
+    if (!peopleInput) return;
+    const unavailable = wizardState.action === "boom";
+    peopleInput.closest("label")?.classList.toggle("hidden", unavailable);
+    peopleInput.disabled = unavailable;
+    if (unavailable && peopleInput.checked) setNotification("none");
+  };
+
   const renderProgress = (step) => {
     const steps = flowSteps();
     const currentIndex = steps.indexOf(step);
@@ -4494,6 +4509,7 @@ function setupLogWizard() {
           ? "people"
           : "none",
       );
+      updateNotificationOptions();
       if (wizardState.action === "departed") {
         journeyNameInput.value = suggestedJourneyName();
       }

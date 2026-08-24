@@ -692,6 +692,7 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
         const gasChangeMatch = /^gas tank change\b/i.test(text);
         const gasRefillMatch = /^gas tank refill\b/i.test(text);
         const bbqGasMatch = /^bbq gas change\b/i.test(text);
+        const boomMatch = /^boom\b/i.test(text);
         const otherMatch = text.match(/^other:\s*(.+)$/im);
         const brokenMatch = text.match(/^broken\s+(.+)/i);
         const fixedMatch = text.match(/^fixed\s+(.+)/i);
@@ -710,6 +711,8 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
           type = "Gas tank refill";
         } else if (bbqGasMatch) {
           type = "BBQ gas change";
+        } else if (boomMatch) {
+          type = "Boom";
         } else if (otherMatch) {
           type = otherMatch[1].trim();
         } else if (brokenMatch) {
@@ -762,6 +765,10 @@ function buildLogsFromComments(actions, cards, listNames, customFields) {
       };
     })
     .filter(Boolean);
+}
+
+function visibleLogsForUser(logs, user) {
+  return user ? logs : logs.filter((log) => log.type !== "Boom");
 }
 
 router.get("/api/closest-locations", async (req, res, next) => {
@@ -1028,6 +1035,8 @@ router.get("/api/logs", async (req, res, next) => {
       ? { start: mostRecentTrip.start, end: mostRecentTrip.due }
       : null;
 
+    filteredLogs = visibleLogsForUser(filteredLogs, req.user);
+
     res.json({ logs: filteredLogs, mostRecentTripRange });
   } catch (err) {
     next(err);
@@ -1080,7 +1089,8 @@ router.get("/api/logs/stream", async (req, res, next) => {
         before,
         limit: sentMeta ? 1000 : 100,
       });
-      const logs = buildLogsFromComments(data, cards, listNames, customFields);
+      let logs = buildLogsFromComments(data, cards, listNames, customFields);
+      logs = visibleLogsForUser(logs, req.user);
       const payload = { logs };
       if (!sentMeta) {
         payload.mostRecentTripRange = mostRecentTripRange;
@@ -1891,6 +1901,11 @@ router.post("/api/log-notification", async (req, res, next) => {
     }
     if (!ACTION_LABELS[action]) {
       return res.status(400).json({ error: "Invalid action" });
+    }
+    if (action === "boom" && mode === "people") {
+      return res
+        .status(400)
+        .json({ error: "Boom entries cannot notify people" });
     }
     const suppliedCustomText = String(customText || "")
       .replace(/\s+/g, " ")

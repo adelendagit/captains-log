@@ -229,7 +229,7 @@ struct AddLogEntryView: View {
 
                         Section("Notification") {
                             Picker("Email", selection: $notificationMode) {
-                                ForEach(LogNotificationMode.allCases) { mode in
+                                ForEach(availableNotificationModes) { mode in
                                     Text(mode.label).tag(mode)
                                 }
                             }
@@ -298,6 +298,10 @@ struct AddLogEntryView: View {
 
     private static func defaultNotificationMode(for action: String) -> LogNotificationMode {
         ["arrived", "departed", "visited"].contains(action) ? .people : .none
+    }
+
+    private var availableNotificationModes: [LogNotificationMode] {
+        action == "boom" ? [.test, .none] : LogNotificationMode.allCases
     }
 
     private var navigationTitle: String {
@@ -2378,6 +2382,7 @@ struct LogbookView: View {
         case "departed": "sailboat"
         case "diesel": "fuelpump"
         case "water": "drop.fill"
+        case "boom": "heart.fill"
         case "broken": "wrench.and.screwdriver"
         default: "book.closed"
         }

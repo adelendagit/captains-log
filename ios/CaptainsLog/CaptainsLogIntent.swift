@@ -74,7 +74,7 @@ enum CaptainLogAction: String, AppEnum, CaseIterable {
         case .gasTankChange: "cylinder.fill"
         case .waterTankChange: "drop.triangle.fill"
         case .power: "bolt.fill"
-        case .boom: "wrench.and.screwdriver"
+        case .boom: "heart.fill"
         case .other: "square.and.pencil"
         }
     }

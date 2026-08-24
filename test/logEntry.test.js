@@ -888,3 +888,113 @@ test("keeps the current stop description private and lets a logged-in user updat
   assert.equal(unauthenticatedUpdate.status, 403);
   assert.equal(updates.length, 3);
 });
+
+test("keeps Boom logs out of the public logbook", async (t) => {
+  invalidateBoardCache();
+  const { invalidateCommentCache } = require("../services/trello");
+  invalidateCommentCache();
+  const originalGet = axios.get;
+  const comments = [
+    {
+      id: "boom-comment",
+      type: "commentCard",
+      date: "2026-08-24T10:00:00.000Z",
+      data: { card: { id: "stop-card", name: "Wasp Bay" }, text: "Boom" },
+    },
+    {
+      id: "arrival-comment",
+      type: "commentCard",
+      date: "2026-08-24T09:00:00.000Z",
+      data: {
+        card: { id: "stop-card", name: "Wasp Bay" },
+        text: "Arrived",
+      },
+    },
+  ];
+  axios.get = async (url) => {
+    if (String(url).includes("/actions?")) return { data: comments };
+    return {
+      data: {
+        cards: [
+          {
+            id: "stop-card",
+            idList: "places-list",
+            name: "Wasp Bay",
+            labels: [],
+            customFieldItems: [],
+          },
+        ],
+        lists: [
+          { id: "places-list", name: "Places" },
+          { id: "trips-list", name: "Trips" },
+        ],
+        customFields: [],
+      },
+    };
+  };
+  t.after(() => {
+    axios.get = originalGet;
+    invalidateBoardCache();
+    invalidateCommentCache();
+  });
+
+  const app = express();
+  app.use((req, _res, next) => {
+    if (req.get("x-test-user")) req.user = { id: "test-member" };
+    next();
+  });
+  app.use(captainsLog);
+  app.use((error, _req, res, _next) => {
+    res.status(500).json({ error: error.message });
+  });
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/api/logs?trip=all`;
+
+  const publicResponse = await fetch(url);
+  const publicLogs = (await publicResponse.json()).logs;
+  const privateResponse = await fetch(url, {
+    headers: { "x-test-user": "yes" },
+  });
+  const privateLogs = (await privateResponse.json()).logs;
+
+  assert.deepEqual(publicLogs.map((log) => log.type), ["Arrived"]);
+  assert.deepEqual(
+    privateLogs.map((log) => log.type),
+    ["Boom", "Arrived"],
+  );
+});
+
+test("does not allow Boom logs to notify people", async (t) => {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = { id: "test-member" };
+    next();
+  });
+  app.use(captainsLog);
+  const server = await new Promise((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () =>
+      resolve(listeningServer),
+    );
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/log-notification`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "boom", mode: "people" }),
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Boom entries cannot notify people",
+  });
+});
