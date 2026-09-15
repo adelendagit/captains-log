@@ -27,12 +27,12 @@ jobs:
         run: |
           mkdir -p public/kpm/artifacts
           python /tmp/kpm-helper.py package pack kindle/kpm/skibidi-display public/kpm/artifacts
-          test -f public/kpm/artifacts/skibidi-display_0.1.0_kindlehf.kpkg
+          test -f public/kpm/artifacts/skibidi-display_0.2.0_kindlehf.kpkg
       - name: Commit built artifact
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f public/kpm/artifacts/skibidi-display_0.1.0_kindlehf.kpkg
+          git add -f public/kpm/artifacts/skibidi-display_0.2.0_kindlehf.kpkg
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Build Skibidi Kindle KPM artifact'
+          git commit -m 'Build Skibidi Display 0.2.0 KPM artifact'
           git push
