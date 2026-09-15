@@ -70,6 +70,12 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Short, stable URL for jailbroken Kindles adding the Captain's Log KPM repo.
+// Serving the manifest directly avoids relying on redirect handling in KPM.
+app.get('/k', (req, res) => {
+  res.type('application/json');
+  res.sendFile(path.join(__dirname, 'public', 'kpm', 'manifest.v2.json'));
+});
 
 const sessionStore = createSessionStore(session);
 
