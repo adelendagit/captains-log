@@ -1,0 +1,38 @@
+name: Build Kindle KPM package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kindle/kpm/skibidi-display/**'
+      - '.github/workflows/build-kindle-kpm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch KPM helper
+        run: curl -fsSL https://raw.githubusercontent.com/KindleModding/KPM/main/kpm-helper.py -o /tmp/kpm-helper.py
+      - name: Build package
+        run: |
+          mkdir -p public/kpm/artifacts
+          python /tmp/kpm-helper.py package pack kindle/kpm/skibidi-display public/kpm/artifacts
+          test -f public/kpm/artifacts/skibidi-display_0.1.0_kindlepw2.kpkg
+      - name: Commit built artifact
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f public/kpm/artifacts/skibidi-display_0.1.0_kindlepw2.kpkg
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Build Skibidi Kindle KPM artifact'
+          git push
