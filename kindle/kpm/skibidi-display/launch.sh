@@ -3,21 +3,40 @@
 URL="https://where.is.achilleas.co.uk/kindle.html"
 
 # Keep the Kindle awake while it is being used as the Skibidi display.
-# This is intentionally limited to launch behaviour; a separate stop action will
-# restore normal power management before we make this an auto-starting appliance.
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1 || true
 fi
 
-# Launch the stock Kindle browser directly at the dashboard. This remains our
-# proven renderer on PW4/5.18.1.1.1 while we test power-management behaviour.
-if command -v lipc-set-prop >/dev/null 2>&1; then
-  lipc-set-prop com.lab126.appmgrd start app://com.lab126.browser?url="$URL" >/dev/null 2>&1 && exit 0
+# Firmware 5.16.4+ uses the Chromium-based Kindle browser. Launching it directly
+# lets us hide the browser toolbar and use the panel as a kiosk display.
+if [ -x /usr/bin/chromium/bin/kindle_browser ]; then
+  # Stop the normal Kindle GUI only for the fullscreen session. The bundled
+  # stop script restores it, and a normal reboot is also a recovery route.
+  if [ -d /etc/upstart ]; then
+    stop lab126_gui >/dev/null 2>&1 || true
+  elif [ -x /etc/init.d/framework ]; then
+    /etc/init.d/framework stop >/dev/null 2>&1 || true
+  fi
+
+  export XDG_CONFIG_HOME="/mnt/us/system/browser/"
+  export LD_LIBRARY_PATH="/usr/bin/chromium/lib:/usr/bin/chromium/usr/lib:/usr/lib/"
+
+  nohup /usr/bin/chromium/bin/kindle_browser "$URL" \
+    --no-zygote --no-sandbox --single-process \
+    --skia-resource-cache-limit-mb=64 --disable-gpu --in-process-gpu \
+    --disable-gpu-sandbox --disable-gpu-compositing \
+    --enable-dom-distiller --enable-distillability-service \
+    --force-device-scale-factor=1 --js-flags=jitless \
+    --content-shell-hide-toolbar --content-shell-host-window-cord=0,0 \
+    --force-gpu-mem-available-mb=32 --enable-grayscale-mode \
+    --enable-low-end-device-mode --enable-low-res-tiling \
+    --disable-site-isolation-trials >/tmp/skibidi-browser.log 2>&1 &
+  exit 0
 fi
 
-# Fallback for firmware builds exposing the browser through the legacy command.
-if command -v dbus-send >/dev/null 2>&1; then
-  dbus-send --system /default com.lab126.chromebrowser.open string:"$URL" >/dev/null 2>&1 && exit 0
+# Safe fallback: use the normal browser if direct Chromium is unavailable.
+if command -v lipc-set-prop >/dev/null 2>&1; then
+  lipc-set-prop com.lab126.appmgrd start app://com.lab126.browser?url="$URL" >/dev/null 2>&1 && exit 0
 fi
 
 exit 1
