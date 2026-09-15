@@ -21,6 +21,8 @@ const { contentSecurityPolicy: csp } = require('helmet');
 app.use(
   helmet({
     contentSecurityPolicy: false,  // disable the default so we can supply our own
+    // OpenStreetMap requires a Referer; share only our origin across sites.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   })
 );
 
@@ -41,7 +43,7 @@ app.use(
       imgSrc: [
         "'self'",
         "data:",                      // marker icons
-        "https://*.tile.openstreetmap.org", // map tiles
+        "https://tile.openstreetmap.org", // map tiles
         "https://unpkg.com",
         "https://trello-members.s3.amazonaws.com"
       ],

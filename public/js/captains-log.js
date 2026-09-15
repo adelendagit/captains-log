@@ -2016,9 +2016,10 @@ function initMap(stops, places, logs = null) {
     map = leafletMap;
   } else {
     map = L.map("map").setView([0, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(
-      map,
-    );
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
     leafletMap = map;
     mapWasCreated = true;
     addBreadcrumbLegend(map);
@@ -3563,9 +3564,10 @@ function renderLogMap(logs = [], stops = [], range = null) {
   // create map
   window.histMap = L.map(mapDiv).setView([0, 0], 2);
   addBreadcrumbLegend(window.histMap);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(
-    window.histMap,
-  );
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(window.histMap);
 
   const bounds = [];
   markers.forEach((m) => {

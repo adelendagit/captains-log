@@ -37,9 +37,9 @@ function renderMap(place, editable = false) {
   draftCoordinate = { lat: place.lat, lng: place.lng };
   if (!stopMap) {
     stopMap = L.map("stop-map", { scrollWheelZoom: false }).setView(coordinate, 14);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(stopMap);
     stopMarker = L.marker(coordinate, { draggable: editable }).addTo(stopMap);
     stopMarker.on("dragend", () => {
