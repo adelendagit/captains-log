@@ -437,6 +437,7 @@ function buildPlanningRoute(points) {
 
 module.exports = {
   MAX_PLANNING_POINTS,
+  getIndexedLandPolygons,
   buildPlanningRoute,
   classifyPlanningPoint,
   isValidPoint,

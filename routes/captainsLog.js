@@ -1157,6 +1157,16 @@ router.get("/api/current-stop", async (req, res, next) => {
   }
 });
 
+router.get("/api/kindle-map.svg", (req, res, next) => {
+  try {
+    const { renderKindleMap } = require("../services/kindleMap");
+    const svg = renderKindleMap(req.query);
+    res.type("svg").set("Cache-Control", "public, max-age=3600").send(svg);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/api/vessel-state", async (req, res, next) => {
   try {
     const [currentStatus, journeyCards, comments] = await Promise.all([
