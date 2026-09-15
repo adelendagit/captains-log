@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "id": "skibidi-display",
+  "name": "Skibidi Display",
+  "author": "Captain's Log",
+  "description": "Launch the Skibidi Captain's Log e-ink dashboard on a jailbroken Kindle.",
+  "version": [0, 1, 0],
+  "dependencies": [],
+  "supported_platforms": ["kindlepw2"]
+}
