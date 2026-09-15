@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "id": "captains-log",
+  "name": "Captain's Log Kindle Repo",
+  "description": "Kindle packages for the Skibidi Captain's Log display.",
+  "packages": {
+    "skibidi-display": {
+      "name": "Skibidi Display",
+      "author": "Captain's Log",
+      "description": "Launch the Skibidi Captain's Log e-ink dashboard.",
+      "artifacts": [
+        {
+          "url": "artifacts/skibidi-display_0.1.0_kindlepw2.kpkg",
+          "version": [0, 1, 0],
+          "dependencies": [],
+          "supported_platforms": ["kindlepw2"]
+        }
+      ]
+    }
+  }
+}
