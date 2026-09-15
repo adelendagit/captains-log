@@ -28,12 +28,13 @@ function render(state) {
   var course = number(first(point, ['course', 'heading']));
   var timestamp = first(point, ['timestamp', 'recordedAt', 'createdAt']);
   var historical = telemetry.status === 'last-known';
+  var showMotion = vesselState === 'underway' && telemetry.status === 'active';
 
   document.getElementById('status').textContent = vesselState.replace(/_/g, ' ');
   document.getElementById('place').textContent = place || (journey.active ? 'Underway' : 'Last recorded position');
   document.getElementById('coords').textContent = lat !== null && lng !== null ? Math.abs(lat).toFixed(5) + (lat < 0 ? '° S\n' : '° N\n') + Math.abs(lng).toFixed(5) + (lng < 0 ? '° W' : '° E') : 'No GPS position available';
-  document.getElementById('speed').textContent = speed !== null ? speed.toFixed(1) + ' kt' : '—';
-  document.getElementById('course').textContent = course !== null ? Math.round(course) + '°' : '—';
+  document.getElementById('speed').textContent = showMotion && speed !== null ? speed.toFixed(1) + ' kt' : '—';
+  document.getElementById('course').textContent = showMotion && course !== null ? Math.round(course) + '°' : '—';
   document.getElementById('freshness').textContent = historical === true ? 'Last recorded GPS fix' : (telemetry.status === 'active' ? 'Journey GPS fix' : 'No GPS fix');
   document.getElementById('updated').textContent = timestamp ? new Date(timestamp).toLocaleString() : 'Unknown';
   document.getElementById('display').style.display = 'block';
