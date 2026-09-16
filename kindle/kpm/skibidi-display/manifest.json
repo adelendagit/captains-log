@@ -3,8 +3,8 @@
   "id": "skibidi-display",
   "name": "Skibidi Display",
   "author": "Captain's Log",
-  "description": "Launch the Skibidi Captain's Log e-ink dashboard on a jailbroken Kindle.",
-  "version": [0, 3, 0],
+  "description": "Fullscreen Skibidi Captain's Log e-ink dashboard with safe exit and frontlight control.",
+  "version": [0, 4, 0],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
