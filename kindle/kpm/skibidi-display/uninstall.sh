@@ -8,7 +8,7 @@ else
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || true
 fi
 
-rm -f "/mnt/us/documents/Skibidi Display.sh" "/mnt/us/documents/Stop Skibidi Display.sh"
+rm -f "/mnt/us/documents/Skibidi Display.sh" "/mnt/us/documents/Stop Skibidi Display.sh" "/mnt/us/documents/Update Skibidi.sh"
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.contentmanagerd rescanContent 1 >/dev/null 2>&1 || true
 fi
