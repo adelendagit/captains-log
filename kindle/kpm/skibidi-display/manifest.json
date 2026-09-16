@@ -3,8 +3,8 @@
   "id": "skibidi-display",
   "name": "Skibidi Display",
   "author": "Captain's Log",
-  "description": "Fullscreen Skibidi Captain's Log e-ink dashboard with safe exit, frontlight control, and Library updater.",
-  "version": [0, 4, 1],
+  "description": "Fullscreen Skibidi Captain's Log e-ink dashboard with kiosk browser mode, safe boot autostart, escape/stop recovery, and Library updater.",
+  "version": [0, 5, 0],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
