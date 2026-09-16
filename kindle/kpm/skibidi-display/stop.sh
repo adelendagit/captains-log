@@ -1,5 +1,13 @@
 #!/bin/sh
 
+STATE_DIR="/var/local/skibidi-display"
+AUTOSTART_MARKER="$STATE_DIR/autostart.enabled"
+
+# Stop is the escape hatch: disable future boot autostart first, so a reboot
+# cannot immediately trap the user back in kiosk mode.
+rm -f "$AUTOSTART_MARKER" >/dev/null 2>&1 || true
+initctl stop skibidi-display >/dev/null 2>&1 || true
+
 # Restore ordinary Kindle sleep behaviour.
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || true
