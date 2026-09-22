@@ -10,8 +10,8 @@
       "description": "Launch the Skibidi Captain's Log e-ink dashboard.",
       "artifacts": [
         {
-          "url": "https://where.is.achilleas.co.uk/kpm/artifacts/skibidi-display_0.5.1_kindlehf.kpkg",
-          "version": [0, 5, 1],
+          "url": "https://where.is.achilleas.co.uk/kpm/artifacts/skibidi-display_0.5.2_kindlehf.kpkg",
+          "version": [0, 5, 2],
           "dependencies": [],
           "supported_platforms": ["kindlehf"]
         }
