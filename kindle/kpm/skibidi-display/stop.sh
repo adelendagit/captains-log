@@ -1,11 +1,10 @@
 #!/bin/sh
 
-# Stop the local power-button exit watcher if it is still running.
-if [ -f /tmp/skibidi-exit-watcher.pid ]; then
-  kill "$(cat /tmp/skibidi-exit-watcher.pid 2>/dev/null)" >/dev/null 2>&1 || true
-  rm -f /tmp/skibidi-exit-watcher.pid
+if [ -f /tmp/skibidi-touch-exit.pid ]; then
+  WATCHER_PID="$(cat /tmp/skibidi-touch-exit.pid 2>/dev/null)"
+  [ "$WATCHER_PID" = "$$" ] || kill "$WATCHER_PID" >/dev/null 2>&1 || true
+  rm -f /tmp/skibidi-touch-exit.pid
 fi
-pkill -f "evtest /dev/input/event0" >/dev/null 2>&1 || true
 
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || true
