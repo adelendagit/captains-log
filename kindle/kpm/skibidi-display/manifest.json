@@ -3,8 +3,8 @@
   "id": "skibidi-display",
   "name": "Skibidi Display",
   "author": "Captain's Log",
-  "description": "Native-UI test mode for modern Chromium Kindles: keeps Kindle UI alive and avoids kiosk/fullscreen so the native escape route remains available. No autostart.",
-  "version": [0, 6, 2],
+  "description": "Captain's Log dashboard launched through Kindle appmgrd so the native browser chrome and Close control manage the session. Manual launch only; no autostart.",
+  "version": [0, 7, 0],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
