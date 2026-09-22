@@ -48,8 +48,8 @@ exit 0
 EOF
 chmod +x "$UPDATE_SCRIPTLET" 2>/dev/null || true
 
-# 0.5.1 is manual-only. Clean up every autostart component created by 0.5.0.
-rm -f "$STATE_DIR/autostart.enabled" "$STATE_DIR/autostart.sh" "$STATE_DIR/skibidi-display.conf" >/dev/null 2>&1 || true
+# 0.6.0 remains manual-only. Clean up every legacy autostart component.
+rm -f "$STATE_DIR/autostart.enabled" "$STATE_DIR/autostart.sh" "$STATE_DIR/skibidi-display.conf" >/dev/null 2>&1 || true\nrm -f "$PACKAGE_DIR/touch-exit.py" "$PACKAGE_DIR/touch-exit.lua" >/dev/null 2>&1 || true\nrm -f /mnt/us/skibidi-debug.log /mnt/us/skibidi-power-events.log /mnt/us/skibidi-runtime.log /mnt/us/skibidi-touch-exit.log /mnt/us/skibidi-lua-diagnostic.log >/dev/null 2>&1 || true
 initctl stop skibidi-display >/dev/null 2>&1 || true
 
 # Remove only the old Upstart job installed by our package.
