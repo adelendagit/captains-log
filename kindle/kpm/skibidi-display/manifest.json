@@ -4,7 +4,7 @@
   "name": "Skibidi Display",
   "author": "Captain's Log",
   "description": "Fullscreen Skibidi Captain's Log e-ink dashboard with manual start and local touchscreen hold-to-exit. No autostart.",
-  "version": [0, 5, 5],
+  "version": [0, 5, 6],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
