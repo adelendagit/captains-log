@@ -66,3 +66,25 @@ function refresh() {
 
 refresh();
 setInterval(refresh, 60000);
+
+function kindleSessionToken() {
+  var match = location.search.match(/[?&]session=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function exitDisplay() {
+  var token = kindleSessionToken();
+  if (!token) return;
+  var button = document.getElementById('exit-display');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Exiting…';
+  }
+  var request = new XMLHttpRequest();
+  request.open('POST', '/api/kindle-display/stop?token=' + encodeURIComponent(token), true);
+  request.setRequestHeader('Accept', 'application/json');
+  request.send('{}');
+}
+
+var exitButton = document.getElementById('exit-display');
+if (exitButton) exitButton.onclick = exitDisplay;
