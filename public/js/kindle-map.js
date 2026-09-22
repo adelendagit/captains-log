@@ -1,15 +1,5 @@
 (function () {
   var zoom = 'local';
-  var sessionMatch = location.search.match(/[?&]session=([^&]+)/);
-  var sessionToken = sessionMatch ? decodeURIComponent(sessionMatch[1]) : '';
-  if (sessionToken) {
-    var links = document.getElementsByTagName('a');
-    for (var linkIndex = 0; linkIndex < links.length; linkIndex++) {
-      if (links[linkIndex].getAttribute('href') === '/kindle.html') {
-        links[linkIndex].setAttribute('href', '/kindle.html?session=' + encodeURIComponent(sessionToken));
-      }
-    }
-  }
   var point = null;
   var map = document.getElementById('map');
   var error = document.getElementById('error');
@@ -26,18 +16,6 @@
   map.onerror = function () { map.style.display = 'none'; showError(); };
   document.getElementById('local').onclick = function () { setZoom('local'); };
   document.getElementById('wide').onclick = function () { setZoom('wide'); };
-  document.getElementById('exit-display').onclick = function () {
-    var match = location.search.match(/[?&]session=([^&]+)/);
-    if (!match) return;
-    var token = decodeURIComponent(match[1]);
-    var button = document.getElementById('exit-display');
-    button.disabled = true;
-    button.textContent = 'Exiting…';
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/kindle-display/stop?token=' + encodeURIComponent(token), true);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.send('{}');
-  };
   function setZoom(value) {
     zoom = value;
     document.getElementById('local').disabled = value === 'local';
