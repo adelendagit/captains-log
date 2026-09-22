@@ -1,19 +1,40 @@
 #!/bin/sh
 
-URL="https://where.is.achilleas.co.uk/kindle.html"
+BASE_URL="https://where.is.achilleas.co.uk/kindle.html"
+PACKAGE_DIR="/mnt/us/kmc/kpm/packages/skibidi-display"
+TOKEN="$(date +%s 2>/dev/null || echo 0)-$$"
+URL="$BASE_URL?session=$TOKEN"
+STOP_URL="https://where.is.achilleas.co.uk/api/kindle-display/stop?token=$TOKEN"
 
 # Keep the Kindle awake while it is being used as the Skibidi display.
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1 || true
 fi
 
+# Watch for the Exit button on the dashboard. This process is independent of
+# Chromium, so it can run stop.sh after the page asks to exit.
+(
+  while :; do
+    RESPONSE=""
+    if command -v curl >/dev/null 2>&1; then
+      RESPONSE="$(curl -fsS --connect-timeout 3 --max-time 5 "$STOP_URL" 2>/dev/null || true)"
+    elif command -v wget >/dev/null 2>&1; then
+      RESPONSE="$(wget -q -T 5 -O - "$STOP_URL" 2>/dev/null || true)"
+    fi
+    echo "$RESPONSE" | grep -q '"stop"[[:space:]]*:[[:space:]]*true' && {
+      /bin/sh "$PACKAGE_DIR/stop.sh" >/dev/null 2>&1 || true
+      exit 0
+    }
+    sleep 2
+  done
+) >/tmp/skibidi-stop-watcher.log 2>&1 &
+echo $! >/tmp/skibidi-stop-watcher.pid
+
 # Firmware 5.16.4+ uses the Chromium-based Kindle browser. Launching it directly
 # avoids the stock browser shell.
 if [ -x /usr/bin/chromium/bin/kindle_browser ]; then
   killall kindle_browser >/dev/null 2>&1 || true
 
-  # Stop the normal Kindle GUI only for this manually-started fullscreen session.
-  # stop.sh restores it. There is deliberately no boot/autostart behaviour.
   if [ -d /etc/upstart ]; then
     stop lab126_gui >/dev/null 2>&1 || true
   elif [ -x /etc/init.d/framework ]; then
@@ -38,13 +59,8 @@ if [ -x /usr/bin/chromium/bin/kindle_browser ]; then
   exit 0
 fi
 
-# Safe fallback: use the normal browser if direct Chromium is unavailable.
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.appmgrd start app://com.lab126.browser?url="$URL" >/dev/null 2>&1 && exit 0
-fi
-
-# If launch failed, don't leave the Kindle permanently awake.
-if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || true
 fi
 exit 1
