@@ -3,8 +3,8 @@
   "id": "skibidi-display",
   "name": "Skibidi Display",
   "author": "Captain's Log",
-  "description": "Safe-mode Captain's Log dashboard for modern Chromium Kindles. Keeps the native Kindle UI running; manual launch only; no power-button override or autostart.",
-  "version": [0, 6, 1],
+  "description": "Native-UI test mode for modern Chromium Kindles: keeps Kindle UI alive and avoids kiosk/fullscreen so the native escape route remains available. No autostart.",
+  "version": [0, 6, 2],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
