@@ -70,27 +70,6 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// One-time stop signals for manually launched Kindle kiosk sessions.
-// The Kindle generates a fresh token for each launch. The page can request stop
-// only for that token; a small Kindle-side watcher then runs stop.sh locally.
-const kindleStopSignals = new Set();
-
-app.get('/api/kindle-display/stop', (req, res) => {
-  const token = String(req.query.token || '');
-  if (!/^[A-Za-z0-9._-]{8,80}$/.test(token)) return res.status(400).json({ error: 'Invalid token' });
-  const stop = kindleStopSignals.delete(token);
-  res.set('Cache-Control', 'no-store');
-  res.json({ stop });
-});
-
-app.post('/api/kindle-display/stop', (req, res) => {
-  const token = String(req.query.token || '');
-  if (!/^[A-Za-z0-9._-]{8,80}$/.test(token)) return res.status(400).json({ error: 'Invalid token' });
-  kindleStopSignals.add(token);
-  res.set('Cache-Control', 'no-store');
-  res.json({ ok: true });
-});
-
 // Short, stable URL for jailbroken Kindles adding the Captain's Log KPM repo.
 // Serving the manifest directly avoids relying on redirect handling in KPM.
 app.get('/k', (req, res) => {
