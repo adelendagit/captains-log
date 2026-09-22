@@ -7,17 +7,16 @@ if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1 || true
 fi
 
-# Local touchscreen escape hatch. Hold the visible EXIT target for ~2 seconds.
-# The watcher reads this Kindle's confirmed goodix touchscreen at event2.
-if command -v python3 >/dev/null 2>&1 && [ -e /dev/input/event2 ]; then
+# Local touchscreen escape hatch. This Kindle has /usr/bin/lua and its Goodix
+# touchscreen is event2. Hold the visible EXIT target for about 2 seconds.
+if command -v lua >/dev/null 2>&1 && [ -e /dev/input/event2 ]; then
   rm -f /mnt/us/skibidi-touch-exit.log >/dev/null 2>&1 || true
-  nohup python3 "$PACKAGE_DIR/touch-exit.py" >/tmp/skibidi-touch-exit.stdout 2>&1 &
+  nohup lua "$PACKAGE_DIR/touch-exit.lua" >/tmp/skibidi-touch-exit.stdout 2>&1 &
   echo $! >/tmp/skibidi-touch-exit.pid
 fi
 
 if [ -x /usr/bin/chromium/bin/kindle_browser ]; then
   killall kindle_browser >/dev/null 2>&1 || true
-
   if [ -d /etc/upstart ]; then
     stop lab126_gui >/dev/null 2>&1 || true
   elif [ -x /etc/init.d/framework ]; then
