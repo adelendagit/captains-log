@@ -3,8 +3,8 @@
   "id": "skibidi-display",
   "name": "Skibidi Display",
   "author": "Captain's Log",
-  "description": "Fullscreen Skibidi Captain's Log e-ink dashboard with manual start and Lua touchscreen hold-to-exit. No autostart.",
-  "version": [0, 5, 7],
+  "description": "Fullscreen Captain's Log dashboard using the established Shortcut Browser lifecycle for modern Chromium Kindles. Manual start/stop; no autostart.",
+  "version": [0, 6, 0],
   "dependencies": [],
   "supported_platforms": ["kindlehf"]
 }
