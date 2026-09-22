@@ -1,16 +1,6 @@
 #!/bin/sh
 
 URL="https://where.is.achilleas.co.uk/kindle.html"
-STATE_DIR="/var/local/skibidi-display"
-AUTOSTART_MARKER="$STATE_DIR/autostart.enabled"
-
-# A deliberate manual launch opts the device into appliance mode: future reboots
-# will auto-launch Skibidi. Boot launches set SKIBIDI_AUTOSTART_BOOT=1 so they do
-# not need to rewrite the marker.
-mkdir -p "$STATE_DIR" >/dev/null 2>&1 || true
-if [ "${SKIBIDI_AUTOSTART_BOOT:-0}" != "1" ]; then
-  touch "$AUTOSTART_MARKER" >/dev/null 2>&1 || true
-fi
 
 # Keep the Kindle awake while it is being used as the Skibidi display.
 if command -v lipc-set-prop >/dev/null 2>&1; then
@@ -18,15 +8,12 @@ if command -v lipc-set-prop >/dev/null 2>&1; then
 fi
 
 # Firmware 5.16.4+ uses the Chromium-based Kindle browser. Launching it directly
-# avoids the stock browser shell; the fullscreen/kiosk flags are intentionally
-# redundant so firmware variants hide as much address/navigation chrome as they
-# support.
+# avoids the stock browser shell.
 if [ -x /usr/bin/chromium/bin/kindle_browser ]; then
-  # Avoid stacking multiple browser instances if the launcher is tapped twice.
   killall kindle_browser >/dev/null 2>&1 || true
 
-  # Stop the normal Kindle GUI only for the fullscreen session. stop.sh restores
-  # it, and a normal reboot remains a recovery route if autostart is disabled.
+  # Stop the normal Kindle GUI only for this manually-started fullscreen session.
+  # stop.sh restores it. There is deliberately no boot/autostart behaviour.
   if [ -d /etc/upstart ]; then
     stop lab126_gui >/dev/null 2>&1 || true
   elif [ -x /etc/init.d/framework ]; then
