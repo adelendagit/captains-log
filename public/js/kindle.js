@@ -88,3 +88,14 @@ function exitDisplay() {
 
 var exitButton = document.getElementById('exit-display');
 if (exitButton) exitButton.onclick = exitDisplay;
+
+(function preserveKindleSessionLinks() {
+  var token = kindleSessionToken();
+  if (!token) return;
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (links[i].getAttribute('href') === '/kindle-map.html') {
+      links[i].setAttribute('href', '/kindle-map.html?session=' + encodeURIComponent(token));
+    }
+  }
+})();
