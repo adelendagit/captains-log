@@ -1,10 +1,11 @@
 #!/bin/sh
 
-# Stop the per-launch Exit watcher if it is still running.
-if [ -f /tmp/skibidi-stop-watcher.pid ]; then
-  kill "$(cat /tmp/skibidi-stop-watcher.pid 2>/dev/null)" >/dev/null 2>&1 || true
-  rm -f /tmp/skibidi-stop-watcher.pid
+# Stop the local power-button exit watcher if it is still running.
+if [ -f /tmp/skibidi-exit-watcher.pid ]; then
+  kill "$(cat /tmp/skibidi-exit-watcher.pid 2>/dev/null)" >/dev/null 2>&1 || true
+  rm -f /tmp/skibidi-exit-watcher.pid
 fi
+pkill -f "evtest /dev/input/event0" >/dev/null 2>&1 || true
 
 if command -v lipc-set-prop >/dev/null 2>&1; then
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || true
