@@ -1,5 +1,15 @@
 (function () {
   var zoom = 'local';
+  var sessionMatch = location.search.match(/[?&]session=([^&]+)/);
+  var sessionToken = sessionMatch ? decodeURIComponent(sessionMatch[1]) : '';
+  if (sessionToken) {
+    var links = document.getElementsByTagName('a');
+    for (var linkIndex = 0; linkIndex < links.length; linkIndex++) {
+      if (links[linkIndex].getAttribute('href') === '/kindle.html') {
+        links[linkIndex].setAttribute('href', '/kindle.html?session=' + encodeURIComponent(sessionToken));
+      }
+    }
+  }
   var point = null;
   var map = document.getElementById('map');
   var error = document.getElementById('error');
